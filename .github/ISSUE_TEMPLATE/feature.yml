@@ -1,0 +1,20 @@
+name: Feature proposal
+description: Propose an operator outcome or adapter capability.
+body:
+  - type: textarea
+    attributes:
+      label: Operator problem
+      description: What work or attention cost does this reduce?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Source semantics
+      description: Which system remains authoritative, and what evidence is available?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives and affected parties
+    validations:
+      required: true

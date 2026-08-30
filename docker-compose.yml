@@ -1,0 +1,22 @@
+services:
+  orchestrator:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4400:4400"
+    environment:
+      ORCHESTRATOR_MASTER_KEY: ${ORCHESTRATOR_MASTER_KEY:?Create a base64-encoded 32-byte key}
+      ORCHESTRATOR_ALLOWED_ORIGINS: ${ORCHESTRATOR_ALLOWED_ORIGINS:-http://127.0.0.1:4400,http://localhost:4400}
+      ORCHESTRATOR_TRUST_PROXY: ${ORCHESTRATOR_TRUST_PROXY:-loopback,linklocal,uniquelocal}
+    volumes:
+      - orchestrator-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  orchestrator-data:

@@ -1,0 +1,10 @@
+{
+  "name": "Orchestrator",
+  "short_name": "Orchestrator",
+  "description": "A calm command centre for your AI assistant.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0d0c",
+  "theme_color": "#0b0d0c",
+  "icons": [{ "src": "/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

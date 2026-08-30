@@ -1,0 +1,154 @@
+import { useState, type ReactNode } from "react";
+import {
+  AlertCircle,
+  Bell,
+  BrainCircuit,
+  Cable,
+  ChartNoAxesCombined,
+  Check,
+  ChevronDown,
+  CircleDot,
+  Gauge,
+  ListTodo,
+  Menu,
+  MessageCircle,
+  Moon,
+  Search,
+  Settings2,
+  Sun,
+  X,
+} from "lucide-react";
+import { cx } from "./lib.js";
+
+export const routes = [
+  { path: "/", label: "Overview", icon: Gauge },
+  { path: "/assistant", label: "Assistant", icon: MessageCircle },
+  { path: "/work", label: "Work", icon: ListTodo },
+  { path: "/attention", label: "Attention", icon: AlertCircle },
+  { path: "/brain", label: "Brain", icon: BrainCircuit },
+  { path: "/insights", label: "Insights", icon: ChartNoAxesCombined },
+  { path: "/connections", label: "Connections", icon: Cable },
+  { path: "/settings", label: "Settings", icon: Settings2 },
+] as const;
+
+export function Mark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={cx("brand", compact && "brand--compact")} aria-label="Orchestrator">
+      <span className="brand__mark" aria-hidden="true"><span /></span>
+      {!compact && <span className="brand__name">Orchestrator</span>}
+    </div>
+  );
+}
+
+export function AppShell({
+  children,
+  route,
+  navigate,
+  displayName,
+  theme,
+  setTheme,
+  attentionCount,
+}: {
+  children: ReactNode;
+  route: string;
+  navigate(path: string): void;
+  displayName: string;
+  theme: "light" | "dark";
+  setTheme(theme: "light" | "dark"): void;
+  attentionCount: number;
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  function go(path: string) { setMobileOpen(false); navigate(path); }
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <Mark />
+        <nav className="side-nav" aria-label="Primary navigation">
+          {routes.map((item) => {
+            const active = route === item.path;
+            return (
+              <button key={item.path} className={cx("nav-item", active && "is-active")} onClick={() => navigate(item.path)} aria-current={active ? "page" : undefined}>
+                <item.icon size={18} strokeWidth={active ? 2.2 : 1.8} />
+                <span>{item.label}</span>
+                {item.path === "/attention" && attentionCount > 0 && <span className="nav-count">{attentionCount}</span>}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="sidebar__footer">
+          <div className="system-state"><span className="pulse-dot" /> Assistant online</div>
+          <button className="profile-button" onClick={() => navigate("/settings")}>
+            <span className="avatar">{displayName.slice(0, 1).toUpperCase()}</span>
+            <span><strong>{displayName}</strong><small>Private workspace</small></span>
+            <ChevronDown size={15} />
+          </button>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
+          <button className="command-search" onClick={() => navigate("/brain")}><Search size={17} /><span>Search your brain</span><kbd>⌘ K</kbd></button>
+          <div className="topbar__actions">
+            <button className="icon-button" aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className="icon-button notification-button" aria-label="Notifications" onClick={() => navigate("/attention")}>
+              <Bell size={18} />{attentionCount > 0 && <span />}
+            </button>
+          </div>
+        </header>
+        <div className="page-stage">{children}</div>
+      </main>
+
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        {routes.slice(0, 5).map((item) => {
+          const active = route === item.path;
+          return <button key={item.path} className={cx(active && "is-active")} onClick={() => navigate(item.path)}><item.icon size={21} /><span>{item.label}</span></button>;
+        })}
+      </nav>
+      {mobileOpen && <div className="mobile-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
+        <aside className="mobile-drawer" aria-label="All navigation">
+          <div className="mobile-drawer__head"><Mark /><button className="icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={18} /></button></div>
+          <nav>{routes.map((item) => <button key={item.path} className={cx(route === item.path && "is-active")} onClick={() => go(item.path)}><item.icon size={19} /><span>{item.label}</span>{item.path === "/attention" && attentionCount > 0 && <span className="nav-count">{attentionCount}</span>}</button>)}</nav>
+          <div className="mobile-drawer__state"><span className="pulse-dot" /> Assistant online</div>
+        </aside>
+      </div>}
+    </div>
+  );
+}
+
+export function PageHeader({ eyebrow, title, detail, actions }: { eyebrow?: string; title: string; detail: string; actions?: ReactNode }) {
+  return (
+    <div className="page-header">
+      <div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h1>{title}</h1><p>{detail}</p></div>
+      {actions && <div className="page-actions">{actions}</div>}
+    </div>
+  );
+}
+
+export function Card({ children, className, title, action }: { children: ReactNode; className?: string; title?: string; action?: ReactNode }) {
+  return (
+    <section className={cx("card", className)}>
+      {(title || action) && <div className="card__header">{title && <h2>{title}</h2>}{action}</div>}
+      {children}
+    </section>
+  );
+}
+
+export function StatusPill({ state, children }: { state: string; children?: ReactNode }) {
+  const normalized = state.toLowerCase().replaceAll("_", "-");
+  return <span className={cx("status-pill", `status-pill--${normalized}`)}><CircleDot size={10} />{children ?? state.replaceAll("-", " ")}</span>;
+}
+
+export function EmptyState({ icon, title, detail, action }: { icon?: ReactNode; title: string; detail: string; action?: ReactNode }) {
+  return <div className="empty-state">{icon}<h3>{title}</h3><p>{detail}</p>{action}</div>;
+}
+
+export function Skeleton({ lines = 4 }: { lines?: number }) {
+  return <div className="skeleton-stack" aria-label="Loading">{Array.from({ length: lines }, (_, index) => <span key={index} style={{ width: `${92 - (index % 3) * 13}%` }} />)}</div>;
+}
+
+export function Toast({ message, tone = "neutral", dismiss }: { message: string; tone?: "neutral" | "success" | "error"; dismiss(): void }) {
+  return <div className={cx("toast", `toast--${tone}`)} role="status">{tone === "success" && <Check size={17} />}{tone === "error" && <AlertCircle size={17} />}<span>{message}</span><button onClick={dismiss} aria-label="Dismiss"><X size={15} /></button></div>;
+}

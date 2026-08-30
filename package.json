@@ -1,0 +1,30 @@
+{
+  "name": "orchestrator-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first command centre for personal AI assistants.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run build -w @orchestrator/web && npm run build -w @orchestrator/server",
+    "check": "npm run typecheck && npm run test",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w @orchestrator/server\" \"npm run dev -w @orchestrator/web\"",
+    "dev:demo": "cross-env ORCHESTRATOR_DEMO=1 concurrently -k -n api,web -c blue,magenta \"npm run dev -w @orchestrator/server\" \"npm run dev -w @orchestrator/web\"",
+    "start": "cross-env NODE_ENV=production npm run start -w @orchestrator/server",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "typecheck": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run typecheck -w @orchestrator/server && npm run typecheck -w @orchestrator/web"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "concurrently": "10.0.5",
+    "cross-env": "10.1.0",
+    "typescript": "5.9.3"
+  }
+}

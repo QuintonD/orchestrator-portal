@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible product defect using synthetic data.
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Include expected and observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Remove all private assistant content and credentials.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version or commit
+  - type: dropdown
+    attributes:
+      label: Deployment
+      options: [Native loopback, Docker, Tailscale Serve, Other]
+  - type: checkboxes
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed secrets and private assistant data.
+          required: true

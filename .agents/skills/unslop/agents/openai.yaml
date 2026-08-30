@@ -1,0 +1,4 @@
+interface:
+  display_name: "Unslop"
+  short_description: "Make important prose direct and human"
+  default_prompt: "Use $unslop to tighten this text without changing its meaning or facts."

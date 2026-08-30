@@ -1,0 +1,12 @@
+.git
+.github
+.agents
+node_modules
+dist
+data
+test-results
+playwright-report
+research
+skills
+*.log
+.env*
