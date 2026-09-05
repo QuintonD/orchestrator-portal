@@ -36,9 +36,17 @@ export function nativeControls(getDevice) {
   }
   async function tapWeb(page, locator) {
     const { bounds } = await wait({ clazz: "android.webkit.WebView" });
-    await locator.click({ trial: true });
-    const box = await locator.boundingBox();
-    assert.ok(box);
+    await expect(locator).toBeVisible();
+    await expect(locator).toBeEnabled();
+    // CDP's input/quad conversion can retain the old Android display density.
+    // Measure and hit-test in the document, then send actual Android touch input.
+    await locator.evaluate(element => element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" }));
+    await expect.poll(() => locator.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return hit === element || element.contains(hit);
+    })).toBe(true);
+    const box = await locator.evaluate(element => element.getBoundingClientRect().toJSON());
     const scale = (bounds[2] - bounds[0]) / await page.evaluate(() => innerWidth);
     await getDevice().shell(`input tap ${Math.round(bounds[0] + (box.x + box.width / 2) * scale)} ${Math.round(bounds[1] + (box.y + box.height / 2) * scale)}`);
   }
