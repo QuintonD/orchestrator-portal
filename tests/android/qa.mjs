@@ -66,6 +66,20 @@ async function attach(port = 4460) {
 async function noOverflow() {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 }
+async function displayProfile(largeText) {
+  // Change emulator hardware between app launches. Multiple live density changes
+  // can strand a CDP connection on a replaced WebView with the same process ID.
+  await ui.background(pkg);
+  await device.shell(`am force-stop ${pkg}`);
+  await device.close();
+  adbRun("shell", "settings", "put", "system", "font_scale", largeText ? "1.3" : "1.0");
+  adbRun("shell", "wm", "size", largeText ? "900x1600" : "reset");
+  adbRun("shell", "wm", "density", largeText ? "400" : "reset");
+  device = await connectDevice();
+  await device.shell(`am start -n ${pkg}/io.github.quintond.orchestrator.MainActivity`);
+  await attach(4461);
+  await expect(page.getByRole("heading", { level: 1, name: "Portal", exact: true })).toBeVisible();
+}
 async function navigate(name) {
   const mobile = page.getByRole("navigation", { name: "Mobile navigation", exact: true }).getByRole("button", { name, exact: true });
   if (await mobile.isVisible()) await mobile.click();
@@ -231,10 +245,7 @@ try {
     await page.getByRole("button", { name: "Remove attachment" }).click();
   });
   await step("Large text, narrow screen and all routes remain reachable", async () => {
-    await device.shell("settings put system font_scale 1.3");
-    await device.shell("wm size 900x1600");
-    await device.shell("wm density 400");
-    await attach(4461);
+    await displayProfile(true);
     for (const name of ["Portal", "Assistant", "Work", "Assistants", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {
       const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
       if (!["Portal", "Assistant", "Work", "Assistants", "Reports"].includes(name)) {
@@ -247,11 +258,7 @@ try {
       console.log(`PASS Large-text navigation: ${name}`);
     }
     await shot("10-small-screen-settings");
-    await device.shell("wm size reset"); await device.shell("wm density reset");
-    await device.shell("settings put system font_scale 1.0");
-    await attach(4461);
-    await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { level: 1, name: "Portal", exact: true })).toBeVisible();
+    await displayProfile(false);
   });
   await step("Offline recovery does not send or retry work", async () => {
     children[1].kill();
