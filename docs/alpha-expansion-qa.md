@@ -4,11 +4,13 @@ Date: 2026-09-05. This record covers desktop setup, local/Obsidian and Notion kn
 
 ## Automated checks
 
-- Application typechecks and builds pass. Server fixtures cover authenticated connection creation, refresh and deletion, encrypted credentials, malformed inputs, concurrent refresh/deletion, partial indexing, lost source access, bounded traversal and manual report replay.
+- Application typechecks and builds pass: 62 server tests, two web unit tests and two contract tests. Server fixtures cover authenticated connection creation, refresh and deletion, encrypted credentials, malformed inputs, concurrent refresh/deletion, partial indexing, lost source access, bounded traversal and manual report replay.
 - Browser regression: 31 journeys passed; three platform-specific tests are intentionally skipped. Runs cover desktop and Pixel 7 browser sizes, nested vault filenames, recoverable folder setup, Notion scope/secret/consent, Grok file preview, claimed import and report review. Each browser journey uses its own loopback-proxy client identity so the entire suite does not share one production rate-limit bucket.
 - Android 16/API 36 emulator: all 11 journeys passed, including the native Android JSON picker, Obsidian setup, Notion form, Grok import, report review, keyboard, rotation, restart persistence, offline recovery and all 12 routes at larger text size. Visual captures wait for WebView frames to reach the Android compositor.
 - Both debug and signed release APKs build with unit tests and lint. The alpha 2 native change permits text or JSON through the system document picker; it adds no storage permission or JavaScript bridge.
+- The actual signed alpha 2 APK passed native installation, private login, navigation, Back, persisted-session and offline-recovery checks on Android 16. Its SHA-256 is `3f0090da5610a19c17c746fecb2ff71e54154583227ba3b39d6c653222ab7766`.
 - Windows x64 desktop archive: extracted and run with system Node/npm/Git blocked, from a path with spaces and an unrelated working directory. Checks cover checksums, static assets, private setup, restart persistence, encryption key continuity, process identity, stop, busy ports and stale locks. The CI matrix executes equivalent checks on each native desktop target.
+- Desktop distribution checks also verify that the licenses for libraries embedded in the web bundle are included. These libraries are absent from the API's production dependency tree, so their notices are packaged separately.
 
 ## Usability review
 

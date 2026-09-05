@@ -53,6 +53,10 @@ try {
   for (const filename of ["LICENSE", "THIRD_PARTY_NOTICES.md"]) await copy(path.join(repo, filename), path.join(bundle, filename));
   await copy(path.join(repo, "docs/desktop.md"), path.join(bundle, "README.md"));
   for (const filename of ["launcher.mjs", "paths.mjs", "runtime.json"]) await copy(new URL(filename, import.meta.url), path.join(bundle, "desktop", filename));
+  // The web bundle embeds these libraries; their npm directories are not runtime dependencies of the API.
+  for (const [dependency, license] of [["react", "LICENSE"], ["react-dom", "LICENSE"], ["scheduler", "LICENSE"], ["lucide-react", "LICENSE"], ["vite", "LICENSE.md"], ["rolldown", "LICENSE"]]) {
+    await copy(path.join(repo, "node_modules", dependency, license), path.join(bundle, "licenses", `${dependency}.txt`));
+  }
 
   // Install from the checked-in lock in an isolated tree. No local data or developer node_modules enter the archive.
   const dependencies = path.join(work, "dependencies");

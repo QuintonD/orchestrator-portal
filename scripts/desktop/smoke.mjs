@@ -32,6 +32,7 @@ for (const line of (await readFile(path.join(bundle, "FILES.sha256"), "utf8")).t
 }
 for (const forbidden of [".git", "assets", "apps/server/data", "apps/server/test-results", "node_modules/typescript", "node_modules/npm"]) assert.equal(existsSync(path.join(bundle, forbidden)), false, `excluded ${forbidden}`);
 assert.equal(existsSync(path.join(bundle, "runtime", process.platform === "win32" ? "node.exe" : "node")), true);
+for (const dependency of ["react", "react-dom", "scheduler", "lucide-react", "vite", "rolldown"]) assert.ok((await readFile(path.join(bundle, "licenses", `${dependency}.txt`), "utf8")).length > 100, `frontend license: ${dependency}`);
 
 const environment = { ...process.env, HOME: profile, USERPROFILE: profile, LOCALAPPDATA: path.join(profile, "local"), XDG_DATA_HOME: path.join(profile, "share") };
 for (const key of Object.keys(environment)) if (key.startsWith("ORCHESTRATOR_") || key === "NODE_OPTIONS" || key === "NODE_PATH") delete environment[key];
