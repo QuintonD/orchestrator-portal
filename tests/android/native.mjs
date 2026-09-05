@@ -40,7 +40,7 @@ export function nativeControls(getDevice) {
     await expect(locator).toBeEnabled();
     // CDP's input/quad conversion can retain the old Android display density.
     // Measure and hit-test in the document, then send actual Android touch input.
-    await locator.evaluate(element => element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" }));
+    await locator.evaluate(element => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }));
     await expect.poll(() => locator.evaluate(element => {
       const box = element.getBoundingClientRect();
       const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
