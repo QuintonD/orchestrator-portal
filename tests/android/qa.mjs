@@ -238,12 +238,13 @@ try {
     for (const name of ["Portal", "Assistant", "Work", "Assistants", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {
       const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
       if (!["Portal", "Assistant", "Work", "Assistants", "Reports"].includes(name)) {
-        await ui.tap({ text: "Open navigation" });
-        await page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }).scrollIntoViewIfNeeded();
-      }
-      await ui.tap({ text: label, clazz: "android.widget.Button" });
-      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+        await ui.tapWeb(page, page.getByRole("button", { name: "Open navigation", exact: true }));
+        await ui.tapWeb(page, page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }));
+        await expect(page.getByRole("dialog", { name: "Navigation", exact: true })).not.toBeVisible();
+      } else await ui.tapWeb(page, page.getByRole("navigation", { name: "Mobile navigation", exact: true }).getByRole("button", { name, exact: true }));
+      await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
       await noOverflow();
+      console.log(`PASS Large-text navigation: ${name}`);
     }
     await shot("10-small-screen-settings");
     await device.shell("wm size reset"); await device.shell("wm density reset");
