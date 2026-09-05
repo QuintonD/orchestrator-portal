@@ -250,6 +250,8 @@ try {
     await device.shell("wm size reset"); await device.shell("wm density reset");
     await device.shell("settings put system font_scale 1.0");
     await attach(4461);
+    await page.waitForLoadState("load");
+    await expect(page.getByRole("heading", { level: 1, name: "Portal", exact: true })).toBeVisible();
   });
   await step("Offline recovery does not send or retry work", async () => {
     children[1].kill();
