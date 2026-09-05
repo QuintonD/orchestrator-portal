@@ -76,7 +76,7 @@ Recommended adaptations for this portal:
 - Provide a review loop from deliverable to correction to an explicitly saved preference or source-owned routine. Show where a lasting change is stored and whom it affects.
 - Offer source-native computer takeover or inspection links where supported, rather than building another computer-use runtime.
 
-Role-based assistants and handoffs are therefore reference-product expectations, not sufficient differentiation. The portal must make these workflows coherent across independently chosen runtimes and knowledge sources, with less noise and trustworthy evidence. Grok Bot is a UX reference here; a direct Grok Bot adapter remains uncommitted until a supported integration surface is validated.
+Role-based assistants and handoffs are therefore reference-product expectations, not sufficient differentiation. The portal must make these workflows coherent across independently chosen runtimes and knowledge sources, with less noise and trustworthy evidence. Grok Bot remains a UX reference. The user subsequently approved guided task handoff and manual result import for the alpha; automated Bot control and Enterprise telemetry are outside this increment. See [the expansion plan](alpha-expansion-plan.md).
 
 Use supported integration surfaces where available; OpenClaw documents an [external-app Gateway integration path](https://docs.openclaw.ai/gateway/external-apps). Documentation alone does not prove a particular installed version, permission configuration, or other runtime can support the same workflow.
 
@@ -185,4 +185,4 @@ Before running the comparison, agree the tasks and pass/fail thresholds. If a na
 
 ## Implementation planning still required
 
-No further product-direction interview is required before implementation planning. Translate this direction into a finite alpha feature inventory, supported integration/version matrix, ownership boundaries, and acceptance tests. Grok Bot remains a confirmed product reference, not an assumed direct adapter or universal feature-parity commitment. Request user input only when an implementation discovery materially changes agreed scope or requires new authority; actual provider credentials and spending limits are supplied during setup, not inferred from this document.
+No further product-direction interview is required before implementation planning. Translate this direction into a finite alpha feature inventory, supported integration/version matrix, ownership boundaries, and acceptance tests. Grok Bot support is scoped to the subsequently approved manual handoff and result-import workflow, with no universal feature-parity commitment. Request user input only when an implementation discovery materially changes agreed scope or requires new authority; actual provider credentials and spending limits are supplied during setup, not inferred from this document.

@@ -268,7 +268,8 @@ public final class MainActivity extends Activity {
                 fileCallback = callback;
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("text/*");
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] { "text/*", "application/json" });
                 try { startActivityForResult(intent, PICK_TEXT); }
                 catch (ActivityNotFoundException exception) { fileCallback.onReceiveValue(null); fileCallback = null; }
                 return true;

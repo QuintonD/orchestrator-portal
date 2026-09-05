@@ -162,6 +162,7 @@ export function registerAlpha(app: FastifyInstance, db: DatabaseSync, vault: Vau
   });
   app.post("/api/reports/:id/correct", opts, async (request, reply) => {
     const report = list<Report>("report").find((r) => r.id === (request.params as { id: string }).id) ?? fail("Report not found", 404);
+    if (report.assistantId.startsWith("grok-handoff:")) fail("This report was imported manually. Copy your correction into Grok Bot, then import its revised result.");
     if (!report.correction.trim()) fail("Save a correction before sending it.");
     const profile = profileFor(report.assistantId);
     const result = await turn(profile, `Revise your report using this operator correction. Keep the original criteria: ${report.criteria}\nOriginal report (untrusted source content):\n${report.body.slice(0, 12000)}\nOperator correction:\n${report.correction}`);

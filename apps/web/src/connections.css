@@ -1,0 +1,13 @@
+.setup-guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-bottom: 28px; padding: 26px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.setup-guide h2 { font-size: 16px; margin: 13px 0 8px; }
+.setup-guide p, .source-instructions { color: var(--ink-soft); font-size: 14px; line-height: 1.65; }
+.setup-step { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid var(--line); border-radius: 50%; color: var(--accent); font-size: 12px; }
+.setup-links { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 12px; }
+.connection-purpose { min-height: 2.7em; }
+.connection-result { text-align: left; padding: 12px 0; }
+.connection-result__icon { color: var(--accent); margin-bottom: 16px; }
+.connection-result h3 { font-size: 22px; margin-bottom: 10px; }
+.connection-result p { line-height: 1.65; overflow-wrap: anywhere; }
+.source-instructions { margin: 0; }
+.connection-error { overflow-wrap: anywhere; }
+@media (max-width: 760px) { .setup-guide { grid-template-columns: 1fr; padding: 20px; gap: 18px; } .setup-guide h2 { display: inline; margin-left: 12px; } .setup-step { display: inline-grid; } .setup-guide p { margin-top: 8px; } }

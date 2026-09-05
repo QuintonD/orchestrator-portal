@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 test("overview preserves signal hierarchy", async ({ page }) => {
   await page.goto("/");
@@ -34,7 +34,7 @@ test("secondary surfaces and dark appearance render", async ({ page }, testInfo)
   await expect(page.getByText(/Sample workspace:/)).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "docs/assets/assistant-dark.png" });
   await page.goto("/connections");
-  await expect(page.getByText("Adapter layer")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible();
   await page.screenshot({ path: "test-results/visual-connections-dark.png", fullPage: true });
 });
 
