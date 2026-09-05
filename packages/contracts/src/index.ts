@@ -24,6 +24,9 @@ export const connectorKindSchema = z.enum([
   "openclaw-cli",
   "generic-webhook",
   "markdown-directory",
+  "hermes-api",
+  "gbrain-cli",
+  "t3-workspace",
 ]);
 export type ConnectorKind = z.infer<typeof connectorKindSchema>;
 
@@ -40,6 +43,7 @@ export const connectorSchema = z.object({
 export type Connector = z.infer<typeof connectorSchema>;
 
 export const receiptStateSchema = z.enum([
+  "claimed",
   "accepted",
   "committed",
   "observed",
@@ -148,3 +152,42 @@ export const insightPointSchema = z.object({
   latencyMs: z.number(),
 });
 export type InsightPoint = z.infer<typeof insightPointSchema>;
+
+export const assistantProfileSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  purpose: z.string().trim().min(10).max(2000),
+  connectorId: z.string().min(1),
+  cadence: z.enum(["manual", "daily", "weekly"]),
+  providerPolicy: z.enum(["subscription", "local", "metered"]),
+  spendingLimit: z.number().min(0).max(1000).default(0),
+  scope: z.array(z.string().min(1)).max(20).default([]),
+  criteria: z.string().trim().min(5).max(1000),
+  runtimePolicyConfirmed: z.boolean(),
+}).strict();
+export type AssistantProfileInput = z.infer<typeof assistantProfileSchema>;
+export type AssistantProfile = AssistantProfileInput & {
+  id: string; state: "ready" | "paused" | "running" | "unknown";
+  lastRunAt: string | null; nextExpectedAt: string | null; createdAt: string;
+};
+export const councilRequestSchema = z.object({
+  question: z.string().trim().min(10).max(4000),
+  assistantIds: z.array(z.string()).min(2).max(3).refine((ids) => new Set(ids).size === ids.length, "Choose distinct assistants"),
+  shareContext: z.literal(true),
+}).strict();
+export interface Report {
+  id: string; assistantId: string; title: string; body: string;
+  state: ReceiptState; criteria: string; createdAt: string;
+  review: "unreviewed" | "useful" | "needs-work" | "disputed";
+  correction: string; source: string;
+}
+export interface Council {
+  id: string; question: string; state: string; createdAt: string;
+  contributions: Array<{ assistantId: string; name: string; body: string; state: ReceiptState }>;
+  synthesis: string;
+}
+export const watchInputSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  query: z.string().trim().min(1).max(200),
+  enabled: z.boolean().default(true),
+}).strict();
+export type Watch = z.infer<typeof watchInputSchema> & { id: string };

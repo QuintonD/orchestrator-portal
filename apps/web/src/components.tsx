@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
   Bell,
@@ -17,15 +17,23 @@ import {
   Settings2,
   Sun,
   X,
+  UsersRound,
+  Orbit,
+  FileCheck2,
+  Activity,
 } from "lucide-react";
 import { cx } from "./lib.js";
 
 export const routes = [
-  { path: "/", label: "Overview", icon: Gauge },
+  { path: "/", label: "Portal", icon: Gauge },
   { path: "/assistant", label: "Assistant", icon: MessageCircle },
   { path: "/work", label: "Work", icon: ListTodo },
+  { path: "/agents", label: "Assistants", icon: UsersRound },
+  { path: "/reports", label: "Reports", icon: FileCheck2 },
+  { path: "/councils", label: "Councils", icon: Orbit },
+  { path: "/activity", label: "Activity", icon: Activity },
   { path: "/attention", label: "Attention", icon: AlertCircle },
-  { path: "/brain", label: "Brain", icon: BrainCircuit },
+  { path: "/brain", label: "Knowledge", icon: BrainCircuit },
   { path: "/insights", label: "Insights", icon: ChartNoAxesCombined },
   { path: "/connections", label: "Connections", icon: Cable },
   { path: "/settings", label: "Settings", icon: Settings2 },
@@ -58,6 +66,14 @@ export function AppShell({
   attentionCount: number;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const drawerRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = drawerRef.current;
+    drawer?.showModal();
+    return () => { drawer?.close(); previous?.focus(); };
+  }, [mobileOpen]);
   function go(path: string) { setMobileOpen(false); navigate(path); }
   return (
     <div className="shell">
@@ -67,7 +83,7 @@ export function AppShell({
           {routes.map((item) => {
             const active = route === item.path;
             return (
-              <button key={item.path} className={cx("nav-item", active && "is-active")} onClick={() => navigate(item.path)} aria-current={active ? "page" : undefined}>
+              <button key={item.path} title={item.label} aria-label={item.label} className={cx("nav-item", active && "is-active")} onClick={() => navigate(item.path)} aria-current={active ? "page" : undefined}>
                 <item.icon size={18} strokeWidth={active ? 2.2 : 1.8} />
                 <span>{item.label}</span>
                 {item.path === "/attention" && attentionCount > 0 && <span className="nav-count">{attentionCount}</span>}
@@ -76,7 +92,7 @@ export function AppShell({
           })}
         </nav>
         <div className="sidebar__footer">
-          <div className="system-state"><span className="pulse-dot" /> Assistant online</div>
+          <div className="system-state">Local workspace</div>
           <button className="profile-button" onClick={() => navigate("/settings")}>
             <span className="avatar">{displayName.slice(0, 1).toUpperCase()}</span>
             <span><strong>{displayName}</strong><small>Private workspace</small></span>
@@ -88,7 +104,8 @@ export function AppShell({
       <main className="main">
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
-          <button className="command-search" onClick={() => navigate("/brain")}><Search size={17} /><span>Search your brain</span><kbd>⌘ K</kbd></button>
+          <div className="workspace-label"><b>ORCHESTRATOR</b><span> / </span> {routes.find((item) => item.path === route)?.label}</div>
+          <button className="command-search" onClick={() => navigate("/brain")}><Search size={17} /><span>Search knowledge</span></button>
           <div className="topbar__actions">
             <button className="icon-button" aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
@@ -107,13 +124,13 @@ export function AppShell({
           return <button key={item.path} className={cx(active && "is-active")} onClick={() => navigate(item.path)}><item.icon size={21} /><span>{item.label}</span></button>;
         })}
       </nav>
-      {mobileOpen && <div className="mobile-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
+      {mobileOpen && <dialog ref={drawerRef} aria-label="Navigation" className="mobile-drawer-backdrop" onCancel={() => setMobileOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
         <aside className="mobile-drawer" aria-label="All navigation">
           <div className="mobile-drawer__head"><Mark /><button className="icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={18} /></button></div>
           <nav>{routes.map((item) => <button key={item.path} className={cx(route === item.path && "is-active")} onClick={() => go(item.path)}><item.icon size={19} /><span>{item.label}</span>{item.path === "/attention" && attentionCount > 0 && <span className="nav-count">{attentionCount}</span>}</button>)}</nav>
-          <div className="mobile-drawer__state"><span className="pulse-dot" /> Assistant online</div>
+          <div className="mobile-drawer__state">Local workspace</div>
         </aside>
-      </div>}
+      </dialog>}
     </div>
   );
 }

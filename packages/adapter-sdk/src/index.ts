@@ -11,6 +11,7 @@ export interface AdapterContext {
   connectorId: string;
   config: Record<string, unknown>;
   signal?: AbortSignal;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 export interface SendResult {

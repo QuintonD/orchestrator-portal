@@ -12,6 +12,9 @@
     "packages/*"
   ],
   "scripts": {
+    "android:build": "node scripts/android-build.mjs",
+    "test:android": "node tests/android/qa.mjs",
+    "test:android:release": "node tests/android/release.mjs",
     "build": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run build -w @orchestrator/web && npm run build -w @orchestrator/server",
     "check": "npm run typecheck && npm run test",
     "dev": "concurrently -k -n api,web -c blue,magenta \"npm run dev -w @orchestrator/server\" \"npm run dev -w @orchestrator/web\"",

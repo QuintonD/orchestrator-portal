@@ -36,7 +36,7 @@ describe("portal server", () => {
     const app = await testApp(true);
     const response = await app.inject({ method: "POST", url: "/api/messages", payload: { connectorId: "demo", body: "What is my priority?" } });
     expect(response.statusCode).toBe(201);
-    expect(response.json().message.state).toBe("verified");
+    expect(response.json().message.state).toBe("claimed");
     expect(response.json().reply.body).toContain("launch positioning");
   });
 

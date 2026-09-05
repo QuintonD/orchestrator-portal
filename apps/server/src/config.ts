@@ -19,7 +19,7 @@ export function loadConfig(): AppConfig {
   const host = process.env.ORCHESTRATOR_HOST ?? "127.0.0.1";
   const port = Number.parseInt(process.env.ORCHESTRATOR_PORT ?? "4400", 10);
   const demo = process.env.ORCHESTRATOR_DEMO === "1";
-  const dataDir = path.resolve(process.env.ORCHESTRATOR_DATA_DIR ?? "./data");
+  const dataDir = path.resolve(process.env.ORCHESTRATOR_DATA_DIR ?? (demo ? "./data/demo" : "./data"));
   const isLoopback = loopbackNames.has(host) || (isIP(host) === 4 && host.startsWith("127."));
   const defaults = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
   if (process.env.NODE_ENV === "development") defaults.push("http://127.0.0.1:5173", "http://localhost:5173");
