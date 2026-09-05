@@ -41,7 +41,7 @@ export function App() {
   const navigate = useCallback((path: string) => {
     if (path !== window.location.pathname) history.pushState(null, "", path);
     setRoute(path.split("?")[0] ?? "/");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
   const notify = useCallback((message: string, tone: ToastState["tone"] = "neutral") => {
@@ -113,7 +113,7 @@ function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthent
           <div className="auth-panel__icon"><LockKeyhole size={22} /></div>
           <p className="eyebrow">{setup ? "Private setup" : "Welcome back"}</p>
           <h2>{setup ? "Create your workspace" : "Unlock Orchestrator"}</h2>
-          <p>{setup ? "This passphrase protects the portal. It never leaves this server." : "Enter your workspace passphrase to continue."}</p>
+          <p>{setup ? "This passphrase protects the portal. Your gateway stores a password hash." : "Enter your workspace passphrase to continue."}</p>
           {setup && <label><span>Your name</span><input autoFocus autoComplete="name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="How should we address you?" required /></label>}
           <label><span>Passphrase</span><input autoFocus={!setup} type="password" autoComplete={setup ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={setup ? "At least 12 characters" : "Your passphrase"} minLength={setup ? 12 : 1} required /></label>
           {error && <div className="form-error">{error}</div>}

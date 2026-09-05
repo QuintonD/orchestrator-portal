@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
   Bell,
@@ -66,6 +66,14 @@ export function AppShell({
   attentionCount: number;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const drawerRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = drawerRef.current;
+    drawer?.showModal();
+    return () => { drawer?.close(); previous?.focus(); };
+  }, [mobileOpen]);
   function go(path: string) { setMobileOpen(false); navigate(path); }
   return (
     <div className="shell">
@@ -96,7 +104,7 @@ export function AppShell({
       <main className="main">
         <header className="topbar">
           <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
-          <div className="workspace-label">ORCHESTRATOR <span> / </span> {routes.find((item) => item.path === route)?.label}</div>
+          <div className="workspace-label"><b>ORCHESTRATOR</b><span> / </span> {routes.find((item) => item.path === route)?.label}</div>
           <button className="command-search" onClick={() => navigate("/brain")}><Search size={17} /><span>Search knowledge</span></button>
           <div className="topbar__actions">
             <button className="icon-button" aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -116,13 +124,13 @@ export function AppShell({
           return <button key={item.path} className={cx(active && "is-active")} onClick={() => navigate(item.path)}><item.icon size={21} /><span>{item.label}</span></button>;
         })}
       </nav>
-      {mobileOpen && <div className="mobile-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
+      {mobileOpen && <dialog ref={drawerRef} aria-label="Navigation" className="mobile-drawer-backdrop" onCancel={() => setMobileOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>
         <aside className="mobile-drawer" aria-label="All navigation">
           <div className="mobile-drawer__head"><Mark /><button className="icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={18} /></button></div>
           <nav>{routes.map((item) => <button key={item.path} className={cx(route === item.path && "is-active")} onClick={() => go(item.path)}><item.icon size={19} /><span>{item.label}</span>{item.path === "/attention" && attentionCount > 0 && <span className="nav-count">{attentionCount}</span>}</button>)}</nav>
           <div className="mobile-drawer__state">Local workspace</div>
         </aside>
-      </div>}
+      </dialog>}
     </div>
   );
 }

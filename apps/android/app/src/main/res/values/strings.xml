@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Orchestrator Alpha</string>
+    <string name="checking_gateway">Checking gateway…</string>
+</resources>

@@ -4,6 +4,8 @@ Orchestrator is a private, local-first portal to your assistants and their work.
 
 See the [alpha guide](docs/alpha.md) for supported journeys, integration validation, and remaining scope. Source runtimes retain execution authority.
 
+For phone testing, install the signed [Android alpha](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.1) and follow the [Android setup guide](docs/android.md). The app connects to your computer's gateway over USB or private HTTPS.
+
 The portal is deliberately **not** another agent runtime or knowledge store. OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator connects to them through capability-based adapters and records exactly what was accepted, committed, observed, or independently verified.
 
 ![Orchestrator overview](docs/assets/overview-light.png)
