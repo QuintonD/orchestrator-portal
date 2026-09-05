@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test("overview preserves signal hierarchy", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening)/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Portal", exact: true })).toBeVisible();
   await expect(page.getByText("Assistant brief")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Project health" })).toBeVisible();
-  await expect(page.getByText("Launch copy needs your decision")).toBeVisible();
+  await expect(page.getByText("Launch copy needs your decision").first()).toBeVisible();
 });
 
 test("operator can message the assistant", async ({ page }) => {
@@ -14,7 +14,7 @@ test("operator can message the assistant", async ({ page }) => {
   expect(response.ok()).toBe(true);
   const result = await response.json();
   expect(result.reply.body).toMatch(/launch positioning is the only decision/i);
-  expect(result.reply.state).toBe("verified");
+  expect(result.reply.state).toBe("claimed");
 });
 
 test("desktop visual surface has no overflow", async ({ page }, testInfo) => {
@@ -31,7 +31,7 @@ test("secondary surfaces and dark appearance render", async ({ page }, testInfo)
   await page.addInitScript(() => localStorage.setItem("orchestrator-theme", "dark"));
   await page.goto("/assistant");
   await expect(page.getByText("Direct channel")).toBeVisible();
-  await expect(page.getByText(/I cleared 14 routine items overnight/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Sample workspace:/)).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "docs/assets/assistant-dark.png" });
   await page.goto("/connections");
   await expect(page.getByText("Adapter layer")).toBeVisible();
@@ -56,6 +56,6 @@ test("mobile navigation keeps the core views reachable", async ({ page }, testIn
   await expect(page.getByRole("complementary", { name: "All navigation" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "All navigation" }).getByText("Settings")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
-  await navigation.getByText("Assistant").click();
+  await navigation.getByText("Assistant", { exact: true }).click();
   await expect(page.getByRole("heading", { name: "Assistant" })).toBeVisible();
 });

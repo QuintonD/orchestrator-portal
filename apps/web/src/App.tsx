@@ -3,6 +3,7 @@ import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "./lib.js";
 import { AppShell, Mark, Toast, routes } from "./components.js";
 import { AssistantPage, AttentionPage, BrainPage, ConnectionsPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
+import { AgentsPage, ReportsPage, CouncilsPage, ActivityPage, AccessPanel } from "./alpha-pages.js";
 
 interface AuthStatus {
   mode: "demo" | "private";
@@ -19,6 +20,7 @@ function currentPath(): string {
 
 export function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [authError, setAuthError] = useState(false);
   const [route, setRoute] = useState(currentPath);
   const [theme, setThemeState] = useState<"light" | "dark">(() => (localStorage.getItem("orchestrator-theme") as "light" | "dark") ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
   const [attentionCount, setAttentionCount] = useState(0);
@@ -30,7 +32,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuth({ mode: "private", authenticated: false, setupRequired: false, user: null }));
+    api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuthError(true));
     const onPop = () => setRoute(currentPath());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -38,7 +40,7 @@ export function App() {
 
   const navigate = useCallback((path: string) => {
     if (path !== window.location.pathname) history.pushState(null, "", path);
-    setRoute(path);
+    setRoute(path.split("?")[0] ?? "/");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -47,22 +49,28 @@ export function App() {
     window.setTimeout(() => setToast((current) => current?.message === message ? null : current), 4_500);
   }, []);
 
+  if (authError) return <div className="boot-screen"><Mark /><p>The portal gateway is unavailable.</p><button className="button button--secondary" onClick={() => { setAuthError(false); api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuthError(true)); }}>Retry connection</button></div>;
   if (!auth) return <div className="boot-screen"><Mark /><span className="loading-orbit" /></div>;
   if (!auth.authenticated) return <AuthScreen status={auth} onAuthenticated={() => api<AuthStatus>("/api/auth/status").then(setAuth)} />;
 
   const pageProps = { notify };
   const page = route === "/assistant" ? <AssistantPage {...pageProps} />
+    : route === "/agents" ? <AgentsPage {...pageProps} navigate={navigate} />
+    : route === "/reports" ? <ReportsPage {...pageProps} />
+    : route === "/councils" ? <CouncilsPage {...pageProps} />
+    : route === "/activity" ? <ActivityPage {...pageProps} />
     : route === "/work" ? <WorkPage {...pageProps} />
       : route === "/attention" ? <AttentionPage {...pageProps} onCountChange={setAttentionCount} />
         : route === "/brain" ? <BrainPage {...pageProps} />
           : route === "/insights" ? <InsightsPage {...pageProps} />
             : route === "/connections" ? <ConnectionsPage {...pageProps} />
-              : route === "/settings" ? <SettingsPage {...pageProps} auth={auth} onSignedOut={() => setAuth({ ...auth, authenticated: false, user: null })} />
+              : route === "/settings" ? <><SettingsPage {...pageProps} auth={auth} onSignedOut={() => setAuth({ ...auth, authenticated: false, user: null })} /><AccessPanel {...pageProps} /></>
                 : <OverviewPage {...pageProps} displayName={auth.user?.displayName ?? "Operator"} navigate={navigate} onAttentionCount={setAttentionCount} />;
 
   return (
     <>
       <AppShell route={route} navigate={navigate} displayName={auth.user?.displayName ?? "Operator"} theme={theme} setTheme={setThemeState} attentionCount={attentionCount}>
+        {auth.mode === "demo" && <div className="demo-banner">EXPLORATION MODE <span>Synthetic workspace · no external work is performed</span></div>}
         {page}
       </AppShell>
       {toast && <Toast {...toast} dismiss={() => setToast(null)} />}
@@ -98,7 +106,7 @@ function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthent
           <h1>See what matters.<br /><span>Delegate the rest.</span></h1>
           <p>A private command centre for conversations, active work, decisions, knowledge, and outcomes—without living in a chat feed.</p>
         </div>
-        <div className="trust-row"><span><ShieldCheck size={17} /> Local-first</span><span><LockKeyhole size={17} /> Encrypted at rest</span></div>
+        <div className="trust-row"><span><ShieldCheck size={17} /> Local-first</span><span><LockKeyhole size={17} /> Encrypted secrets</span></div>
       </section>
       <section className="auth-panel">
         <form onSubmit={submit}>

@@ -1,8 +1,10 @@
 # Orchestrator
 
-Orchestrator is a private, local-first command centre for your AI assistant. It replaces the chat-feed view of an assistant with a calmer operating surface for conversations, active work, recurring tasks, decisions, knowledge, cost, project health, and verified outcomes.
+Orchestrator is a private, local-first portal to your assistants and their work. The alpha brings together assistant setup, conversations, project oversight, reports, councils, knowledge, and source-linked activity in a calm monochrome workspace.
 
-The portal is deliberately **not** another agent runtime or knowledge store. OpenClaw, custom harnesses, Markdown vaults, and future providers remain authoritative. Orchestrator connects to them through capability-based adapters and records exactly what was accepted, committed, observed, or independently verified.
+See the [alpha guide](docs/alpha.md) for supported journeys, integration validation, and remaining scope. Source runtimes retain execution authority.
+
+The portal is deliberately **not** another agent runtime or knowledge store. OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator connects to them through capability-based adapters and records exactly what was accepted, committed, observed, or independently verified.
 
 ![Orchestrator overview](docs/assets/overview-light.png)
 
@@ -10,10 +12,16 @@ The portal is deliberately **not** another agent runtime or knowledge store. Ope
 
 - A responsive, installable React interface with light and dark themes
 - A customizable overview designed around exceptions and outcomes
-- Direct assistant messaging with explicit delivery receipts
+- Assistant profiles with purpose, success criteria, provider mandates, and dispatch pause
+- Reviewable reports, preserved revisions, and targeted corrections
+- Bounded councils with independent assessments and a lead synthesis
+- Persistent activity watches and scoped, revocable knowledge grants
+- Direct assistant messaging with text attachments and explicit delivery receipts
 - Project, routine, attention, usage, mail-summary, and provider-health views
 - Full-text search over opt-in Markdown directories
-- Built-in OpenClaw CLI, generic webhook, and Markdown directory adapters
+- OpenClaw CLI, Hermes API, generic webhook, Markdown, and experimental gbrain adapters
+- Source-owned OpenClaw recurring briefs and deduplicated report import
+- An editable context handoff to an independent T3 Code workspace
 - An adapter SDK and stable shared contracts for other runtimes and knowledge stores
 - Encrypted connector secrets and message content in a local SQLite database
 - Passphrase authentication, HttpOnly sessions, CSRF protection, strict origins, CSP, rate limits, and an audit trail
@@ -54,10 +62,10 @@ Demo mode is intentionally refused on non-loopback interfaces.
 | --- | --- | --- |
 | Orchestrator portal | Interaction, normalized signal, receipts, attention policy, layouts, audit | This project |
 | Runtime adapter | Turns, task state, schedules, runtime health | OpenClaw CLI, webhook |
-| Knowledge adapter | Search and source references | Markdown directory, future gbrain adapter |
+| Knowledge adapter | Search and source references | Markdown directory, gbrain CLI |
 | Source system | Execution and source-of-truth policy | OpenClaw, custom agents, calendars, mail |
 
-Orchestrator never treats a provider claim as stronger evidence than it is. `accepted`, `committed`, `observed`, and `verified` are different states throughout the API and interface.
+Assistant responses remain `claimed`; an ambiguous timeout is `unknown`. Source events preserve their reported states and evidence. A useful rating does not establish independent verification. The alpha has no general-purpose independent verifier.
 
 ## Connecting OpenClaw
 
@@ -100,6 +108,8 @@ The repository is an npm-workspaces monorepo:
 
 ## Documentation
 
+- [Product direction and prototype refinement proposal](docs/product-direction.md)
+- [Shared product vocabulary](CONTEXT.md)
 - [Architecture and evidence model](docs/architecture.md)
 - [Adapter authoring](docs/adapters.md)
 - [Security and privacy model](docs/security.md)

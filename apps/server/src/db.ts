@@ -10,8 +10,8 @@ export const defaultDashboard: DashboardLayout = {
     { id: "daily-brief", visible: true, size: "wide" },
     { id: "projects", visible: true, size: "wide" },
     { id: "recurring", visible: true, size: "wide" },
-    { id: "usage", visible: true, size: "wide" },
-    { id: "mail", visible: true, size: "compact" },
+    { id: "usage", visible: false, size: "wide" },
+    { id: "mail", visible: false, size: "compact" },
     { id: "providers", visible: true, size: "compact" },
   ],
 };
@@ -133,9 +133,9 @@ export function seedDemo(db: DatabaseSync, seal: (value: unknown) => string): vo
     metricInsert.run(date, Math.round(780_000 + wave * 240_000 + (13 - days) * 18_000), 3.8 + wave * 0.9, 19 + ((13 - days) % 7), days % 6 === 0 ? 2 : 0, Math.round(820 + wave * 180));
   }
   const messages: Array<[string, string, string, string, string]> = [
-    ["msg-1", "assistant", "Good morning. I cleared 14 routine items overnight. There are two decisions worth your attention; the launch copy is the only time-sensitive one.", "verified", iso(-7)],
+    ["msg-1", "assistant", "Sample workspace: the launch copy needs a decision. I can help you explore the portal using synthetic project data. No external work is performed in demo mode.", "claimed", iso(-7)],
     ["msg-2", "user", "What should I focus on first?", "accepted", iso(-6.8)],
-    ["msg-3", "assistant", "Choose the launch positioning, then review Thursday's calendar conflict. I can handle the remaining inbox and project follow-ups without you.", "verified", iso(-6.7)],
+    ["msg-3", "assistant", "In this sample, choose the launch positioning, then review Thursday's calendar conflict. Connect a real runtime to request actual work.", "claimed", iso(-6.7)],
   ];
   const messageInsert = db.prepare("INSERT INTO messages VALUES (?,?,?,?,?,?,?)");
   for (const [id, role, body, state, createdAt] of messages) messageInsert.run(id, "demo", role, seal(body), state, null, createdAt);

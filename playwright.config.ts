@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 2,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:4400",
+    baseURL: "http://127.0.0.1:4411",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -16,9 +16,9 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "cross-env ORCHESTRATOR_DEMO=1 ORCHESTRATOR_DATA_DIR=./test-results/e2e-data npm start",
-    url: "http://127.0.0.1:4400/healthz",
-    reuseExistingServer: !process.env.CI,
+    command: `cross-env ORCHESTRATOR_DEMO=1 ORCHESTRATOR_PORT=4411 ORCHESTRATOR_DATA_DIR=./test-results/e2e-${Date.now()} npm start`,
+    url: "http://127.0.0.1:4411/healthz",
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

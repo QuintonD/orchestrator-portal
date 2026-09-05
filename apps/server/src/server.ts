@@ -21,13 +21,12 @@ import { loadConfig, type AppConfig } from "./config.js";
 import { Vault, hashPassword, randomToken, tokenHash, verifyPassword } from "./crypto.js";
 import { audit, createDatabase, defaultDashboard, seedDemo } from "./db.js";
 import { createSession, readSession, requireAuth, sessionCookie } from "./auth.js";
-import { publicAdapterCatalog, runtimeAdapters } from "./adapters.js";
+import { publicAdapterCatalog, runtimeAdapters, searchGbrain } from "./adapters.js";
 import { ftsQuery, indexDirectory } from "./knowledge.js";
+import { registerAlpha } from "./alpha.js";
 
 const version = "0.1.0";
 const csrfCookie = "orchestrator_csrf";
-const events = new EventEmitter();
-events.setMaxListeners(500);
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
@@ -56,6 +55,8 @@ function mapConnector(row: Record<string, unknown>): Connector {
 }
 
 export async function createApp(overrides: Partial<AppConfig> = {}): Promise<FastifyInstance> {
+  const events = new EventEmitter();
+  events.setMaxListeners(500);
   const config = { ...loadConfig(), ...overrides };
   const db = createDatabase(config.dataDir);
   const vault = new Vault(config.dataDir, process.env.ORCHESTRATOR_MASTER_KEY);
@@ -110,7 +111,10 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
     const count = db.prepare("SELECT COUNT(*) AS count FROM users").get() as { count: number };
     if (count.count > 0) return reply.code(409).send({ error: "Setup is already complete" });
     const userId = crypto.randomUUID();
-    db.prepare("INSERT INTO users VALUES (?,?,?,?)").run(userId, body.displayName, await hashPassword(body.password), new Date().toISOString());
+    const passwordHash = await hashPassword(body.password);
+    const latest = db.prepare("SELECT COUNT(*) AS count FROM users").get() as { count: number };
+    if (latest.count > 0) return reply.code(409).send({ error: "Setup is already complete" });
+    db.prepare("INSERT INTO users VALUES (?,?,?,?)").run(userId, body.displayName, passwordHash, new Date().toISOString());
     db.prepare("INSERT INTO dashboard_layouts VALUES (?,?,?)").run(userId, JSON.stringify(defaultDashboard), new Date().toISOString());
     const session = createSession(db, userId);
     setAuthCookies(reply, session.token, session.csrf, session.expiresAt, request.protocol === "https");
@@ -145,6 +149,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   });
 
   const authenticated = requireAuth(db, config.demo);
+  registerAlpha(app, db, vault, authenticated, config.demo);
 
   app.post("/api/auth/logout", { preHandler: authenticated }, async (request, reply) => {
     const token = request.cookies[sessionCookie];
@@ -163,7 +168,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
     const previousMetric = db.prepare("SELECT * FROM metrics_daily ORDER BY date DESC LIMIT 1 OFFSET 1").get();
     const mailEvent = db.prepare("SELECT metadata_json FROM events WHERE kind = 'mail.summary' ORDER BY occurred_at DESC LIMIT 1").get() as { metadata_json: string } | undefined;
     const layoutRow = db.prepare("SELECT config_json FROM dashboard_layouts WHERE user_id = ?").get(request.principal?.userId ?? "demo-user") as { config_json: string } | undefined;
-    const running = db.prepare("SELECT COUNT(*) AS count FROM events WHERE kind LIKE 'work.%' AND status IN ('running','observed') AND occurred_at > ?").get(new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()) as { count: number };
+    const running = db.prepare("SELECT COUNT(*) AS count FROM events WHERE kind = 'work.running' AND occurred_at > ?").get(new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()) as { count: number };
     return {
       attention: attention.map(mapAttention),
       projects: projects.map(mapProject),
@@ -174,7 +179,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
       previousMetric: mapMetric(previousMetric as Record<string, unknown> | undefined),
       activeWork: running.count,
       mail: mapMailSummary(mailEvent?.metadata_json),
-      brief: buildBrief(attention.length, running.count, projects as Array<Record<string, unknown>>),
+      brief: connectors.length === 0 ? { tone: "unknown", headline: "Your workspace is ready", detail: "Connect your first assistant to see work, decisions, and results here." } : connectors.some((c) => c.status !== "connected" || !c.lastSyncAt || Date.now() - Date.parse(c.lastSyncAt) > 900000) ? { tone: "unknown", headline: "Part of the picture needs an update", detail: "Some sources are unavailable or were last checked over 15 minutes ago. Sync connections before relying on this summary." } : buildBrief(attention.length, running.count, projects as Array<Record<string, unknown>>),
       layout: layoutRow ? parseJson(layoutRow.config_json) : defaultDashboard,
     };
   });
@@ -203,6 +208,8 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   });
 
   app.post("/api/messages", { preHandler: authenticated, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const dispatch = db.prepare("SELECT payload FROM alpha_records WHERE id='dispatch'").get() as { payload: string } | undefined;
+    if (dispatch && vault.open<{ paused: boolean }>(dispatch.payload).paused) return reply.code(409).send({ error: "Portal dispatch is paused. Resume it in Assistants before sending another request." });
     const body = parseOrReply(sendMessageSchema, request.body, reply);
     if (!body) return;
     const connectorRow = db.prepare("SELECT * FROM connectors WHERE id = ?").get(body.connectorId) as Record<string, unknown> | undefined;
@@ -214,7 +221,8 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
     insertMessage(db, userMessage, vault);
     events.emit("event", { kind: "message.accepted", message: userMessage });
     try {
-      const result = await adapter.sendMessage({ connectorId: body.connectorId, config: vault.open(String(connectorRow.config_encrypted)) }, body.body, body.sessionKey);
+      const history = db.prepare("SELECT * FROM messages WHERE connector_id=? AND id<>? AND state NOT IN ('unknown','failed') ORDER BY created_at DESC LIMIT 20").all(body.connectorId, userMessage.id).reverse().map((row) => ({ role: row.role as "user" | "assistant", content: vault.open<string>(String(row.body_encrypted)) }));
+      const result = await adapter.sendMessage({ connectorId: body.connectorId, config: vault.open(String(connectorRow.config_encrypted)), history }, body.body, body.sessionKey);
       db.prepare("UPDATE messages SET state = ? WHERE id = ?").run(result.state, userMessage.id);
       const assistantMessage = result.reply ? {
         id: crypto.randomUUID(), connectorId: body.connectorId, role: "assistant" as const, body: result.reply,
@@ -226,9 +234,9 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
       return reply.code(201).send({ message: { ...userMessage, state: result.state }, reply: assistantMessage });
     } catch (error) {
       const detail = safeError(error);
-      db.prepare("UPDATE messages SET state = 'failed' WHERE id = ?").run(userMessage.id);
+      db.prepare("UPDATE messages SET state = 'unknown' WHERE id = ?").run(userMessage.id);
       audit(db, request.principal!.userId, "message.failed", body.connectorId, { correlationId, error: detail });
-      return reply.code(502).send({ error: detail, message: { ...userMessage, state: "failed" } });
+      return reply.code(502).send({ error: "Delivery is uncertain. Inspect the source before retrying.", message: { ...userMessage, state: "unknown" } });
     }
   });
 
@@ -308,16 +316,26 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
       FROM knowledge_fts JOIN knowledge_documents ON knowledge_documents.rowid = knowledge_fts.rowid
       JOIN connectors ON connectors.id = knowledge_documents.connector_id
       WHERE knowledge_fts MATCH ? ORDER BY rank LIMIT ?`).all(match, Math.min(Number(limit) || 12, 50));
-    return { hits: rows.map((row) => {
+    const warnings: string[] = [];
+    const external: Array<{ id: string; title: string; excerpt: string; source: string; uri: string; score: number }> = [];
+    const brains = db.prepare("SELECT id,name FROM connectors WHERE kind='gbrain-cli' AND status='connected'").all();
+    if (brains.length) {
+      try { external.push(...await searchGbrain(q)); }
+      catch { warnings.push("gbrain search is unavailable. Local indexed results are shown; coverage is incomplete."); }
+    }
+    return { warnings, hits: [...rows.map((row) => {
       const item = row as Record<string, unknown>;
       return { id: item.id, title: item.title, uri: item.uri, updatedAt: item.updated_at, source: item.source, excerpt: item.excerpt, score: Math.abs(Number(item.rank)) };
-    }) };
+    }), ...external] };
   });
 
   app.put("/api/dashboard/layout", { preHandler: authenticated }, async (request, reply) => {
     const body = parseOrReply(dashboardLayoutSchema, request.body, reply);
     if (!body) return;
     const userId = request.principal!.userId;
+    const prior = db.prepare("SELECT config_json FROM dashboard_layouts WHERE user_id=?").get(userId) as { config_json: string } | undefined;
+    const revisionId = crypto.randomUUID();
+    db.prepare("INSERT INTO alpha_records VALUES (?,?,?,?)").run(revisionId, "layout-revision", vault.seal({ id: revisionId, userId, layout: prior ? JSON.parse(prior.config_json) : defaultDashboard }), new Date().toISOString());
     db.prepare(`INSERT INTO dashboard_layouts VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET config_json=excluded.config_json,updated_at=excluded.updated_at`).run(userId, JSON.stringify(body), new Date().toISOString());
     return body;
   });
@@ -388,9 +406,11 @@ function insertEvent(db: ReturnType<typeof createDatabase>, event: ReturnType<ty
   const id = event.id ?? crypto.randomUUID();
   const occurredAt = event.occurredAt ?? new Date().toISOString();
   const receivedAt = new Date().toISOString();
-  db.prepare("INSERT OR REPLACE INTO events VALUES (?,?,?,?,?,?,?,?,?,?)").run(id, event.source, event.kind, event.title, event.summary, event.status, occurredAt, receivedAt, event.projectId ?? null, JSON.stringify(event.metadata));
+  const existing = db.prepare("SELECT id FROM events WHERE id=?").get(id);
+  if (existing) return { ...event, id, occurredAt, receivedAt };
+  db.prepare("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)").run(id, event.source, event.kind, event.title, event.summary, event.status, occurredAt, receivedAt, event.projectId ?? null, JSON.stringify(event.metadata));
   applyEventProjection(db, id, event, occurredAt);
-  return { id, ...event, occurredAt, receivedAt };
+  return { ...event, id, occurredAt, receivedAt };
 }
 
 function applyEventProjection(db: ReturnType<typeof createDatabase>, eventId: string, event: ReturnType<typeof portalEventSchema.parse>, occurredAt: string): void {
@@ -475,10 +495,11 @@ function buildBrief(attentionCount: number, activeWork: number, projects: Array<
 }
 
 function validateConnectorConfig(kind: string, config: Record<string, unknown>): void {
-  if (kind === "generic-webhook") {
+  if (["generic-webhook", "hermes-api", "t3-workspace"].includes(kind)) {
     if (typeof config.endpoint !== "string") throw new Error("Webhook endpoint is required");
     const url = new URL(config.endpoint);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Webhook endpoint must be a valid HTTP(S) URL");
+    if (url.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw new Error("Remote connections require HTTPS");
   }
   if (kind === "markdown-directory" && (typeof config.path !== "string" || !config.path.trim())) throw new Error("Directory path is required");
   if (kind === "openclaw-cli" && config.agentId !== undefined && typeof config.agentId !== "string") throw new Error("Agent id must be a string");
@@ -490,6 +511,7 @@ function updateConnectorHealth(db: ReturnType<typeof createDatabase>, id: string
 }
 
 function safeError(error: unknown): string {
+  if (error && typeof error === "object" && ("cmd" in error || "stdout" in error || "stderr" in error)) return "The local command did not complete. Check the runtime installation and source status.";
   if (error instanceof Error) return error.message.replaceAll(/(Bearer|token|password|secret)\s+[A-Za-z0-9._~+/-]+/gi, "$1 [redacted]").slice(0, 600);
   return "The connector did not complete the request";
 }
