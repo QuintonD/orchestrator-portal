@@ -8,7 +8,7 @@ export function nativeControls(getDevice) {
     if (!result.includes("dumped to")) return null;
     const xml = (await device.shell("cat /sdcard/orchestrator-qa.xml")).toString();
     const names = { text: "text", desc: "content-desc", res: "resource-id", clazz: "class" };
-    const decode = value => value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&").replace(/&#10;/g, "\n");
+    const decode = value => value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#10;/g, "\n").replace(/&amp;/g, "&");
     for (const item of xml.matchAll(/<node\s[^>]+/g)) {
       const attributes = Object.fromEntries([...item[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(match => [match[1], decode(match[2])]));
       if (!Object.entries(selector).every(([key, value]) => value instanceof RegExp ? value.test(attributes[names[key]] ?? "") : attributes[names[key]] === value)) continue;
