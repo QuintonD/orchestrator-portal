@@ -1,0 +1,45 @@
+name: Desktop gateway
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Bundle and run (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, target: win32-x64 }
+          - { runner: windows-11-arm, target: win32-arm64 }
+          - { runner: macos-15-intel, target: darwin-x64 }
+          - { runner: macos-15, target: darwin-arm64 }
+          - { runner: ubuntu-24.04, target: linux-x64 }
+          - { runner: ubuntu-24.04-arm, target: linux-arm64 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:test
+      - run: npm run desktop:package -- ${{ matrix.target }}
+      - run: npm run desktop:smoke
+      - uses: actions/upload-artifact@v7
+        with:
+          name: orchestrator-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            dist/desktop/*.zip
+            dist/desktop/*.tar.gz
+            dist/desktop/*.sha256
+            test-results/desktop/results-*.json

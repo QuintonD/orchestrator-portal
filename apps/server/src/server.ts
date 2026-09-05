@@ -23,9 +23,11 @@ import { audit, createDatabase, defaultDashboard, seedDemo } from "./db.js";
 import { createSession, readSession, requireAuth, sessionCookie } from "./auth.js";
 import { publicAdapterCatalog, runtimeAdapters, searchGbrain } from "./adapters.js";
 import { ftsQuery, indexDirectory } from "./knowledge.js";
+import { indexNotion, validateNotionConfig } from "./notion.js";
 import { registerAlpha } from "./alpha.js";
+import { registerGrok } from "./grok.js";
 
-const version = "0.1.0";
+const version = "0.1.0-alpha.2";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {
@@ -56,6 +58,7 @@ function mapConnector(row: Record<string, unknown>): Connector {
 
 export async function createApp(overrides: Partial<AppConfig> = {}): Promise<FastifyInstance> {
   const events = new EventEmitter();
+  const syncingConnectors = new Set<string>();
   events.setMaxListeners(500);
   const config = { ...loadConfig(), ...overrides };
   const db = createDatabase(config.dataDir);
@@ -150,6 +153,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
 
   const authenticated = requireAuth(db, config.demo);
   registerAlpha(app, db, vault, authenticated, config.demo);
+  registerGrok(app, db, vault, authenticated);
 
   app.post("/api/auth/logout", { preHandler: authenticated }, async (request, reply) => {
     const token = request.cookies[sessionCookie];
@@ -242,13 +246,17 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
 
   app.get("/api/connectors", { preHandler: authenticated }, async () => ({
     connectors: db.prepare("SELECT * FROM connectors ORDER BY name").all().map((row) => mapConnector(row as Record<string, unknown>)),
-    catalog: publicAdapterCatalog().concat([{ id: "markdown-directory", displayName: "Markdown directory", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] }]),
+    catalog: publicAdapterCatalog().concat([
+      { id: "markdown-directory", displayName: "Local documents", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] },
+      { id: "obsidian-vault", displayName: "Obsidian vault", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] },
+      { id: "notion", displayName: "Notion pages", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] },
+    ]),
   }));
 
   app.post("/api/connectors", { preHandler: authenticated }, async (request, reply) => {
     const body = parseOrReply(createConnectorSchema, request.body, reply);
     if (!body) return;
-    const capabilities = body.kind === "markdown-directory"
+    const capabilities = ["markdown-directory", "obsidian-vault", "notion"].includes(body.kind)
       ? ["knowledge.search", "knowledge.read", "health.read"]
       : runtimeAdapters.get(body.kind)?.manifest.capabilities;
     if (!capabilities) return reply.code(400).send({ error: "Unsupported connector kind" });
@@ -263,17 +271,20 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
 
   app.post("/api/connectors/:id/sync", { preHandler: authenticated }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (syncingConnectors.has(id)) return reply.code(409).send({ error: "This connection is already being checked. Wait for it to finish." });
     const row = db.prepare("SELECT * FROM connectors WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     if (!row) return reply.code(404).send({ error: "Connector not found" });
+    syncingConnectors.add(id);
     db.prepare("UPDATE connectors SET status = 'syncing', error = NULL, updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
     try {
       const connectorConfig = vault.open<Record<string, unknown>>(String(row.config_encrypted));
-      if (row.kind === "markdown-directory") {
+      if (["markdown-directory", "obsidian-vault", "notion"].includes(String(row.kind))) {
         const configuredPath = typeof connectorConfig.path === "string" ? connectorConfig.path : "";
-        const count = await indexDirectory(db, id, configuredPath);
-        updateConnectorHealth(db, id, "connected", 0, null);
-        audit(db, request.principal!.userId, "connector.sync", id, { documents: count });
-        return { connector: mapConnector(db.prepare("SELECT * FROM connectors WHERE id = ?").get(id) as Record<string, unknown>), imported: { documents: count, events: 0, recurringTasks: 0 } };
+        const result = row.kind === "notion" ? await indexNotion(db, id, connectorConfig)
+          : await indexDirectory(db, id, configuredPath, row.kind === "obsidian-vault" ? "obsidian" : "local");
+        updateConnectorHealth(db, id, result.partial ? "degraded" : "connected", null, result.warnings.length ? result.warnings.join(" ").slice(0, 600) : null);
+        audit(db, request.principal!.userId, "connector.sync", id, { documents: result.indexed, skipped: result.skipped, partial: result.partial });
+        return { connector: mapConnector(db.prepare("SELECT * FROM connectors WHERE id = ?").get(id) as Record<string, unknown>), imported: { documents: result.indexed, events: 0, recurringTasks: 0 }, coverage: result };
       }
       const adapter = runtimeAdapters.get(String(row.kind));
       if (!adapter) return reply.code(409).send({ error: "No runtime adapter is available" });
@@ -293,11 +304,14 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
       const detail = safeError(error);
       updateConnectorHealth(db, id, "degraded", null, detail);
       return reply.code(502).send({ error: detail });
+    } finally {
+      syncingConnectors.delete(id);
     }
   });
 
   app.delete("/api/connectors/:id", { preHandler: authenticated }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (syncingConnectors.has(id)) return reply.code(409).send({ error: "Wait for this connection's check to finish before removing it." });
     if (id === "demo") return reply.code(409).send({ error: "The demo connector cannot be removed" });
     const result = db.prepare("DELETE FROM connectors WHERE id = ?").run(id);
     if (!result.changes) return reply.code(404).send({ error: "Connector not found" });
@@ -501,7 +515,13 @@ function validateConnectorConfig(kind: string, config: Record<string, unknown>):
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Webhook endpoint must be a valid HTTP(S) URL");
     if (url.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw new Error("Remote connections require HTTPS");
   }
-  if (kind === "markdown-directory" && (typeof config.path !== "string" || !config.path.trim())) throw new Error("Directory path is required");
+  if (["markdown-directory", "obsidian-vault"].includes(kind)) {
+    if (typeof config.path !== "string" || !config.path.trim()) throw new Error("Choose a folder on the computer running Orchestrator.");
+    const normalized = config.path.trim().replace(/^"(.*)"$/, "$1");
+    if (!path.isAbsolute(normalized)) throw new Error("Use the full folder path, starting with a drive letter or /.");
+    config.path = normalized;
+  }
+  if (kind === "notion") validateNotionConfig(config);
   if (kind === "openclaw-cli" && config.agentId !== undefined && typeof config.agentId !== "string") throw new Error("Agent id must be a string");
 }
 

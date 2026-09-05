@@ -4,7 +4,9 @@ Orchestrator is a private, local-first portal to your assistants and their work.
 
 See the [alpha guide](docs/alpha.md) for supported journeys, integration validation, and remaining scope. Source runtimes retain execution authority.
 
-For phone testing, install the signed [Android alpha](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.1) and follow the [Android setup guide](docs/android.md). The app connects to your computer's gateway over USB or private HTTPS.
+Start with the [desktop download for Windows, macOS or Linux](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2). It includes everything needed to run the gateway; Node, Git and build commands are not required. Follow the [desktop setup guide](docs/desktop.md).
+
+For phone testing, install the signed Android APK from the same release and follow the [Android setup guide](docs/android.md). The app connects to your computer's gateway over USB or private HTTPS.
 
 The portal is deliberately **not** another agent runtime or knowledge store. OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator connects to them through capability-based adapters and records exactly what was accepted, committed, observed, or independently verified.
 
@@ -20,8 +22,10 @@ The portal is deliberately **not** another agent runtime or knowledge store. Ope
 - Persistent activity watches and scoped, revocable knowledge grants
 - Direct assistant messaging with text attachments and explicit delivery receipts
 - Project, routine, attention, usage, mail-summary, and provider-health views
-- Full-text search over opt-in Markdown directories
-- OpenClaw CLI, Hermes API, generic webhook, Markdown, and experimental gbrain adapters
+- Guided connections with an immediate check and recoverable setup errors
+- Full-text search over selected local documents, Obsidian vaults and Notion pages
+- OpenClaw CLI, Hermes API, generic webhook and experimental gbrain adapters
+- Guided Grok Bot handoffs and previewed manual result imports, preserved as claims
 - Source-owned OpenClaw recurring briefs and deduplicated report import
 - An editable context handoff to an independent T3 Code workspace
 - An adapter SDK and stable shared contracts for other runtimes and knowledge stores
@@ -38,7 +42,17 @@ The assistant channel carries the same operational context and evidence model in
 
 ## Quick start
 
-Requirements: Node.js 24 or newer.
+1. Download and extract the [desktop bundle](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2) for your computer.
+2. Open `Orchestrator.cmd` on Windows, `Orchestrator.command` on macOS, or `./orchestrator` on Linux. Keep the launcher running.
+3. Create your workspace in the browser that opens. In **Connections**, start with a local folder or Obsidian vault; no AI account is needed to search your notes.
+
+For Notion, connect a read-only internal integration and choose individual pages. For Grok Bot, prepare a task, copy it into Grok Bot and import the result after reviewing its preview. See [knowledge setup](docs/knowledge.md) and [Grok Bot handoffs](docs/grok-bot.md).
+
+The portable alpha downloads are unsigned. Workspace data is stored separately from the program, so replacing the extracted program preserves your workspace. [Desktop setup](docs/desktop.md) covers launch warnings, diagnostics, upgrades and commands an agent can use.
+
+### Run from source
+
+Contributors need Node.js 24 or newer and Git:
 
 ```bash
 git clone https://github.com/QuintonD/orchestrator-portal.git
@@ -64,14 +78,14 @@ Demo mode is intentionally refused on non-loopback interfaces.
 | --- | --- | --- |
 | Orchestrator portal | Interaction, normalized signal, receipts, attention policy, layouts, audit | This project |
 | Runtime adapter | Turns, task state, schedules, runtime health | OpenClaw CLI, webhook |
-| Knowledge adapter | Search and source references | Markdown directory, gbrain CLI |
+| Knowledge adapter | Search and source references | Local folders, Obsidian, Notion, gbrain CLI |
 | Source system | Execution and source-of-truth policy | OpenClaw, custom agents, calendars, mail |
 
 Assistant responses remain `claimed`; an ambiguous timeout is `unknown`. Source events preserve their reported states and evidence. A useful rating does not establish independent verification. The alpha has no general-purpose independent verifier.
 
 ## Connecting OpenClaw
 
-Choose **OpenClaw CLI** in Connections. The adapter uses the installed `openclaw` executable and its documented CLI surface:
+Choose **OpenClaw** in Connections. The adapter uses the installed `openclaw` executable and its documented CLI surface:
 
 - `openclaw agent --message ... --json` for assistant turns
 - `openclaw tasks list --json` for background work

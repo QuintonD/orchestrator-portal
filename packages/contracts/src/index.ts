@@ -24,6 +24,8 @@ export const connectorKindSchema = z.enum([
   "openclaw-cli",
   "generic-webhook",
   "markdown-directory",
+  "obsidian-vault",
+  "notion",
   "hermes-api",
   "gbrain-cli",
   "t3-workspace",

@@ -1,0 +1,132 @@
+import { useEffect, useState } from "react";
+import type { Connector } from "@orchestrator/contracts";
+import { ArrowRight, Bot, Check, FileText, LoaderCircle, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { api, relativeTime } from "./lib.js";
+import { Card, PageHeader, Skeleton, StatusPill } from "./components.js";
+import { Dialog } from "./alpha-pages.js";
+import { GrokPanel } from "./grok.js";
+import "./connections.css";
+
+type Notify = (message: string, tone?: "neutral" | "success" | "error") => void;
+type CatalogItem = { id: string; displayName: string; capabilities: string[] };
+type ConnectionData = { connectors: Connector[]; catalog: CatalogItem[] };
+const failure = (error: unknown) => error instanceof Error ? error.message : "The connection could not be checked.";
+const labels: Record<string, string> = {
+  "openclaw-cli": "OpenClaw", "hermes-api": "Hermes", "gbrain-cli": "gbrain",
+  "markdown-directory": "Local documents", "obsidian-vault": "Obsidian", "notion": "Notion",
+  "t3-workspace": "T3 Code", "generic-webhook": "Custom assistant", demo: "Sample workspace",
+};
+const descriptions: Record<string, string> = {
+  "openclaw-cli": "Use an OpenClaw assistant already installed and configured on this computer. Orchestrator uses its existing account and model settings.",
+  "hermes-api": "Connect your running Hermes API server. Its address is shown in your Hermes setup; use a private HTTPS address for another computer.",
+  "gbrain-cli": "Search the knowledge source configured in your installed gbrain command-line app. No notes are copied automatically.",
+  "markdown-directory": "Read a folder on the computer running Orchestrator. Markdown, text and JSON documents are copied into a local search index. Your original files stay unchanged.",
+  "obsidian-vault": "Read Markdown notes from one Obsidian vault on the computer running Orchestrator. Hidden settings, plugins and attachments are excluded. Your notes stay unchanged.",
+  "notion": "Read only the Notion pages you select. Create an internal connection with Read content access, share those pages with it, then paste its secret below. Page text is stored in your local search index.",
+  "t3-workspace": "Check your running T3 Code workspace. Coding handoffs remain editable and run in T3 Code.",
+  "generic-webhook": "Connect an assistant endpoint that accepts the portal's message contract. Use this only when your assistant's setup instructions provide a compatible address.",
+};
+
+export function ConnectionsPage({ notify, navigate }: { notify: Notify; navigate(path: string): void }) {
+  const [data, setData] = useState<ConnectionData | null>(null);
+  const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [syncing, setSyncing] = useState<string[]>([]);
+  const [removing, setRemoving] = useState<Connector | null>(null);
+  async function load() {
+    try { setData(await api<ConnectionData>("/api/connectors")); setError(""); }
+    catch (e) { setError(failure(e)); }
+  }
+  useEffect(() => { void load(); }, []);
+  async function sync(id: string) {
+    setSyncing((current) => [...current, id]);
+    try {
+      const result = await api<{ connector: Connector; imported: { documents?: number } }>(`/api/connectors/${id}/sync`, { method: "POST" });
+      notify(result.connector.status === "connected" ? (result.imported.documents === undefined ? "Connection checked" : `${result.imported.documents} documents indexed`) : "Some content could not be read. Check the connection details.", result.connector.status === "connected" ? "success" : "neutral");
+    } catch (e) { notify(failure(e), "error"); }
+    finally { await load(); setSyncing((current) => current.filter((value) => value !== id)); }
+  }
+  async function remove() {
+    if (!removing) return;
+    try { await api(`/api/connectors/${removing.id}`, { method: "DELETE" }); setRemoving(null); await load(); notify("Connection and local index removed", "success"); }
+    catch (e) { notify(failure(e), "error"); }
+  }
+  return <>
+    <PageHeader eyebrow="Make it yours" title="Connections" detail="Start with one assistant or a folder of notes. Add more when you need them." actions={<button className="button button--primary" disabled={!data} onClick={() => setAdding(true)}><Plus size={16} /> Add connection</button>} />
+    <section className="setup-guide" aria-label="Getting connected">
+      <div><span className="setup-step">1</span><h2>Choose a source</h2><p>Connect an existing assistant, local notes or selected Notion pages. Grok Bot has a separate handoff below.</p></div>
+      <div><span className="setup-step">2</span><h2>Check it works</h2><p>We check each connection when you add it. If something is missing, your setup is saved so you can retry.</p></div>
+      <div><span className="setup-step">3</span><h2>Try something useful</h2><p>Search your notes or give an assistant its first task.</p><div className="setup-links"><button className="text-button" onClick={() => navigate("/brain")}>Search knowledge <ArrowRight size={14} /></button><button className="text-button" onClick={() => navigate("/agents")}>Set up an assistant <ArrowRight size={14} /></button></div></div>
+    </section>
+    <div className="connection-summary"><ShieldCheck size={18} /><div><strong>Your connections stay on this computer</strong><span>Secrets are stored in the local vault. Only content you choose is shared with a connected service.</span></div></div>
+    {error ? <div className="notice" role="alert">{error}<button onClick={load}>Retry</button></div> : !data ? <Skeleton lines={6} /> : data.connectors.length === 0 ? <Card><h2>Ready for your first source</h2><p>You can start with local notes without an AI account.</p><button className="button button--primary" onClick={() => setAdding(true)}>Choose a source <ArrowRight size={16} /></button></Card> : <div className="connections-grid">{data.connectors.map((connector) => <Card key={connector.id} className="connection-card">
+      <div className="connection-card__top"><span className="connection-logo">{connector.capabilities.includes("knowledge.read") ? <FileText size={21} /> : <Bot size={21} />}</span></div>
+      <h2>{connector.name}</h2><p>{labels[connector.kind] ?? connector.kind}</p><StatusPill state={connector.status} />
+      <p className="connection-purpose">{connector.capabilities.includes("message.send") ? "Conversation and assistant tasks" : connector.capabilities.includes("knowledge.search") ? "Read-only knowledge search" : "Workspace availability"}</p>
+      <dl><div><dt>Last checked</dt><dd>{connector.lastSyncAt ? relativeTime(connector.lastSyncAt) : "Not checked yet"}</dd></div></dl>
+      {connector.error && <div className="connection-error" role="status">{connector.error}</div>}
+      <div className="connection-card__actions"><button className="button button--secondary" onClick={() => sync(connector.id)} disabled={syncing.includes(connector.id)}>{syncing.includes(connector.id) ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} {connector.capabilities.includes("knowledge.read") ? "Refresh documents" : "Check connection"}</button>{connector.id !== "demo" && <button className="icon-button icon-button--danger" onClick={() => setRemoving(connector)} aria-label={`Remove ${connector.name}`}><Trash2 size={16} /></button>}</div>
+    </Card>)}</div>}
+    <GrokPanel notify={notify} navigate={navigate} />
+    {adding && <AddConnection catalog={data?.catalog ?? []} close={() => { setAdding(false); void load(); }} changed={load} />}
+    {removing && <Dialog title={`Remove ${removing.name}?`} close={() => setRemoving(null)}><p>The connection and its local search index will be removed. The original source will stay unchanged.</p><div className="dialog-actions"><button className="button button--ghost" onClick={() => setRemoving(null)}>Keep connection</button><button className="button button--danger" onClick={remove}>Remove connection</button></div></Dialog>}
+  </>;
+}
+
+function AddConnection({ catalog, close, changed }: { catalog: CatalogItem[]; close(): void; changed(): Promise<void> }) {
+  const [kind, setKind] = useState("markdown-directory");
+  const [name, setName] = useState("");
+  const [fieldA, setFieldA] = useState("");
+  const [fieldB, setFieldB] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<Connector | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [error, setError] = useState("");
+  const [count, setCount] = useState<number | null>(null);
+  const [consent, setConsent] = useState(false);
+  const local = kind === "markdown-directory" || kind === "obsidian-vault";
+  const knowledge = local || kind === "notion";
+  async function check(connector: Connector) {
+    setError(""); setBusy(true);
+    try {
+      const result = await api<{ connector: Connector; imported: { documents?: number } }>(`/api/connectors/${connector.id}/sync`, { method: "POST" });
+      setCreated(result.connector); setChecked(true); setCount(result.imported.documents ?? null);
+      if (result.connector.status !== "connected") setError(result.connector.error ?? "Some source content could not be read. Review the source and refresh it again.");
+    } catch (e) { setError(failure(e)); }
+    finally { setBusy(false); await changed(); }
+  }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setBusy(true); setError("");
+    const config = kind === "openclaw-cli" ? { agentId: fieldA || "main", sessionKey: fieldB || undefined }
+      : kind === "gbrain-cli" ? {}
+      : kind === "notion" ? { pages: fieldA, token: fieldB }
+      : local ? { path: fieldA }
+      : { endpoint: fieldA, token: fieldB || undefined };
+    try {
+      const connector = await api<Connector>("/api/connectors", { method: "POST", body: JSON.stringify({ name: name.trim() || labels[kind], kind, config }) });
+      setCreated(connector); setFieldB(""); await check(connector);
+    } catch (e) { setError(failure(e)); setBusy(false); }
+  }
+  return <Dialog title="Add connection" close={close}>
+    {created ? <div className="connection-result" aria-live="polite">
+      <div className="connection-result__icon">{busy ? <LoaderCircle className="spin" size={26} /> : checked && !error ? <Check size={26} /> : <RefreshCw size={26} />}</div>
+      <h3>{busy ? "Checking your source…" : checked ? error ? "Your source is ready with limited coverage" : "Your source is ready" : "Connection saved; one more step"}</h3>
+      <p>{created.name}{count !== null ? ` · ${count} documents indexed` : ""}</p>
+      {count === 0 && !error && <p>No supported documents were found. Check that you selected the right folder or pages, then refresh this connection.</p>}
+      {error && <><p className="notice" role="status">{error}</p><p>{checked ? "The readable documents are available in Knowledge. Some content is outside this connection's supported scope or could not be included; refreshing may give the same coverage." : "Your connection is saved. Check the source's installation or access, then retry. To change its address or secret, close this dialog, remove the connection and add it again."}</p></>}
+      {!busy && <div className="dialog-actions">{error && !checked && <button className="button button--secondary" onClick={() => check(created)}>Retry check</button>}<button className="button button--primary" onClick={close}>Done</button></div>}
+    </div> : <form className="alpha-form" onSubmit={submit}>
+      <label>Source<select aria-label="Source" value={kind} onChange={(e) => { setKind(e.target.value); setFieldA(""); setFieldB(""); setConsent(false); setError(""); }}>{catalog.map((item) => <option key={item.id} value={item.id}>{labels[item.id] ?? item.displayName}</option>)}</select></label>
+      <p className="source-instructions">{descriptions[kind]}</p>
+      <label>Connection name <small>optional</small><input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={labels[kind]} /></label>
+      {local ? <><label>{kind === "obsidian-vault" ? "Vault folder" : "Document folder"}<input value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="C:\Notes or /home/me/notes" required /></label><p className="form-note">Use the full folder path. In Windows Explorer, choose Copy as path; on macOS use Copy as Pathname in Finder. Paste the path without surrounding quotation marks. This is a folder on your gateway computer, even when you use your phone.</p></>
+        : kind === "notion" ? <><p className="form-note"><a href="https://www.notion.so/profile/integrations" target="_blank" rel="noreferrer">Open Notion connections</a>. Enable Read content only. In each page's menu, add your connection.</p><label>Page links or IDs<textarea value={fieldA} onChange={(e) => setFieldA(e.target.value)} rows={3} placeholder="One page link per line" required /></label><p className="form-note">Only these pages are indexed. Add child pages separately if you want to include them.</p><label>Notion connection secret<input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} required placeholder="Stored in your local vault" /></label></>
+        : kind === "openclaw-cli" ? <><label>Agent ID <small>optional</small><input value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="main" /></label><label>Session key <small>optional</small><input value={fieldB} onChange={(e) => setFieldB(e.target.value)} placeholder="Use a dedicated portal conversation" /></label><a href="https://docs.openclaw.ai/start/getting-started" target="_blank" rel="noreferrer">OpenClaw setup instructions</a></>
+        : kind === "gbrain-cli" ? null
+        : <><label>Server address<input type="url" value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder={kind === "hermes-api" ? "http://127.0.0.1:8642" : kind === "t3-workspace" ? "http://127.0.0.1:3773" : "https://assistant.example/hooks/agent"} required /></label><label>Access token <small>optional</small><input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} placeholder="Stored in your local vault" /></label></>}
+      {knowledge && <label className="check-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required /><span>Index the selected documents on this computer for search. I can remove the connection to delete its local index.</span></label>}
+      {error && <p className="notice" role="alert">{error}</p>}
+      <div className="dialog-actions"><button type="button" className="button button--ghost" onClick={close}>Cancel</button><button className="button button--primary" disabled={busy}>{busy ? "Saving…" : "Add and check"}<ArrowRight size={16} /></button></div>
+    </form>}
+  </Dialog>;
+}

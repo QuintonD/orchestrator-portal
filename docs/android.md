@@ -8,7 +8,7 @@ The [Android QA record](android-qa.md) includes test coverage, visual evidence a
 
 ## Install the APK
 
-1. Download `orchestrator-0.1.0-alpha.1.apk` from the repository's [Android alpha release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.1).
+1. Download `orchestrator-0.1.0-alpha.2.apk` from the repository's [Android alpha release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2).
 2. Open the download on your Android phone. Allow installation from that browser or file manager when Android asks, then install **Orchestrator Alpha**. You can turn that installation permission off afterward.
 3. Follow either USB or private HTTPS setup below. Android 8.0/API 26 or later and an updated Android System WebView are required.
 
@@ -16,7 +16,9 @@ The published APK has debugging disabled and is signed with a dedicated alpha ke
 
 ## Start the gateway on your computer
 
-Install Node.js 24 or newer and Git, then run:
+Download and extract the [desktop gateway bundle](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2) for Windows, macOS or Linux. Open its launcher and create a workspace in the browser. Keep the launcher running; your phone uses the same workspace and passphrase. No Node, Git or build commands are needed. See the [desktop guide](desktop.md) for workspace locations and upgrades.
+
+For a source checkout instead, install Node.js 24 or newer and Git, then run:
 
 ```sh
 git clone https://github.com/QuintonD/orchestrator-portal.git
@@ -54,7 +56,7 @@ This is the shortest path and needs no remote hosting or TLS certificate.
 
 Here, `127.0.0.1` reaches the computer through USB forwarding. Do not enter your computer's LAN IP. Repeat `adb reverse` after reconnecting USB or restarting the device. With multiple devices, use `adb -s DEVICE_SERIAL reverse tcp:4400 tcp:4400`.
 
-Alternatively, install from your computer with `adb install -r orchestrator-0.1.0-alpha.1.apk`.
+Alternatively, install from your computer with `adb install -r orchestrator-0.1.0-alpha.2.apk`.
 
 ## Option B: Private HTTPS for wireless use
 
@@ -68,8 +70,10 @@ Use the actual HTTPS address printed by Tailscale. Restart the gateway with that
 
 ```powershell
 $env:ORCHESTRATOR_ALLOWED_ORIGINS = 'http://127.0.0.1:4400,http://localhost:4400,https://YOUR-COMPUTER.YOUR-TAILNET.ts.net'
-npm start
+.\Orchestrator.cmd
 ```
+
+Run the command from the extracted Windows bundle folder. On macOS/Linux, set the same environment variable and run `./orchestrator`; for a source checkout use `npm start`.
 
 Enter the exact HTTPS origin, without a path, in the Android app. Tailscale must stay connected on the phone. Keep the gateway bound to loopback; use **Serve**, not public Funnel. See [deployment](deployment.md) for gateway configuration. Do not expose the gateway to the public internet for this alpha.
 
@@ -93,6 +97,7 @@ Record your phone model, Android/WebView version, steps, expected result and act
 - **Change computer:** use **Gateway → Connection settings**. Successfully changing the address clears the previous gateway's cookies and cached portal data on the phone.
 - **Sign out:** use the portal's **Settings → Sign out** to revoke that session. **Forget this gateway** clears phone-local cookies, cache and the remembered address, but does not revoke a server-side session by itself.
 - **Offline:** there is no offline workspace or queued dispatch. Running work belongs to the gateway and source runtime. Reconnect to inspect it.
+- Grok Bot results use the same document picker and accept `.json` or `.txt` up to 100 KB. Preview and confirm before importing; results remain claims.
 - Text attachments use Android's document picker. Select `.txt`, `.md` or `.csv` files up to 12 KB. The web form previews the selection before sending.
 
 The app requests only internet access. It has no native JavaScript bridge, analytics SDK, push service, background runtime, or broad storage permission. It uses same-origin gateway authentication and refuses cleartext except exact loopback addresses for USB. Android backup/device transfer excludes app data. Avoid sensitive-data use until the broader retention/deletion and live integration checks in the [alpha guide](alpha.md) are complete.

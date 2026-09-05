@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 test("assistant setup produces a reviewable report", async ({ page }, testInfo) => {
   await page.goto("/agents");

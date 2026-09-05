@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures.js";
 
 test("text attachment is previewed and sent only with an explicit message", async ({ page }) => {
   await page.goto("/assistant");

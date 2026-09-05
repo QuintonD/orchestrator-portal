@@ -40,7 +40,12 @@ async function gateway(port, demo) {
   }, { timeout: 20000 }).toBe(200);
   adbRun("reverse", `tcp:${port}`, `tcp:${port}`);
 }
-async function shot(name) { await device.screenshot({ path: path.join(output, `${name}.png`) }); }
+async function shot(name) {
+  // DOM assertions can precede the Android compositor presenting a new WebView frame.
+  if (page && !page.isClosed()) await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))).catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await device.screenshot({ path: path.join(output, `${name}.png`) });
+}
 const nativeWait = ui.wait;
 const nativeTap = ui.tap;
 const nativeKey = ui.key;
@@ -243,6 +248,62 @@ try {
     await expect(page.getByRole("button", { name: "Send message" })).toBeDisabled();
     await shot("10-text-attachment");
     await page.getByRole("button", { name: "Remove attachment" }).click();
+  });
+  await step("Guided Obsidian setup and Notion page scope", async () => {
+    const notes = path.join(output, "vault");
+    await mkdir(notes, { recursive: true });
+    await writeFile(path.join(notes, "project.md"), "# Android vault evidence\n\nSynthetic knowledge for the Android setup test.");
+    await navigate("Connections");
+    await ui.tapWeb(page, page.getByRole("button", { name: "Add connection", exact: true }));
+    let dialog = page.getByRole("dialog", { name: "Add connection", exact: true });
+    await dialog.getByLabel("Source", { exact: true }).selectOption("obsidian-vault");
+    await dialog.getByLabel("Vault folder").fill(notes);
+    await dialog.getByLabel("Index the selected documents").check();
+    await ui.hideKeyboard();
+    await ui.tapWeb(page, dialog.getByRole("button", { name: "Add and check" }));
+    await expect(dialog.getByRole("heading", { name: "Your source is ready" })).toBeVisible();
+    await shot("12-obsidian-ready");
+    await ui.tapWeb(page, dialog.getByRole("button", { name: "Done", exact: true }));
+    await ui.tapWeb(page, page.getByRole("button", { name: "Add connection", exact: true }));
+    dialog = page.getByRole("dialog", { name: "Add connection", exact: true });
+    await dialog.getByLabel("Source", { exact: true }).selectOption("notion");
+    await expect(dialog).toContainText("Only these pages are indexed");
+    await expect(dialog.getByLabel("Notion connection secret")).toHaveAttribute("type", "password");
+    await shot("13-notion-setup");
+    await noOverflow();
+    await nativeKey("Back");
+    await expect(dialog).not.toBeVisible();
+  });
+  await step("Grok Bot JSON picker, claimed import and manual correction", async () => {
+    const panel = page.getByRole("region", { name: "Work with Grok Bot" });
+    await ui.tapWeb(page, panel.getByRole("button", { name: "Prepare a new task" }));
+    await panel.getByLabel("Task title", { exact: true }).fill("Android Grok findings");
+    await ui.hideKeyboard();
+    await ui.tapWeb(page, panel.getByRole("button", { name: "Save handoff" }));
+    await ui.tapWeb(page, panel.getByText("View saved task text", { exact: true }));
+    const taskText = await panel.getByLabel("Saved Grok Bot task text").inputValue();
+    const handoffId = taskText.match(/Handoff ID: ([a-f0-9-]+)/)[1];
+    await expect(panel.getByRole("button", { name: "Download task", exact: true })).toHaveCount(0);
+    const file = path.join(output, "orchestrator-grok-result.json");
+    await writeFile(file, JSON.stringify({ version: 1, handoffId, title: "Android Grok findings", body: "Synthetic manually imported evidence; no external work ran.", sourceUrls: [] }));
+    adbRun("push", file, "/sdcard/Download/orchestrator-grok-result.json");
+    await ui.tapWeb(page, panel.getByLabel("Result file", { exact: false }));
+    await ui.tap({ desc: "Show roots" });
+    await ui.tap({ text: "Downloads", res: "android:id/title" });
+    await ui.wait({ text: "Downloads", res: /:id\/breadcrumb_text$/ });
+    await ui.tap({ text: "orchestrator-grok-result.json" });
+    await expect(panel.getByLabel("Result contents")).toContainText("Synthetic manually imported evidence");
+    await ui.tapWeb(page, panel.getByRole("button", { name: "Preview import" }));
+    await ui.tapWeb(page, panel.getByRole("button", { name: "Confirm import as claimed" }));
+    await expect(panel.getByRole("heading", { name: "Result saved in Reports" })).toBeVisible();
+    await ui.tapWeb(page, panel.getByRole("link", { name: "Open Reports" }));
+    await page.getByRole("button").filter({ has: page.getByRole("heading", { name: "Android Grok findings", exact: true }) }).click();
+    const dialog = page.getByRole("dialog", { name: "Android Grok findings", exact: true });
+    await expect(dialog.getByText("claimed", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Copy correction for Grok Bot" })).toBeVisible();
+    await shot("14-grok-claimed-report");
+    await noOverflow();
+    await nativeKey("Back");
   });
   await step("Large text, narrow screen and all routes remain reachable", async () => {
     await displayProfile(true);

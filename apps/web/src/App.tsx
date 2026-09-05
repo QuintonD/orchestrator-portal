@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "./lib.js";
 import { AppShell, Mark, Toast, routes } from "./components.js";
-import { AssistantPage, AttentionPage, BrainPage, ConnectionsPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
+import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
+import { ConnectionsPage } from "./connections.js";
 import { AgentsPage, ReportsPage, CouncilsPage, ActivityPage, AccessPanel } from "./alpha-pages.js";
 
 interface AuthStatus {
@@ -63,7 +64,7 @@ export function App() {
       : route === "/attention" ? <AttentionPage {...pageProps} onCountChange={setAttentionCount} />
         : route === "/brain" ? <BrainPage {...pageProps} />
           : route === "/insights" ? <InsightsPage {...pageProps} />
-            : route === "/connections" ? <ConnectionsPage {...pageProps} />
+            : route === "/connections" ? <ConnectionsPage {...pageProps} navigate={navigate} />
               : route === "/settings" ? <><SettingsPage {...pageProps} auth={auth} onSignedOut={() => setAuth({ ...auth, authenticated: false, user: null })} /><AccessPanel {...pageProps} /></>
                 : <OverviewPage {...pageProps} displayName={auth.user?.displayName ?? "Operator"} navigate={navigate} onAttentionCount={setAttentionCount} />;
 

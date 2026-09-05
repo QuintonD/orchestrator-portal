@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-portal",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "A local-first command centre for personal AI assistants.",
   "license": "Apache-2.0",
@@ -12,6 +12,9 @@
     "packages/*"
   ],
   "scripts": {
+    "desktop:package": "npm run build && node scripts/desktop/package.mjs",
+    "desktop:test": "node --test scripts/desktop/paths.test.mjs scripts/desktop/staging.test.mjs",
+    "desktop:smoke": "node scripts/desktop/smoke.mjs",
     "android:build": "node scripts/android-build.mjs",
     "test:android": "node tests/android/qa.mjs",
     "test:android:release": "node tests/android/release.mjs",
