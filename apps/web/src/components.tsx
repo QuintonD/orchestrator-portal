@@ -26,9 +26,10 @@ import { cx } from "./lib.js";
 
 export const routes = [
   { path: "/", label: "Portal", icon: Gauge },
-  { path: "/assistant", label: "Assistant", icon: MessageCircle },
+  { path: "/personal", label: "Today", icon: CircleDot },
+  { path: "/assistant", label: "Conversations", icon: MessageCircle },
   { path: "/work", label: "Work", icon: ListTodo },
-  { path: "/agents", label: "Assistants", icon: UsersRound },
+  { path: "/agents", label: "Team", icon: UsersRound },
   { path: "/reports", label: "Reports", icon: FileCheck2 },
   { path: "/councils", label: "Councils", icon: Orbit },
   { path: "/activity", label: "Activity", icon: Activity },
@@ -38,6 +39,9 @@ export const routes = [
   { path: "/connections", label: "Connections", icon: Cable },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ] as const;
+
+const corePaths: readonly string[] = ["/", "/personal", "/work", "/agents", "/reports", "/assistant"];
+const coreRoutes = corePaths.map((path) => routes.find((route) => route.path === path)!);
 
 export function Mark({ compact = false }: { compact?: boolean }) {
   return (
@@ -80,7 +84,7 @@ export function AppShell({
       <aside className="sidebar">
         <Mark />
         <nav className="side-nav" aria-label="Primary navigation">
-          {routes.map((item) => {
+          {coreRoutes.map((item) => {
             const active = route === item.path;
             return (
               <button key={item.path} title={item.label} aria-label={item.label} className={cx("nav-item", active && "is-active")} onClick={() => navigate(item.path)} aria-current={active ? "page" : undefined}>
@@ -90,6 +94,7 @@ export function AppShell({
               </button>
             );
           })}
+          <button className={cx("nav-item", "nav-secondary", !corePaths.includes(route) && "is-active")} title="More destinations" aria-label="More destinations" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}><Menu size={18} /></button>
         </nav>
         <div className="sidebar__footer">
           <div className="system-state">Local workspace</div>
@@ -119,9 +124,9 @@ export function AppShell({
       </main>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {routes.slice(0, 5).map((item) => {
+        {coreRoutes.map((item) => {
           const active = route === item.path;
-          return <button key={item.path} className={cx(active && "is-active")} onClick={() => navigate(item.path)}><item.icon size={21} /><span>{item.label}</span></button>;
+          return <button key={item.path} aria-current={active ? "page" : undefined} className={cx(active && "is-active")} aria-label={item.label} onClick={() => navigate(item.path)}><item.icon size={21} /><span>{item.path === "/assistant" ? "Chat" : item.label}</span></button>;
         })}
       </nav>
       {mobileOpen && <dialog ref={drawerRef} aria-label="Navigation" className="mobile-drawer-backdrop" onCancel={() => setMobileOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) setMobileOpen(false); }}>

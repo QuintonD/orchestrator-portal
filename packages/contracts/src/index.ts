@@ -1,4 +1,6 @@
 import { z } from "zod";
+export * from "./assistant-catalog.js";
+import type { AssistantMode, ReportPresentation } from "./assistant-catalog.js";
 
 export const healthSchema = z.object({
   status: z.enum(["ok", "degraded"]),
@@ -170,6 +172,7 @@ export type AssistantProfileInput = z.infer<typeof assistantProfileSchema>;
 export type AssistantProfile = AssistantProfileInput & {
   id: string; state: "ready" | "paused" | "running" | "unknown";
   lastRunAt: string | null; nextExpectedAt: string | null; createdAt: string;
+  templateId?: string; templateVersion?: number; mode?: AssistantMode; icon?: number; autoReview?: boolean;
 };
 export const councilRequestSchema = z.object({
   question: z.string().trim().min(10).max(4000),
@@ -181,6 +184,7 @@ export interface Report {
   state: ReceiptState; criteria: string; createdAt: string;
   review: "unreviewed" | "useful" | "needs-work" | "disputed";
   correction: string; source: string;
+  presentation?: ReportPresentation; revisionOf?: string; templateId?: string; supersededBy?: string; mode?: AssistantMode;
 }
 export interface Council {
   id: string; question: string; state: string; createdAt: string;
@@ -193,3 +197,4 @@ export const watchInputSchema = z.object({
   enabled: z.boolean().default(true),
 }).strict();
 export type Watch = z.infer<typeof watchInputSchema> & { id: string };
+export * from "./personal.js";

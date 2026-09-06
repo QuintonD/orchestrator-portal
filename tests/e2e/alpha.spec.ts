@@ -2,7 +2,7 @@ import { expect, test } from "./fixtures.js";
 
 test("assistant setup produces a reviewable report", async ({ page }, testInfo) => {
   await page.goto("/agents");
-  await page.getByRole("button", { name: "Set up assistant", exact: true }).click();
+  await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Set up an assistant" });
   const name = `Project partner ${testInfo.project.name} ${Date.now()}`;
   await dialog.getByLabel("Name", { exact: true }).fill(name);

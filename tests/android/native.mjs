@@ -31,8 +31,15 @@ export function nativeControls(getDevice) {
     // All test inputs are synthetic ASCII. Do not interpolate arbitrary shell text.
     assert.match(value, /^[a-zA-Z0-9:/._ -]+$/);
     await tap(selector);
-    await getDevice().shell("input keycombination 113 29");
-    await getDevice().shell(`input text ${value.replaceAll(" ", "%s")}`);
+    await expect.poll(keyboardShown).toBe(true);
+    // IME startup can interrupt shell text injection. Check the resulting native
+    // field before continuing, and retry this idempotent fill if it was partial.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await getDevice().shell("input keycombination 113 29");
+      await getDevice().shell(`input text ${value.replaceAll(" ", "%s")}`);
+      if (await find({ ...selector, text: value })) return;
+    }
+    await wait({ ...selector, text: value });
   }
   async function tapWeb(page, locator) {
     const { bounds } = await wait({ clazz: "android.webkit.WebView" });

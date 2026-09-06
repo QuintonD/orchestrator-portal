@@ -1,8 +1,10 @@
 # Orchestrator
 
-Orchestrator is a private, local-first portal to your assistants and their work. The alpha brings together assistant setup, conversations, project oversight, reports, councils, knowledge, and source-linked activity in a calm monochrome workspace.
+Orchestrator is a private, local-first portal to your assistants and their work. The beta adds prepared teams for every supported connection, automatic local briefs, dedicated assistant conversations, evidence-based reports and a complete simulated decision workflow in a calm monochrome workspace.
 
-See the [alpha guide](docs/alpha.md) for supported journeys, integration validation, and remaining scope. Source runtimes retain execution authority.
+Beta 2 adds [personal project, money, coaching and agenda workflows](docs/personal-workflows.md), with bounded source-generated drafts and a shared Today view.
+
+See the [beta guide](docs/beta.md), [research and acceptance scope](docs/beta-scope.md), and [beta validation](docs/beta-validation.md). Run `npm run demo` for a fresh populated workspace at port 4425. Source runtimes retain execution authority. The download links below refer to the previously published alpha; the beta is a local build until separately released.
 
 Start with the [desktop download for Windows, macOS or Linux](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2). It includes everything needed to run the gateway; Node, Git and build commands are not required. Follow the [desktop setup guide](docs/desktop.md).
 

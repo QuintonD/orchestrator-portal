@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-portal",
-  "version": "0.1.0-alpha.2",
+  "version": "0.2.0-beta.2",
   "private": true,
   "description": "A local-first command centre for personal AI assistants.",
   "license": "Apache-2.0",
@@ -25,7 +25,8 @@
     "start": "cross-env NODE_ENV=production npm run start -w @orchestrator/server",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
-    "typecheck": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run typecheck -w @orchestrator/server && npm run typecheck -w @orchestrator/web"
+    "typecheck": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run typecheck -w @orchestrator/server && npm run typecheck -w @orchestrator/web",
+    "demo": "npm run build && node scripts/demo.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

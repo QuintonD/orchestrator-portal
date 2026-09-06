@@ -1,5 +1,11 @@
 # Alpha build
 
+The current source is the [0.2.0-beta.1 build](beta.md). This page records the
+earlier alpha scope and remains useful for its integration history.
+
+See the [experience refinement and visual QA notes](alpha-refinement-qa.md) for
+the latest onboarding, information hierarchy, assistant identities and validation.
+
 This release is a local, single-operator alpha for evaluating assistant oversight and interaction. It adds complete supported journeys to the original portal, with a monochrome interface based on the supplied Invisible OS reference. It is not a claim that every workflow in the broader product direction has passed live integration validation.
 
 ## Try the application
@@ -73,3 +79,6 @@ Back up the stopped gateway's full data directory and its encryption key togethe
 Validation commands are `npm run check`, `npm run build`, and `npm run test:e2e`. End-to-end tests use a fresh synthetic data directory and a separate loopback port (`4411`) on each run. Tests cover desktop and mobile setup/report review, councils, watches, knowledge dialogs and focus restoration, draft continuity, navigation, and layout persistence. Server fixtures cover authentication, scoped access, revocation, metered limits, pause, concurrency, timeout ambiguity, corrections, replay, and scheduling receipts.
 
 The remaining broader-alpha work is explicit: live authorized integration acceptance, full proactive configuration improvement and rollback, generalized provider brokerage, source capture and derived-content deletion, rich artifact handling, push/quiet-period delivery, real independent outcome verification, and measured founder workflows. No efficacy or feature-completeness claim is made for these unvalidated areas.
+
+The [sprite and demo guide](assistant-sprites-and-demo.md) documents the three
+animated icon sets, `npm run demo`, and the latest usability/visual QA evidence.

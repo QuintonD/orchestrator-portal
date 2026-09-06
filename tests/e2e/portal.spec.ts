@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures.js";
 test("overview preserves signal hierarchy", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Portal", exact: true })).toBeVisible();
-  await expect(page.getByText("Assistant brief")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next decision" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Project health" })).toBeVisible();
   await expect(page.getByText("Launch copy needs your decision").first()).toBeVisible();
 });
@@ -20,7 +20,7 @@ test("operator can message the assistant", async ({ page }) => {
 test("desktop visual surface has no overflow", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "Desktop visual check");
   await page.goto("/");
-  await expect(page.getByText("Assistant brief")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next decision" })).toBeVisible();
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth }));
   expect(dimensions.width).toBeLessThanOrEqual(dimensions.viewport);
   await page.screenshot({ path: "docs/assets/overview-light.png", fullPage: true });
@@ -30,7 +30,7 @@ test("secondary surfaces and dark appearance render", async ({ page }, testInfo)
   test.skip(testInfo.project.name !== "desktop", "Desktop visual check");
   await page.addInitScript(() => localStorage.setItem("orchestrator-theme", "dark"));
   await page.goto("/assistant");
-  await expect(page.getByText("Direct channel")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
   await expect(page.getByText(/Sample workspace:/)).toBeVisible({ timeout: 10_000 });
   await page.screenshot({ path: "docs/assets/assistant-dark.png" });
   await page.goto("/connections");
@@ -56,6 +56,6 @@ test("mobile navigation keeps the core views reachable", async ({ page }, testIn
   await expect(page.getByRole("complementary", { name: "All navigation" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "All navigation" }).getByText("Settings")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
-  await navigation.getByText("Assistant", { exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Assistant" })).toBeVisible();
+  await navigation.getByRole("button", { name: "Conversations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Conversations" })).toBeVisible();
 });

@@ -86,11 +86,12 @@ async function displayProfile(largeText) {
   await expect(page.getByRole("heading", { level: 1, name: "Portal", exact: true })).toBeVisible();
 }
 async function navigate(name) {
+  const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
   const mobile = page.getByRole("navigation", { name: "Mobile navigation", exact: true }).getByRole("button", { name, exact: true });
   if (await mobile.isVisible()) await mobile.click();
   else if (await page.getByRole("button", { name: "Open navigation", exact: true }).isVisible()) {
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-    await page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name, exact: true }).click();
+    await page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }).click();
   } else await page.getByRole("navigation", { name: "Primary navigation", exact: true }).getByRole("button", { name, exact: true }).click();
 }
 try {
@@ -99,6 +100,8 @@ try {
   adbRun("shell", "input", "keyevent", "224");
   adbRun("shell", "wm", "dismiss-keyguard");
   adbRun("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1");
+  // Avoid the system keyboard's stylus tutorial intercepting synthetic text.
+  adbRun("shell", "settings", "put", "secure", "stylus_handwriting_enabled", "0");
   adbRun("install", "-r", "apps/android/app/build/outputs/apk/debug/app-debug.apk");
   adbRun("shell", "pm", "clear", pkg);
   await gateway(4460, false);
@@ -155,8 +158,8 @@ try {
     await shot("03-demo-portal");
   });
   await step("Assistant setup, report review and native Back", async () => {
-    await navigate("Assistants");
-    await page.getByRole("button", { name: "Set up assistant", exact: true }).click();
+    await navigate("Team");
+    await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
     let dialog = page.getByRole("dialog", { name: "Set up an assistant" });
     await dialog.getByLabel("Name", { exact: true }).fill("Android project partner");
     await dialog.getByLabel("What should it help you achieve?").fill("Keep the Android alpha test plan moving.");
@@ -235,7 +238,7 @@ try {
     await expect(page.getByRole("dialog")).not.toBeVisible();
   });
   await step("Android document picker returns a preview without sending", async () => {
-    await navigate("Assistant");
+    await navigate("Conversations");
     await writeFile(path.join(output, "orchestrator-qa-note.txt"), "Synthetic Android attachment.");
     adbRun("push", path.join(output, "orchestrator-qa-note.txt"), "/sdcard/Download/orchestrator-qa-note.txt");
     await page.locator(".attach-file").click();
@@ -307,9 +310,9 @@ try {
   });
   await step("Large text, narrow screen and all routes remain reachable", async () => {
     await displayProfile(true);
-    for (const name of ["Portal", "Assistant", "Work", "Assistants", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {
+    for (const name of ["Portal", "Conversations", "Work", "Team", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {
       const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
-      if (!["Portal", "Assistant", "Work", "Assistants", "Reports"].includes(name)) {
+      if (!["Portal", "Work", "Team", "Reports", "Conversations"].includes(name)) {
         await ui.tapWeb(page, page.getByRole("button", { name: "Open navigation", exact: true }));
         await ui.tapWeb(page, page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }));
         await expect(page.getByRole("dialog", { name: "Navigation", exact: true })).not.toBeVisible();
@@ -320,6 +323,40 @@ try {
     }
     await shot("10-small-screen-settings");
     await displayProfile(false);
+  });
+  await step("Prepared team, source evidence and nested native Back", async () => {
+    await navigate("Team");
+    await page.getByRole("button", { name: "Add prepared team", exact: true }).click();
+    const catalog = page.getByRole("dialog", { name: "A team, already prepared", exact: true });
+    await expect(catalog.getByLabel("Team connection")).toHaveValue("workspace");
+    await shot("15-beta-prepared-team");
+    await catalog.getByRole("button", { name: "Add team & prepare reports", exact: true }).click();
+    await expect(catalog).not.toBeVisible();
+    const sage = page.locator(".agent-surface").filter({ has: page.getByRole("heading", { name: "Sage", exact: true }) });
+    await sage.getByRole("button", { name: "Request report", exact: true }).click();
+    await page.locator(".report-row").filter({ has: page.getByRole("heading", { name: /^Sage/ }) }).first().click();
+    const report = page.getByRole("dialog").first();
+    await report.getByRole("button", { name: "Launch audience brief", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Launch audience brief", exact: true })).toBeVisible();
+    await shot("16-beta-source-evidence");
+    await nativeKey("Back");
+    await expect(page.getByRole("dialog", { name: "Launch audience brief", exact: true })).not.toBeVisible();
+    await expect(page.getByRole("dialog").first()).toContainText("Recommended next step");
+    await nativeKey("Back");
+  });
+  await step("Complete simulated decision updates linked work", async () => {
+    await navigate("Attention");
+    const item = page.locator(".attention-card").filter({ hasText: "Launch copy needs your decision" });
+    await item.getByRole("button", { name: "Review", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.locator(".decision-option")).toHaveCount(2);
+    await shot("17-beta-decision-options");
+    await dialog.getByRole("button", { name: "Use this direction", exact: true }).click();
+    await expect(dialog).not.toBeVisible(); await expect(item).toHaveCount(0);
+    await navigate("Work");
+    const project = page.locator(".project-card").filter({ has: page.getByRole("heading", { name: "Studio launch", exact: true }) });
+    await expect(project).toContainText("Direction chosen"); await expect(project).toContainText("54%");
+    await shot("18-beta-linked-work");
   });
   await step("Offline recovery does not send or retry work", async () => {
     children[1].kill();

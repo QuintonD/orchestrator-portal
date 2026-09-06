@@ -1,5 +1,13 @@
 # Android QA
 
+After the full suite, `node tests/android/visual.mjs` captures the current gateway
+build on that same disposable emulator in both themes. It starts a fresh synthetic
+gateway on port 4461 and captures Portal, Reports, Connections and Assistants,
+plus Assistant and Insights, including the mobile report-title width check.
+It also checks icon theme persistence and animation, and captures the icon picker. It expects the debug app and
+gateway origin prepared by `qa.mjs`. Keep `ANDROID_HOME` and, if needed,
+`ANDROID_QA_SERIAL` set for both commands.
+
 `qa.mjs` installs and clears only `io.github.quintond.orchestrator.debug` on the selected **emulator**. Physical-device serials are refused. It starts fresh private and synthetic gateways on ports 4460/4461, forwards those ports, exercises native onboarding and actual Android WebView journeys, then shuts down its gateways. No personal runtime or data directory is used.
 
 Create a dedicated disposable AVD using an installed image, for example:
@@ -15,7 +23,7 @@ npm run test:android
 
 On Windows, use `avdmanager.bat` and `emulator.exe` from the SDK. The default serial is `emulator-5560`; set `ANDROID_QA_SERIAL` for another disposable emulator. Run suites sequentially. QA keeps the emulator awake while plugged in and changes font scale, display dimensions and rotation, then restores display defaults in `finally`. It leaves the test app and synthetic examples installed. Do not use an AVD with personal configuration you want to preserve.
 
-The suite covers secure-origin rejection, private setup/login/logout, normal session persistence, cookie isolation on gateway change, assistant setup, evidence review, native Back and dialog reopening, drafts, keyboard, rotation, conversation, councils, knowledge, narrow screens, larger text, navigation and offline recovery. It enables the software keyboard even when the emulator has a hardware keyboard configured. Screenshots and a JSON result record are written to `test-results/android/<serial>-<timestamp>`. Inspect the screenshots visually before approving a release; successful DOM assertions alone do not establish usability. Local gateway data in this directory is synthetic, but do not upload its databases as QA evidence.
+The suite covers secure-origin rejection, private setup/login/logout, normal session persistence, cookie isolation on gateway change, assistant setup, evidence review, native Back and dialog reopening, drafts, keyboard, rotation, conversation, councils, knowledge, narrow screens, larger text, navigation and offline recovery. It enables the software keyboard even when the emulator has a hardware keyboard configured, and disables stylus handwriting on the disposable emulator so the system tutorial cannot intercept test input. Screenshots and a JSON result record are written to `test-results/android/<serial>-<timestamp>`. Inspect the screenshots visually before approving a release; successful DOM assertions alone do not establish usability. Local gateway data in this directory is synthetic, but do not upload its databases as QA evidence.
 
 The distribution APK has debugging disabled. Validate it separately with native accessibility controls on an emulator, verify its signature and manifest, and compare its behavior with the QA build. Published screenshots must contain only synthetic examples. A physical founder test and TalkBack review remain distinct from these automated checks.
 

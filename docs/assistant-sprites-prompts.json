@@ -1,0 +1,54 @@
+{
+  "tool": "Built-in image_gen (imagegen skill)",
+  "created": "2026-09-06",
+  "layout": {
+    "columns": 4,
+    "rows": 4,
+    "frameDurationMs": 450,
+    "loopDurationMs": 1800,
+    "frameOrder": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "staticFrame": 0
+  },
+  "sheets": [
+    {
+      "key": "animals",
+      "prompt": "Use case: stylized-concept. Asset type: production animation sprite sheet for a monochrome assistant app. Make ONE square PNG sprite atlas: EXACTLY 4 equal columns and 4 equal rows, 16 cells total, no external margins or gutters. Each row is ONE distinct icon in FOUR successive animation frames, left to right. Each cell is square, with its icon centered at the exact cell center. Cell centers are x/y 12.5%, 37.5%, 62.5%, 87.5% of the canvas. Icons occupy 60% of their cell width and height, identical scale and baseline across each row. Uniform clean very thin black outline strokes, rounded caps and joins, simple geometric silhouettes, no hatching, no shading, no large filled shapes, no grey or colour. Transparent background with real alpha. No visible grid, labels, numbers, text, borders or shadows. Design to remain legible when each cell is displayed at 48px: simple recognizable details, approximately 1.5px stroke at that display size. Exactly four icons, each repeated four times with very subtle purposeful frame changes. First frame is a clear neutral resting pose. Final frame returns nearly to first for a quiet looping animation. Request 1024x1024. Theme: ANIMALS. Row 1: owl head, blinks gently across the four frames. Row 2: fox head, tiny ear twitch. Row 3: cat head, tiny ear twitch and blink. Row 4: small bird in side profile, gently lifts and lowers one wing. Keep all heads or silhouettes facing the same way across frames. Calm intelligent character, never cartoonishly cute."
+    },
+    {
+      "key": "symbols",
+      "prompt": "Use case: stylized-concept. Asset type: production animation sprite sheet for a monochrome assistant app. Make ONE square PNG sprite atlas: EXACTLY 4 equal columns and 4 equal rows, 16 cells total, no external margins or gutters. Each row is ONE distinct icon in FOUR successive animation frames, left to right. Each cell is square, with its icon centered at the exact cell center. Cell centers are x/y 12.5%, 37.5%, 62.5%, 87.5% of the canvas. Icons occupy 60% of their cell width and height, identical scale and baseline across each row. Uniform clean very thin black outline strokes, rounded caps and joins, simple geometric silhouettes, no hatching, no shading, no large filled shapes, no grey or colour. Transparent background with real alpha. No visible grid, labels, numbers, text, borders or shadows. Design to remain legible when each cell is displayed at 48px: simple recognizable details, approximately 1.5px stroke at that display size. Exactly four icons, each repeated four times with very subtle purposeful frame changes. First frame is a clear neutral resting pose. Final frame returns nearly to first for a quiet looping animation. Request 1024x1024. Theme: FUTURISTIC SYMBOLS. Row 1: orbital nucleus, a small satellite dot moves along a fixed elliptical orbit. Row 2: radar, fixed circular outline with one sweeping radial line changing angle slightly. Row 3: portal, a fixed diamond enclosing a small opening that subtly expands and contracts. Row 4: circuit node, a fixed central square with four short branching traces, one terminal point changes position slightly. All bases fixed across the four frames, no perspective changes."
+    },
+    {
+      "key": "geometry",
+      "prompt": "Use case: stylized-concept. Asset type: production animation sprite sheet for a monochrome assistant app. Make ONE square PNG sprite atlas: EXACTLY 4 equal columns and 4 equal rows, 16 cells total, no external margins or gutters. Each row is ONE distinct icon in FOUR successive animation frames, left to right. Each cell is square, with its icon centered at the exact cell center. Cell centers are x/y 12.5%, 37.5%, 62.5%, 87.5% of the canvas. Icons occupy 60% of their cell width and height, identical scale and baseline across each row. Uniform clean very thin black outline strokes, rounded caps and joins, simple geometric silhouettes, no hatching, no shading, no large filled shapes, no grey or colour. Transparent background with real alpha. No visible grid, labels, numbers, text, borders or shadows. Design to remain legible when each cell is displayed at 48px: simple recognizable details, approximately 1.5px stroke at that display size. Exactly four icons, each repeated four times with very subtle purposeful frame changes. First frame is a clear neutral resting pose. Final frame returns nearly to first for a quiet looping animation. Request 1024x1024. Theme: GEOMETRIC SHAPES. Row 1: nested circles, inner circle gently expands then contracts. Row 2: nested diamonds, inner diamond rotates very slightly then returns. Row 3: triangle with a small central dot, dot moves subtly upward then returns. Row 4: hexagon enclosing a small hexagon, inner hexagon gently expands then contracts. These are elegant mathematical symbols, same outer geometry in all four columns."
+    }
+  ],
+  "animalRefinement": "Edit this animation sprite sheet, retaining its exact 4-column x 4-row grid and transparent background. The animals are currently much too intricate for tiny UI icons. REDRAW as exceptionally simple clean thin-line pictograms, no realistic fur, no feather hatching, no double contours, no shaded eyes, no filled white areas. All strokes uniform black 1.5px when scaled to a 48px cell, rounded terminals. Owl: single smooth head outline with two tiny ear points, two simple circle eyes and V beak, about 8 strokes total. Fox: single smooth pointed-ear outline, two small dot eyes, tiny V nose, two cheek strokes, about 7 strokes total. Cat: smooth round face with two triangle ears, two short eyes, tiny nose, just one whisker each side, about 8 strokes. Bird: smooth side silhouette, tiny dot eye, single wing curve and two tiny feet, no decorative feathers. Four rows are Owl/Fox/Cat/Bird respectively. Four columns are four sequential animated frames: owl blink, fox ear twitch, cat blink, bird slight wing lift. Each resting silhouette stays precisely centered in its same square cell; no translation or scale changes. Column four near column one for seamless loop. Retain 60% cell width icon footprint. EXACT 4x4 regular grid, no gutters or margins, no captions, no text, no guide lines. Transparent means real zero-alpha empty pixels throughout; strokes only. A production-ready minimalist mobile UI icon atlas, not an animal illustration sheet.",
+  "symbolsBoundaryRevision": "Correct this transparent sprite atlas for production use. CRITICAL: the Circuit icon in row four currently bleeds across the row-three boundary, leaving a stray dash under the Portal icon when sliced! Redraw the sheet on a mathematically exact 4x4 grid of equal square cells with NO OUTSIDE MARGINS. Every icon MUST fit entirely inside the CENTRAL 50% WIDTH AND CENTRAL 50% HEIGHT of its cell, giving an empty transparent 25% margin on ALL FOUR SIDES of EVERY CELL. Four columns successive animation frames, four rows distinct futuristic icons. Centers x and y at exactly 12.5%,37.5%,62.5%,87.5% of full canvas. Do not distribute by visual top/bottom content; use those exact center coordinates. First row orbital nucleus with orbiting satellite; second row radar with sweep; third row diamond Portal with breathing fourpoint aperture; fourth row Circuit square with six short terminal arms whose outer ends remain inside its central-half cell box. Clean black thin uniform monoline, roundcaps, no white fills, no texture, no background pixels, real transparent alpha. Thin but clear at48pixel cell. Keep outer silhouettes stationary, four frames make small internal movements, fourth near first. No grid, no labels, no text. Inspect each exact quarter-canvas slice mentally: all16icons isolated completely; large empty transparent separation between rows. Keep this minimal line-icon aesthetic.",
+  "symbolsAlphaRevision": "Remove the entire fake checkerboard background from this image. Output a genuine transparent-background RGBA PNG, with all background pixels having alpha zero. NOT a picture of a checkerboard. Keep ONLY the black icon strokes. Make the spaces inside all outlines transparent as well. Preserve the sixteen icons, dimensions, placement, 4x4 sheet arrangement and individual frame drawings exactly. Do not add or redraw a background. No gray or white pixels outside the black antialiased strokes. This is an asset cutout/transparency edit only.",
+  "outputs": [
+    {
+      "theme": "animals",
+      "file": "apps/web/public/assets/assistants-animals.png",
+      "width": 1254,
+      "height": 1254
+    },
+    {
+      "theme": "symbols",
+      "file": "apps/web/public/assets/assistants-symbols.png",
+      "width": 1279,
+      "height": 1230
+    },
+    {
+      "theme": "geometry",
+      "file": "apps/web/public/assets/assistants-geometry.png",
+      "width": 1254,
+      "height": 1254
+    }
+  ]
+}
