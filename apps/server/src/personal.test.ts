@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { PersonalProject, PersonalWorkspace } from "@orchestrator/contracts";
 import { createApp } from "./server.js";
 import { runtimeAdapters } from "./adapters.js";
-import { calendarText, csvRows, minorUnits } from "./personal-data.js";
+import { calendarText, csvRows, minorUnits, summarizeMoney } from "./personal-data.js";
 import { DatabaseSync } from "node:sqlite";
 import { Vault } from "./crypto.js";
 
@@ -19,6 +19,13 @@ const authorize = async (app: FastifyInstance, p: PersonalProject) => request(ap
 afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await Promise.all(apps.splice(0).map((a) => a.close())); await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true }))); });
 
 describe("personal workflows", () => {
+  it("matches budget and asset labels without case-sensitive financial blind spots", () => {
+    const summary = summarizeMoney([
+      { id: "a", source: "Bank", date: "2026-09-01", description: "Food", amount: 1000, type: "expense", category: "FOOD", currency: "EUR" },
+      { id: "b", source: "Bank", date: "2026-09-01", description: "Refund", amount: 100, type: "refund", category: "food", currency: "EUR" },
+    ], [{ id: "h", source: "Broker", name: "Fund", assetClass: "equities", value: 20000, currency: "EUR", asOf: "2026-09-01" }], { currency: "EUR", limits: [{ category: "Food", amount: 800 }], targets: [{ assetClass: "Equities", percent: 100 }], objective: "", horizon: "", risk: "unset" }, "2026-09");
+    expect(summary.categories).toEqual([{ category: "Food", spent: 900, limit: 800 }]); expect(summary.allocation).toHaveLength(1); expect(summary.allocation[0]!.drift).toBe(0);
+  });
   it("advances authorized projects from the gateway timer without a browser or repeated requests", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     const { app } = await setup(); const send = vi.spyOn(runtimeAdapters.get("demo")!, "sendMessage").mockResolvedValue({ state: "claimed", reply: "A source-produced draft" });

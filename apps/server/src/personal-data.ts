@@ -39,16 +39,19 @@ export function parsePersonalImport(kind: "transactions" | "holdings" | "calenda
 }
 
 export function summarizeMoney(transactions: Transaction[], holdings: Holding[], settings: MoneySettings, month: string): MoneySummary {
+  const categoryNames = new Map(settings.limits.map((l) => [l.category.toLowerCase(), l.category]));
+  const assetNames = new Map(settings.targets.map((t) => [t.assetClass.toLowerCase(), t.assetClass]));
+  const labelFor = (labels: Map<string, string>, name: string) => { const key = name.toLowerCase(); if (!labels.has(key)) labels.set(key, name); return labels.get(key)!; };
   const selected = transactions.filter((t) => t.currency === settings.currency && t.date.startsWith(month));
   const totals = new Map<string, number>(); let income = 0, spent = 0;
   for (const t of selected) {
     if (t.type === "income") income += t.amount;
-    if (t.type === "expense" || t.type === "refund") { const amount = t.amount * (t.type === "refund" ? -1 : 1); spent += amount; totals.set(t.category, (totals.get(t.category) ?? 0) + amount); }
+    if (t.type === "expense" || t.type === "refund") { const amount = t.amount * (t.type === "refund" ? -1 : 1), category = labelFor(categoryNames, t.category); spent += amount; totals.set(category, (totals.get(category) ?? 0) + amount); }
   }
   for (const l of settings.limits) if (!totals.has(l.category)) totals.set(l.category, 0);
   const owned = holdings.filter((h) => h.currency === settings.currency), total = owned.reduce((s, h) => s + h.value, 0);
   const assets = new Map<string, number>();
-  for (const h of owned) assets.set(h.assetClass, (assets.get(h.assetClass) ?? 0) + h.value);
+  for (const h of owned) { const assetClass = labelFor(assetNames, h.assetClass); assets.set(assetClass, (assets.get(assetClass) ?? 0) + h.value); }
   for (const t of settings.targets) if (!assets.has(t.assetClass)) assets.set(t.assetClass, 0);
   return { month, currency: settings.currency, income, spent, net: income - spent, excluded: transactions.filter((t) => t.currency !== settings.currency).length + holdings.filter((h) => h.currency !== settings.currency).length,
     categories: [...totals].sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ category, spent: amount, limit: settings.limits.find((l) => l.category === category)?.amount ?? null })),

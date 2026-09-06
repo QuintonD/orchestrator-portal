@@ -75,6 +75,7 @@ the same source/holding ID. Missing rows do not remove holdings: use a zero-valu
 newer record for a closed position or remove the source before a full replacement.
 Older snapshots and conflicting values on the same date are rejected.
 
+Budget categories and asset-class labels match without regard to capitalization.
 The app groups holdings by your asset-class labels and compares them with targets
 you enter. Targets must total 100%; a five-percentage-point difference produces a
 review signal. This threshold is a product review rule, not a financial recommendation.

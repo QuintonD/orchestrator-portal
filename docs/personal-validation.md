@@ -9,7 +9,7 @@ used as fixtures. The [implementation plan](personal-workflows-plan.md) and
 
 | Check | Result |
 | --- | --- |
-| Type checks and tests | 100 passed: 96 server, 2 web and 2 contract tests. Final production build passed after the last UI changes. |
+| Type checks and tests | 101 passed: 97 server, 2 web and 2 contract tests. Final production build passed after the last UI changes. |
 | Full browser suite | 75 passed, 3 skipped for device applicability. Desktop Chrome and Pixel-sized Chromium. |
 | Personal browser coverage | Project plan, source draft, acceptance and persistence; import preview/replay/correction; goal/check-in/undo/linked agenda/calendar export; monthly plan and historical month; theme/layout coverage. |
 | Personal visual review | 29 browser captures across 1440, 393 and 320px in light and dark themes, plus project, money and check-in dialogs. |
@@ -52,6 +52,7 @@ Selected captures: [Today on desktop](assets/personal/today-desktop.png),
 - Financial tests cover integer arithmetic, refunds, transfers, currency exclusion,
   duplicate imports, conflicting previews, invalid dates, stale valuations, target
   totals, allocation drift, deletion/reimport and preservation of corrections.
+  Category and asset labels match regardless of capitalization.
 - Privacy checks confirm personal records are encrypted on disk and that project
   dispatch excludes money/coaching records. Personal money responses share aggregates,
   not individual merchants. Context sharing requires explicit confirmation.
