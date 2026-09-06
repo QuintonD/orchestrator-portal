@@ -7,12 +7,12 @@ export const defaultDashboard: DashboardLayout = {
   widgets: [
     { id: "attention", visible: true, size: "compact" },
     { id: "active-work", visible: true, size: "compact" },
-    { id: "daily-brief", visible: true, size: "wide" },
-    { id: "projects", visible: true, size: "wide" },
-    { id: "recurring", visible: true, size: "wide" },
+    { id: "daily-brief", visible: false, size: "wide" },
+    { id: "projects", visible: true, size: "compact" },
+    { id: "recurring", visible: true, size: "compact" },
     { id: "usage", visible: false, size: "wide" },
     { id: "mail", visible: false, size: "compact" },
-    { id: "providers", visible: true, size: "compact" },
+    { id: "providers", visible: false, size: "compact" },
   ],
 };
 

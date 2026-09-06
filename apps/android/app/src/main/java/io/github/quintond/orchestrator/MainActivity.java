@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
         destroyWebView();
         newRoot();
         LinearLayout content = panel();
-        content.addView(text("ORCHESTRATOR  /  ALPHA", 12));
+        content.addView(text("ORCHESTRATOR  /  BETA", 12));
         TextView heading = text("Your assistants.\nYour gateway.", 32);
         heading.setTypeface(null, Typeface.NORMAL);
         content.addView(heading);
@@ -350,7 +350,7 @@ public final class MainActivity extends Activity {
 
     private void handleBack() {
         if (webView == null) { if (origin.isEmpty()) finish(); else openPortal(); return; }
-        webView.evaluateJavascript("(() => { const d = document.querySelector('dialog[open] [aria-label=\"Close dialog\"], [role=\"dialog\"] [aria-label=\"Close\"]'); if(d){d.click();return true;} const c = document.querySelector('[aria-label=\"Close navigation\"]'); if(c){c.click();return true;} return false; })()", handled -> {
+        webView.evaluateJavascript("(() => { const dialogs = Array.from(document.querySelectorAll('dialog[open]')); const top = dialogs[dialogs.length - 1]; const d = top ? top.querySelector('[aria-label=\"Close dialog\"]') : document.querySelector('[role=\"dialog\"] [aria-label=\"Close\"]'); if(d){d.click();return true;} const c = document.querySelector('[aria-label=\"Close navigation\"]'); if(c){c.click();return true;} return false; })()", handled -> {
             if (webView == null || "true".equals(handled)) return;
             if (webView.canGoBack()) webView.goBack(); else moveTaskToBack(true);
         });

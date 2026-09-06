@@ -1,3 +1,5 @@
+import { demoAssessment, presentationText } from "./demo-scenario.js";
+import type { AssistantProfile, DecisionPacket } from "@orchestrator/contracts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
@@ -59,13 +61,49 @@ const demo: RuntimeAdapter = {
     version: "1.0.0",
     capabilities: ["message.send", "work.read", "schedule.read", "knowledge.search", "usage.read", "health.read"],
   },
-  async sendMessage(_context, body): Promise<SendResult> {
+  async sendMessage(context, body): Promise<SendResult> {
     await new Promise((resolve) => setTimeout(resolve, 480));
+    if (body.startsWith("Portal personal brief v1.")) {
+      const selected = body.split("Selected context:\n")[1] ?? "null";
+      let reply = "The selected context is too large for this synthetic fixture. A live assistant would need a smaller selection.";
+      try {
+        const context = JSON.parse(selected);
+        if (context?.summary) {
+          const m = context.summary;
+          reply = `Your recorded month\n${m.month}: income ${(m.income / 100).toFixed(2)} ${m.currency}, net spending ${(m.spent / 100).toFixed(2)} ${m.currency}. Transfers are excluded. This does not establish your bank balance.\n\nNext step\nConfirm statement coverage and set a budget baseline from a full prior month. ${context.settings.risk === "unset" ? "Your investment risk preference is still undecided; explore your horizon and capacity for losses before choosing allocation targets." : "Review whether your stated investment horizon and comfort with losses still match your circumstances."}\n\nLimits\nImported values only. No suitability assessment, live quotes or trade recommendation.`;
+        } else if (Array.isArray(context) && body.includes("non-clinical reflection")) {
+          const g = context[0];
+          reply = g ? `What matters\n${g.title}: ${g.why}\n\nYour records\n${g.checkins.reduce((s: number, c: { value: number }) => s + c.value, 0)} ${g.unit} across the shared check-ins; your weekly intention is ${g.weekly}. This selection may not include your full history.\n\nOne experiment\nReserve one short session for the next step and record what made it easier or harder.\n\nReflection\nWhat would you change about the environment around this goal, rather than asking more of your willpower?` : "Choose one personally meaningful goal first. Define a small measure and a weekly intention; a first check-in gives us something concrete to reflect on.";
+        } else if (Array.isArray(context)) {
+          reply = `Agenda snapshot\n${context.slice(0, 5).map((c: { title: string; date: string; time: string | null }) => `${c.date} ${c.time ?? "All day"}: ${c.title}`).join("\n") || "No open commitments were shared."}\n\nPrepare ahead\nChoose the nearest commitment and write down the outcome you need from it.\n\nFollow-up draft\n${context[0] ? `About ${context[0].title}: could you confirm the next step and any preparation needed?` : "Add the relevant commitment and recipient context before drafting a follow-up."}\n\nThis draft has no recipient and has not been sent. No live calendar was checked.`;
+        }
+      } catch { /* Explicitly bounded synthetic response, never arbitrary execution. */ }
+      return { state: "claimed", reply: `Simulation · no external work performed\n\n${reply}`, remoteId: crypto.randomUUID() };
+    }
+    if (body.startsWith("Portal project draft v1.")) {
+      const input = JSON.parse(body.slice(body.indexOf("\n") + 1)) as { title: string; objective: string; criteria: string; task: string; priorDrafts: unknown[] };
+      const stage = input.priorDrafts.length;
+      const artifact = stage === 0
+        ? `Working plan\n1. Confirm the target audience and the smallest observable result.\n2. Prepare one representative artifact and test it against the criteria.\n3. Compare the result with the baseline and record remaining gaps.\n\nHypothesis: ${input.objective}\n\nAcceptance checks: ${input.criteria}\n\nDependency: access to representative evidence. No evidence collection has been performed.`
+        : stage === 1
+          ? `Draft evaluation worksheet: ${input.title}\n\nParticipant task: Explain the proposed outcome in your own words.\nBaseline: Record time and interruptions using the current process.\nTrial: Repeat an equivalent task using the proposed workflow.\nMeasures: Completion time, correctness, interventions and confidence.\nInterview: What was unclear? What did you have to do manually? What would make you return?\nDecision rule: Compare observed results with the stated acceptance criteria before expanding scope.\n\nThis is a synthetic research artifact for the demo. A live runtime should tailor its deliverable to your objective.`
+          : `Review of the synthetic draft\nCovered: a comparison baseline, observable measures and an interview guide.\nMissing: recruited participants, actual measurements and independent review.\nCorrection: record task equivalence and counterbalance trial order before drawing conclusions.\nAcceptance status: ready for operator inspection, not validated in the field.\n\nCriteria to inspect: ${input.criteria}`;
+      return { state: "claimed", reply: `Simulation · no external work performed\n\n${artifact}`, remoteId: crypto.randomUUID() };
+    }
+    if (context.config.profile && context.config.packet) {
+      const presentation = demoAssessment(context.config.profile as AssistantProfile, body, context.config.packet as DecisionPacket);
+      const report = /^(Portal briefing|Revise your report|Council)/.test(body);
+      return { state: "claimed", reply: report ? presentationText(presentation) : `${presentation.summary}\n\n${presentation.recommendation}\n\nEvidence: launch audience brief and copy review. Simulation; no external action.`, ...(report ? { metadata: { presentation } } : {}) };
+    }
     const lower = body.toLowerCase();
-    const reply = lower.includes("focus") || lower.includes("priority")
-      ? "The launch positioning is the only decision blocking other work. I recommend choosing the clearer, outcome-led option; I can then publish the supporting updates and handle the follow-ups."
+    const reply = lower.startsWith("portal briefing request v1")
+      ? "Needs you\nChoose the Studio launch positioning. This is the sample workspace's open decision.\n\nWork to follow\nStudio launch is 54% complete. Review the launch copy before the publishing window.\n\nSources\nStudio launch project · Launch copy attention item · synthetic fixtures.\n\nLimits\nThis is a prepared demo brief. No live sources were checked and no source work was changed."
+      : lower.startsWith("revise your report")
+        ? "Revised demo brief\nThe launch decision remains open. The sample project shows 54% progress; that does not establish readiness to publish.\n\nFollow-up received\n" + body.split("Operator correction:\n").at(-1)!.slice(0, 4000) + "\n\nThis simulation records your follow-up and returns a separate revision. An actual runtime would investigate it against authorized sources."
+        : lower.includes("focus") || lower.includes("priority")
+      ? "The launch positioning is the only decision blocking other work. I recommend choosing the clearer, outcome-led option; Review both options in Attention to record a simulated choice. No publication or follow-up will be performed."
       : lower.includes("status") || lower.includes("today")
-        ? "Today is healthy overall: 8 tasks completed, 2 running, and one decision needs you. Inbox triage is current and no security issues are open."
+        ? "The sample workspace has three projects and a launch positioning decision. These are synthetic records, not a live health assessment."
         : "Understood. I’ve accepted that request and will keep the work visible here. I’ll bring you back only if a decision, risk, or verification gap needs your attention.";
     return { state: "claimed", reply: `Demo response · no external work performed.\n\n${reply}`, remoteId: crypto.randomUUID() };
   },

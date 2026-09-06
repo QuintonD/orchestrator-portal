@@ -64,6 +64,7 @@ describe("portal server", () => {
 
   it("requires setup, authentication, and CSRF outside demo mode", async () => {
     const app = await testApp(false);
+    expect((await app.inject({ method: "GET", url: "/api/setup/discovery" })).statusCode).toBe(401);
     expect((await app.inject({ method: "GET", url: "/api/overview" })).statusCode).toBe(401);
     const setup = await app.inject({ method: "POST", url: "/api/auth/setup", payload: { displayName: "Owner", password: "a sufficiently long private passphrase" } });
     expect(setup.statusCode).toBe(201);

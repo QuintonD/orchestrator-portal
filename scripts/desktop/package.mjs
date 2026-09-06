@@ -52,6 +52,7 @@ try {
   for (const file of await webFiles(path.join(repo, "apps/web/dist"))) await copy(path.join(repo, "apps/web/dist", file), path.join(bundle, "apps/web/dist", file));
   for (const filename of ["LICENSE", "THIRD_PARTY_NOTICES.md"]) await copy(path.join(repo, filename), path.join(bundle, filename));
   await copy(path.join(repo, "docs/desktop.md"), path.join(bundle, "README.md"));
+  for (const document of ["beta.md", "beta-scope.md", "personal-workflows.md", "personal-validation.md"]) await copy(path.join(repo, "docs", document), path.join(bundle, document));
   for (const filename of ["launcher.mjs", "paths.mjs", "runtime.json"]) await copy(new URL(filename, import.meta.url), path.join(bundle, "desktop", filename));
   // The web bundle embeds these libraries; their npm directories are not runtime dependencies of the API.
   for (const [dependency, license] of [["react", "LICENSE"], ["react-dom", "LICENSE"], ["scheduler", "LICENSE"], ["lucide-react", "LICENSE"], ["vite", "LICENSE.md"], ["rolldown", "LICENSE"]]) {

@@ -4,6 +4,7 @@ import { api, ApiError } from "./lib.js";
 import { AppShell, Mark, Toast, routes } from "./components.js";
 import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
 import { ConnectionsPage } from "./connections.js";
+import { PersonalPage } from "./personal-page.js";
 import { AgentsPage, ReportsPage, CouncilsPage, ActivityPage, AccessPanel } from "./alpha-pages.js";
 
 interface AuthStatus {
@@ -56,6 +57,7 @@ export function App() {
 
   const pageProps = { notify };
   const page = route === "/assistant" ? <AssistantPage {...pageProps} />
+    : route === "/personal" ? <PersonalPage {...pageProps} />
     : route === "/agents" ? <AgentsPage {...pageProps} navigate={navigate} />
     : route === "/reports" ? <ReportsPage {...pageProps} />
     : route === "/councils" ? <CouncilsPage {...pageProps} />

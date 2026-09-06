@@ -26,8 +26,9 @@ import { ftsQuery, indexDirectory } from "./knowledge.js";
 import { indexNotion, validateNotionConfig } from "./notion.js";
 import { registerAlpha } from "./alpha.js";
 import { registerGrok } from "./grok.js";
+import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.1.0-alpha.2";
+const version = "0.2.0-beta.2";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {
@@ -152,6 +153,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   });
 
   const authenticated = requireAuth(db, config.demo);
+  app.get("/api/setup/discovery", { preHandler: authenticated }, async () => ({ tools: await discoverLocalTools() }));
   registerAlpha(app, db, vault, authenticated, config.demo);
   registerGrok(app, db, vault, authenticated);
 
@@ -163,6 +165,9 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   });
 
   app.get("/api/overview", { preHandler: authenticated }, async (request) => {
+    const attentionTotal = db.prepare("SELECT COUNT(*) AS count FROM attention_items WHERE resolved_at IS NULL").get() as { count: number };
+    const assistantTotal = db.prepare("SELECT COUNT(*) AS count FROM alpha_records WHERE kind='assistant'").get() as { count: number };
+    const reportTotal = db.prepare("SELECT COUNT(*) AS count FROM alpha_records WHERE kind='report'").get() as { count: number };
     const attention = db.prepare("SELECT * FROM attention_items WHERE resolved_at IS NULL ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 6").all();
     const projects = db.prepare("SELECT * FROM projects ORDER BY CASE status WHEN 'blocked' THEN 0 WHEN 'at-risk' THEN 1 ELSE 2 END, updated_at DESC").all();
     const recurring = db.prepare("SELECT * FROM recurring_tasks ORDER BY next_run_at ASC LIMIT 8").all();
@@ -175,6 +180,9 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
     const running = db.prepare("SELECT COUNT(*) AS count FROM events WHERE kind = 'work.running' AND occurred_at > ?").get(new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()) as { count: number };
     return {
       attention: attention.map(mapAttention),
+      attentionCount: attentionTotal.count,
+      assistantCount: assistantTotal.count,
+      reportCount: reportTotal.count,
       projects: projects.map(mapProject),
       recurring: recurring.map(mapRecurring),
       feed: feed.map(mapEvent),

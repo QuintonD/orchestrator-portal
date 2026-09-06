@@ -46,7 +46,7 @@ try {
   await ui.fill({ clazz: "android.widget.EditText" }, "release-test-only-2026");
   await ui.hideKeyboard();
   await ui.tap({ text: "Continue" });
-  await ui.wait({ text: "Your workspace is ready" });
+  await ui.wait({ text: "Make space for less work." });
   const inspectionExposed = device.webViews().some(view => view.pkg() === pkg);
   if (inspectionExposed) {
     // WebView 113's SharedStatics intentionally ignores disable requests on userdebug Android.
@@ -58,14 +58,14 @@ try {
   assert.ok(!/flags=\[.*DEBUGGABLE/.test(packageDump));
   await device.screenshot({ path: path.join(output, "03-release-private-portal.png") });
   await ui.tap({ text: "Work", clazz: "android.widget.Button" });
-  await ui.wait({ text: "A legible view of projects and routines, regardless of which runtime executes them." });
+  await ui.wait({ text: "Projects and recurring work." });
   await device.screenshot({ path: path.join(output, "04-release-work.png") });
   await ui.key("Back");
-  await ui.wait({ text: "Your workspace is ready" });
+  await ui.wait({ text: "Make space for less work." });
   await ui.background(pkg);
   await device.shell(`am force-stop ${pkg}`);
   await device.shell(`am start -n ${pkg}/io.github.quintond.orchestrator.MainActivity`);
-  await ui.wait({ text: "Your workspace is ready" });
+  await ui.wait({ text: "Make space for less work." });
   console.log("PASS Signed APK: install, private login, navigation, Back and persisted session; non-debuggable manifest");
   child.kill();
   await expect.poll(() => child.exitCode !== null || child.signalCode !== null).toBe(true);
@@ -76,7 +76,7 @@ try {
   child = startGateway();
   await expect.poll(async () => { try { return (await fetch("http://127.0.0.1:4480/healthz")).status; } catch { return 0; } }, { timeout: 20000 }).toBe(200);
   await ui.tap({ text: "Connect to gateway" });
-  await ui.wait({ text: "Your workspace is ready" });
+  await ui.wait({ text: "Make space for less work." });
   console.log("PASS Signed APK: offline recovery");
   passed = true;
 } finally {
