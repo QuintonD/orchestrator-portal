@@ -31,7 +31,14 @@ export function nativeControls(getDevice) {
     // All test inputs are synthetic ASCII. Do not interpolate arbitrary shell text.
     assert.match(value, /^[a-zA-Z0-9:/._ -]+$/);
     await tap(selector);
-    await expect.poll(keyboardShown).toBe(true);
+    // A cold emulator can expose the Activity before its input window accepts
+    // the first tap. Reacquire current bounds and focus again, while still
+    // requiring a visible IME before injecting or verifying any text.
+    await expect.poll(async () => {
+      if (await keyboardShown()) return true;
+      await tap(selector);
+      return keyboardShown();
+    }, { timeout: 20000 }).toBe(true);
     // IME startup can interrupt shell text injection. Check the resulting native
     // field before continuing, and retry this idempotent fill if it was partial.
     for (let attempt = 0; attempt < 3; attempt++) {
