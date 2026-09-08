@@ -2,9 +2,11 @@
 
 [Project home](../README.md) | [Get help](../SUPPORT.md) | [Contribute](../CONTRIBUTING.md)
 
-The source tree contains 0.2.0-beta.2. Published desktop and Android downloads remain at 0.1.0-alpha.2. Use the documentation at a release's tag when you need instructions for that exact version.
+The source tree contains 0.2.0-beta.2. Packaged desktop and signed Android downloads remain at 0.1.0-alpha.2; a separate beta 2 Android QA snapshot is also available. Use the documentation at a release's tag when you need instructions for that exact version.
 
 ## Install and use
+
+- [Releases and downloads](releases.md): all versions, platform downloads, and QA build differences.
 
 - [Desktop setup](desktop.md): downloads, launchers, upgrades, and diagnostics.
 - [Android setup](android.md): connect a phone to your computer's gateway.
