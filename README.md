@@ -1,16 +1,23 @@
 # Orchestrator
 
-Orchestrator is a private, local-first portal to your assistants and their work. The beta adds prepared teams for every supported connection, automatic local briefs, dedicated assistant conversations, evidence-based reports and a complete simulated decision workflow in a calm monochrome workspace.
+[Documentation](docs/README.md) | [Downloads](https://github.com/QuintonD/orchestrator-portal/releases) | [Discussions](https://github.com/QuintonD/orchestrator-portal/discussions) | [Contributing](CONTRIBUTING.md)
 
-Beta 2 adds [personal project, money, coaching and agenda workflows](docs/personal-workflows.md), with bounded source-generated drafts and a shared Today view.
+Orchestrator is an open-source, local-first portal for following your AI assistants and their work. Review reports, inspect evidence, continue assistant conversations, and see which decisions need your attention from a browser or Android phone. Your connected runtimes retain execution authority.
 
-See the [beta guide](docs/beta.md), [research and acceptance scope](docs/beta-scope.md), and [beta validation](docs/beta-validation.md). Run `npm run demo` for a fresh populated workspace at port 4425. Source runtimes retain execution authority. The download links below refer to the previously published alpha; the beta is a local build until separately released.
+**Status:** `main` contains **0.2.0-beta.2**, available to build from source. The latest published downloads are **0.1.0-alpha.2** for Windows, macOS, Linux, and Android. Beta features shown here are not all available in those alpha downloads. There is no stable release yet.
 
-Start with the [desktop download for Windows, macOS or Linux](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2). It includes everything needed to run the gateway; Node, Git and build commands are not required. Follow the [desktop setup guide](docs/desktop.md).
+## Start here
 
-For phone testing, install the signed Android APK from the same release and follow the [Android setup guide](docs/android.md). The app connects to your computer's gateway over USB or private HTTPS.
+| Your goal | Start with |
+| --- | --- |
+| Try a download without installing developer tools | [Alpha downloads](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2) and [desktop setup](docs/desktop.md) |
+| Explore the current beta with synthetic data | [Run the demo](#try-the-beta-demo) |
+| Connect a phone to your gateway | [Android setup](docs/android.md) |
+| Connect assistants or search your notes | [Adapter guide](docs/adapters.md) and [knowledge setup](docs/knowledge.md) |
+| Understand beta features and limitations | [Beta guide](docs/beta.md), [personal workflows](docs/personal-workflows.md), and [validation](docs/personal-validation.md) |
+| Ask a question or contribute | [Support](SUPPORT.md) and [contributor guide](CONTRIBUTING.md) |
 
-The portal is deliberately **not** another agent runtime or knowledge store. OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator connects to them through capability-based adapters and records exactly what was accepted, committed, observed, or independently verified.
+OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator records whether an outcome was claimed, committed, observed, or verified; an assistant's response alone does not establish success.
 
 ![Orchestrator overview](docs/assets/overview-light.png)
 
@@ -66,11 +73,15 @@ npm start
 
 Open `http://127.0.0.1:4400`, create the first local workspace, then add a connection. The server binds to loopback by default.
 
-For a representative, non-production workspace:
+### Try the beta demo
+
+After cloning the repository and running `npm ci` as above:
 
 ```bash
-npm run dev:demo
+npm run demo
 ```
+
+Open `http://127.0.0.1:4425`. This builds the beta and starts a fresh, populated synthetic workspace, separate from your real gateway data. Stop it with Ctrl+C. The simulated decisions do not publish content or send external messages.
 
 Demo mode is intentionally refused on non-loopback interfaces.
 
@@ -83,7 +94,7 @@ Demo mode is intentionally refused on non-loopback interfaces.
 | Knowledge adapter | Search and source references | Local folders, Obsidian, Notion, gbrain CLI |
 | Source system | Execution and source-of-truth policy | OpenClaw, custom agents, calendars, mail |
 
-Assistant responses remain `claimed`; an ambiguous timeout is `unknown`. Source events preserve their reported states and evidence. A useful rating does not establish independent verification. The alpha has no general-purpose independent verifier.
+Assistant responses remain `claimed`; an ambiguous timeout is `unknown`. Source events preserve their reported states and evidence. A useful rating does not establish independent verification. The portal has no general-purpose independent verifier.
 
 ## Connecting OpenClaw
 
@@ -108,14 +119,14 @@ Add the resulting HTTPS origin to `ORCHESTRATOR_ALLOWED_ORIGINS`. Portal authent
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev:demo
 npm run check
 npm run build
 npm run test:e2e
 ```
 
-The repository is an npm-workspaces monorepo:
+See [Contributing](CONTRIBUTING.md) for prerequisites, validation, and the pull-request process. The repository is an npm-workspaces monorepo:
 
 - `apps/server` — Fastify API, SQLite persistence, security, built-in adapters
 - `apps/web` — React/Vite interface
@@ -125,6 +136,8 @@ The repository is an npm-workspaces monorepo:
 - `research` — the research dossier that shaped the product boundaries
 
 ## Documentation
+
+The [documentation index](docs/README.md) groups setup guides, integration references, validation records, and the complete research dossier.
 
 - [Product direction and prototype refinement proposal](docs/product-direction.md)
 - [Shared product vocabulary](CONTEXT.md)
@@ -138,6 +151,8 @@ The repository is an npm-workspaces monorepo:
 
 ## Project status
 
-Version `0.1.0` is a production-oriented first release: real authentication, persistence, encryption, adapter boundaries, deployment assets, automated tests, and desktop/mobile visual QA are present. It is still young software. Use the benchmark in `research/10-evaluation-benchmark.md` before entrusting it with irreversible actions, and keep source runtimes responsible for authorization and execution policy.
+This is pre-release software. Authentication, persistence, encryption, adapter boundaries, and automated tests are implemented, but live integration acceptance and operator evaluation remain incomplete. Read the [beta validation](docs/beta-validation.md) and [beta 2 validation](docs/personal-validation.md) for tested behavior and remaining limits. The [product direction](docs/product-direction.md) describes proposals, not a delivery commitment.
+
+For help, use [Discussions](https://github.com/QuintonD/orchestrator-portal/discussions). Report reproducible defects through [Issues](https://github.com/QuintonD/orchestrator-portal/issues/new/choose) and vulnerabilities through the [security policy](SECURITY.md). Participation follows our [code of conduct](CODE_OF_CONDUCT.md).
 
 Orchestrator is Apache-2.0 licensed. It contains no copied T3 Code implementation; T3 Code informed interaction and local-serving research only. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
