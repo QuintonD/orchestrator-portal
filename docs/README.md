@@ -20,6 +20,7 @@ The source tree contains 0.2.0-beta.2. Packaged desktop and signed Android downl
 
 - [Contributor guide](../CONTRIBUTING.md): development setup, checks, and pull requests.
 - [Architecture](architecture.md): components and evidence model.
+- [Visual system](visual-system.md): monochrome layout, type, and the presence field.
 - [Adapter guide](adapters.md): runtime and knowledge integration contracts.
 - [Security model](security.md): authentication, encryption, and trust boundaries.
 - [Security policy](../SECURITY.md): supported versions and private vulnerability reporting.

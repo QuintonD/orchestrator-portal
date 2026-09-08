@@ -146,10 +146,10 @@ export function OverviewPage({ notify, navigate, onAttentionCount }: NotifyProps
       />
 
       <section className="system-focus">
-        <PresenceField active={refreshing} />
+        <PresenceField active={refreshing} state={refreshing ? "thinking" : stale.length ? "connecting" : data.attention.length ? "aware" : "resting"} />
         <div className="system-focus__copy"><p className="eyebrow">{refreshing ? "Checking sources" : data.connectors.length ? "System pulse" : "Start here"}</p>
-          <h2>{!data.connectors.length ? "Make space for less work." : stale.length ? "A source needs a check." : data.attention.length ? `${data.attentionCount} things need you.` : "Nothing needs you right now."}</h2>
-          <p>{!data.connectors.length ? "Connect what you already use. We’ll bring its work into focus." : stale.length ? "Refresh the picture before relying on it." : "Your next decision, with the work around it."}</p>
+          <h2>{!data.connectors.length ? "Connect a source to begin." : stale.length ? "A source needs a check." : data.attention.length ? `${data.attentionCount} things need you.` : "Nothing needs you right now."}</h2>
+          <p>{!data.connectors.length ? "Connect what you already use. Its work comes into focus here." : stale.length ? "Refresh the picture before relying on it." : "Your next decision, with the work around it."}</p>
           {!data.connectors.length && <button className="button button--primary" onClick={() => navigate("/connections")}>Find my sources <ArrowRight size={16} /></button>}
           {stale.length > 0 && <button className="button button--secondary" disabled={refreshing} onClick={refreshSources}><RefreshCw size={15} className={refreshing ? "spin" : ""} />{refreshing ? "Checking…" : "Refresh sources"}</button>}
         </div>
@@ -216,7 +216,7 @@ function DashboardWidget({ id, size, data, navigate }: { id: string; size: strin
     return (
       <Card title="Usage today" className={span} action={<span className={cx("trend", increase && "trend--up")}>{increase ? <TrendingUp size={14} /> : <TrendingDown size={14} />}{prior ? Math.abs(Math.round((current - prior) / prior * 100)) : 0}%</span>}>
         <div className="usage-grid"><div><strong>{compactNumber(current)}</strong><span>tokens</span></div><div><strong>{money(data.latestMetric?.cost ?? 0)}</strong><span>estimated cost</span></div><div><strong>{data.latestMetric?.completed ?? 0}</strong><span>outcomes</span></div></div>
-        <p className="subtle-label">Latest source snapshot ? {data.latestMetric?.date ?? "No usage received"}</p>
+        <p className="subtle-label">Latest source snapshot · {data.latestMetric?.date ?? "No usage received"}</p>
       </Card>
     );
   }
@@ -236,7 +236,7 @@ function DashboardWidget({ id, size, data, navigate }: { id: string; size: strin
 }
 
 function ProjectRow({ project }: { project: Project }) {
-  return <div className="project-row"><div className="project-row__title"><span className={cx("project-dot", `project-dot--${project.status}`)} /><div><strong>{project.name}</strong><small>{project.description}</small></div></div><div className="progress-cell"><span>{project.progress}%</span><div className="progress-track"><i style={{ width: `${project.progress}%` }} /></div></div><StatusPill state={project.status} /></div>;
+  return <div className="project-row"><div className="project-row__title"><div><strong>{project.name}</strong><small>{project.description}</small></div></div><StatusPill state={project.status} /><div className="progress-cell"><span>{project.progress}%</span><div className="progress-track"><i style={{ width: `${project.progress}%` }} /></div></div></div>;
 }
 
 function MiniBars({ values }: { values: number[] }) {
@@ -378,7 +378,7 @@ export function WorkPage({ notify }: NotifyProps) {
   useEffect(() => { Promise.all([api<Project[]>("/api/projects"), api<RecurringTask[]>("/api/recurring")]).then(([nextProjects, nextTasks]) => { setProjects(nextProjects); setTasks(nextTasks); }).catch((error) => notify(error.message, "error")); }, []);
   return <><PageHeader title="Work" detail="Projects and recurring work."  />
     <div className="summary-strip"><div><span className="metric-icon"><Activity size={17} /></span><strong>{projects?.filter((project) => project.status !== "complete").length ?? "—"}</strong><small>active projects</small></div><div><span className="metric-icon metric-icon--warm"><AlertCircle size={17} /></span><strong>{projects?.filter((project) => ["at-risk", "blocked"].includes(project.status)).length ?? "—"}</strong><small>at elevated risk</small></div><div><span className="metric-icon"><CheckCircle2 size={17} /></span><strong>{tasks?.filter((task) => task.lastState === "succeeded").length ?? "—"}</strong><small>routines healthy</small></div></div>
-    <HandoffPanel notify={notify} /><div className="work-grid"><Card title="Projects" className="span-2">{!projects ? <Skeleton lines={7} /> : <div className="project-board">{projects.map((project) => <article key={project.id} className="project-card"><div className="project-card__top"><span className={cx("project-dot", `project-dot--${project.status}`)} /><StatusPill state={project.status} /></div><h3>{project.name}</h3><p>{project.description}</p><div className="project-health"><div><span>Progress</span><strong>{project.progress}%</strong></div><div className="progress-track"><i style={{ width: `${project.progress}%` }} /></div><small>Health score {project.health}/100 · updated {relativeTime(project.updatedAt)}</small></div></article>)}</div>}</Card>
+    <HandoffPanel notify={notify} /><div className="work-grid"><Card title="Projects" className="span-2">{!projects ? <Skeleton lines={7} /> : <div className="project-board">{projects.map((project) => <article key={project.id} className="project-card"><div className="project-card__top"><h3>{project.name}</h3><StatusPill state={project.status} /></div><p>{project.description}</p><div className="project-health"><div><span>Progress</span><strong>{project.progress}%</strong></div><div className="progress-track"><i style={{ width: `${project.progress}%` }} /></div><small>Health score {project.health}/100 · updated {relativeTime(project.updatedAt)}</small></div></article>)}</div>}</Card>
     <Card title="Automation rhythm">{!tasks ? <Skeleton /> : <div className="automation-list">{tasks.map((task) => <div key={task.id}><span className={cx("automation-icon", task.lastState)}>{task.lastState === "running" ? <LoaderCircle size={16} /> : <Check size={16} />}</span><div><strong>{task.title}</strong><small>{task.schedule}</small></div><time>{relativeTime(task.nextRunAt)}</time></div>)}</div>}</Card></div>
   </>;
 }
@@ -421,7 +421,7 @@ function UsageChart({ points }: { points: InsightPoint[] }) {
   const coordinates = points.map((point, index) => ({ x: padding + index * ((width - padding * 2) / Math.max(1, points.length - 1)), y: height - padding - (point.tokens / max) * (height - padding * 2), point }));
   const path = coordinates.map(({ x, y }, index) => `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const area = `${path} L${coordinates.at(-1)?.x ?? 0},${height - padding} L${coordinates[0]?.x ?? 0},${height - padding} Z`;
-  return <div className="usage-chart"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Daily token usage line chart"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--accent)" stopOpacity=".24" /><stop offset="1" stopColor="var(--accent)" stopOpacity="0" /></linearGradient></defs>{[0.25, 0.5, 0.75].map((value) => <line key={value} x1={padding} x2={width - padding} y1={padding + value * (height - padding * 2)} y2={padding + value * (height - padding * 2)} />)}<path d={area} fill="url(#chartFill)" /><path d={path} className="chart-line" />{coordinates.map(({ x, y, point }) => <circle key={point.date} cx={x} cy={y} r="3" />)}</svg><div className="chart-labels">{points.filter((_, index) => index % 3 === 0 || index === points.length - 1).map((point) => <span key={point.date}>{new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(`${point.date}T12:00:00`))}</span>)}</div></div>;
+  return <div className="usage-chart"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Daily token usage line chart">{[0.5, 1].map((value) => <line key={value} x1={padding} x2={width - padding} y1={padding + value * (height - padding * 2)} y2={padding + value * (height - padding * 2)} />)}<path d={area} className="chart-area" /><path d={path} className="chart-line" />{coordinates.map(({ x, y, point }, index) => index === coordinates.length - 1 ? <circle key={point.date} cx={x} cy={y} r="3.5" /> : null)}</svg><div className="chart-labels">{points.filter((_, index) => index % 3 === 0 || index === points.length - 1).map((point) => <span key={point.date}>{new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(`${point.date}T12:00:00`))}</span>)}</div></div>;
 }
 
 export function SettingsPage({ notify, auth, onSignedOut }: NotifyProps & { auth: { mode: string; user: { displayName: string } | null }; onSignedOut(): void }) {

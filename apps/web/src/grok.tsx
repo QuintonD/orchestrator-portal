@@ -2,7 +2,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { Report } from "@orchestrator/contracts";
 import { Copy, Download, ExternalLink, FileText } from "lucide-react";
 import { api } from "./lib.js";
-import "./grok.css";
 
 interface Props {
   notify(message: string, tone?: "neutral" | "success" | "error"): void;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "./lib.js";
 import { AppShell, Mark, Toast, routes } from "./components.js";
+import { PresenceField } from "./presence.js";
 import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
 import { ConnectionsPage } from "./connections.js";
 import { PersonalPage } from "./personal-page.js";
@@ -52,7 +53,7 @@ export function App() {
   }, []);
 
   if (authError) return <div className="boot-screen"><Mark /><p>The portal gateway is unavailable.</p><button className="button button--secondary" onClick={() => { setAuthError(false); api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuthError(true)); }}>Retry connection</button></div>;
-  if (!auth) return <div className="boot-screen"><Mark /><span className="loading-orbit" /></div>;
+  if (!auth) return <div className="boot-screen"><Mark /><PresenceField state="thinking" /></div>;
   if (!auth.authenticated) return <AuthScreen status={auth} onAuthenticated={() => api<AuthStatus>("/api/auth/status").then(setAuth)} />;
 
   const pageProps = { notify };
@@ -101,10 +102,10 @@ function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthent
 
   return (
     <main className="auth-screen">
-      <div className="auth-atmosphere" />
       <section className="auth-intro">
         <Mark />
         <div className="auth-copy">
+          <PresenceField state="resting" />
           <p className="eyebrow">Your assistant, in focus</p>
           <h1>See what matters.<br /><span>Delegate the rest.</span></h1>
           <p>A private command centre for conversations, active work, decisions, knowledge, and outcomes—without living in a chat feed.</p>
