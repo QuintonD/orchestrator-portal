@@ -5,7 +5,6 @@ import { api, relativeTime } from "./lib.js";
 import { Card, PageHeader, Skeleton, StatusPill } from "./components.js";
 import { Dialog } from "./alpha-pages.js";
 import { GrokPanel } from "./grok.js";
-import "./connections.css";
 
 type Notify = (message: string, tone?: "neutral" | "success" | "error") => void;
 type CatalogItem = { id: string; displayName: string; capabilities: string[] };
@@ -77,12 +76,14 @@ export function ConnectionsPage({ notify, navigate }: { notify: Notify; navigate
     </section>
     <div className="connection-summary"><ShieldCheck size={18} /><div><strong>Your connections stay on this computer</strong><span>Secrets are stored in the local vault. Only content you choose is shared with a connected service.</span></div></div></details>
     {error ? <div className="notice" role="alert">{error}<button onClick={load}>Retry</button></div> : !data ? <Skeleton lines={6} /> : data.connectors.length === 0 ? null : <div className="connections-grid">{data.connectors.map((connector) => <Card key={connector.id} className="connection-card">
-      <div className="connection-card__top"><span className="connection-logo">{connector.capabilities.includes("knowledge.read") ? <FileText size={21} /> : <Bot size={21} />}</span></div>
-      <h2>{connector.name}</h2><p>{labels[connector.kind] ?? connector.kind}</p><StatusPill state={connector.status} />
-      <p className="connection-purpose">{connector.capabilities.includes("message.send") ? "Conversation and assistant tasks" : connector.capabilities.includes("knowledge.search") ? "Read-only knowledge search" : "Workspace availability"}</p>
-      <dl><div><dt>Last checked</dt><dd>{connector.lastSyncAt ? relativeTime(connector.lastSyncAt) : "Not checked yet"}</dd></div></dl>
-      {connector.error && <div className="connection-error" role="status">{connector.error}</div>}
-      <button className="button button--secondary" onClick={() => navigate(`/agents?source=${encodeURIComponent(connector.id)}`)}>Prepare this team <ArrowRight size={15} /></button><div className="connection-card__actions"><button className="button button--secondary" onClick={() => sync(connector.id)} disabled={syncing.includes(connector.id)}>{syncing.includes(connector.id) ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} {connector.capabilities.includes("knowledge.read") ? "Refresh documents" : "Check connection"}</button>{connector.id !== "demo" && <button className="icon-button icon-button--danger" onClick={() => setRemoving(connector)} aria-label={`Remove ${connector.name}`}><Trash2 size={16} /></button>}</div>
+      <span className="connection-logo">{connector.capabilities.includes("knowledge.read") ? <FileText size={21} /> : <Bot size={21} />}</span>
+      <div className="connection-card__body">
+        <div className="connection-card__head"><h2>{connector.name}</h2><StatusPill state={connector.status} /></div>
+        <p>{labels[connector.kind] ?? connector.kind} · {connector.capabilities.includes("message.send") ? "Conversation and assistant tasks" : connector.capabilities.includes("knowledge.search") ? "Read-only knowledge search" : "Workspace availability"}</p>
+        <dl><div><dt>Last checked</dt><dd>{connector.lastSyncAt ? relativeTime(connector.lastSyncAt) : "Not checked yet"}</dd></div></dl>
+        {connector.error && <div className="connection-error" role="status">{connector.error}</div>}
+      </div>
+      <div className="connection-card__actions"><button className="button button--secondary" onClick={() => navigate(`/agents?source=${encodeURIComponent(connector.id)}`)}>Prepare this team <ArrowRight size={15} /></button><button className="button button--secondary" onClick={() => sync(connector.id)} disabled={syncing.includes(connector.id)}>{syncing.includes(connector.id) ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} {connector.capabilities.includes("knowledge.read") ? "Refresh documents" : "Check connection"}</button>{connector.id !== "demo" && <button className="icon-button icon-button--danger" onClick={() => setRemoving(connector)} aria-label={`Remove ${connector.name}`}><Trash2 size={16} /></button>}</div>
     </Card>)}</div>}
     <GrokPanel notify={notify} navigate={navigate} />
     {adding && <AddConnection initialKind={initialKind} catalog={data?.catalog ?? []} close={() => { setAdding(false); void load(); }} changed={load} navigate={navigate} />}

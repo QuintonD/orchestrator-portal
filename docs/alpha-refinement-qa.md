@@ -88,13 +88,7 @@ other runtimes still require their address or source selection.
 
 ## Asset provenance
 
-`apps/web/public/assets/presence.png` was generated using the built-in imagegen
-tool. It is a resting-state illustration, not a live topology or a data chart.
-The UI overlays limited state-driven motion. Assistant sigils are native SVG
-components to keep their states and reduced-motion behavior deterministic.
-
-Prompt:
-
-```text
-Use case: stylized-concept. Asset type: monochrome AI presence artwork for a minimal local assistant portal. Primary request: a single delicate spherical cloud of tiny graphite points suspended on a perfectly uniform warm off-white #F7F6F2 background. Centered composition, sphere occupies central 45 percent of square canvas, abundant empty space. Hundreds of minute points, denser subtly asymmetric nucleus, a few extremely fine straight radial threads ending in tiny black nodes. Precise digital information sculpture, quiet and clinical, crisp editorial aesthetic. Flat monochrome, no colour, no gradients, no glow, no text, no logos, no border, no objects or UI. Static resting state. 1024 square.
-```
+The resting presence illustration `apps/web/public/assets/presence.png` was
+replaced by a procedural canvas field. See [visual system](visual-system.md).
+Assistant sigils remain sprite atlases so theme, running state, and reduced-motion
+behavior stay deterministic.
