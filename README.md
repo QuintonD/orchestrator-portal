@@ -9,7 +9,9 @@
   <a href="https://github.com/QuintonD/orchestrator-portal/discussions">Community</a>
 </p>
 
-![Orchestrator overview with assistant activity and reports](docs/assets/overview-light.png)
+![Orchestrator beta 2 Today view with projects and next steps](docs/assets/personal/today-desktop.png)
+
+<p align="center"><sub>Beta 2 preview using a synthetic workspace.</sub></p>
 
 Follow assistant conversations, review reports and their evidence, and see which decisions need your attention. Orchestrator runs on your computer, with a browser interface and an Android companion. Connected runtimes keep control of execution and permissions.
 
