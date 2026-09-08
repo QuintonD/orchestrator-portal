@@ -1,4 +1,4 @@
-# Personal workflows — beta 2
+# Personal workflows - alpha 3
 
 Open **Today** for the personal workspace. **Portal** and **Work** still show the
 connected runtimes' existing work. This release adds personal records and bounded

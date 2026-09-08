@@ -109,7 +109,7 @@ comparative superiority or replace sessions with actual operators.
 - `npm run demo`: build and start an isolated synthetic workspace at port 4425.
 - `npm run check`: type checks and unit/integration tests.
 - `npm run test:e2e`: desktop and mobile browser regression suite.
-- `node tests/beta-journey.mjs`: isolated complete beta journey and screenshots.
+- `node tests/beta-journey.mjs`: isolated complete prepared-team journey and screenshots.
 - `node tests/design-capture.mjs`: light/dark captures of all twelve routes at phone and desktop sizes.
 - `npm run android:build`: debug APK, native unit tests and lint.
 - `npm run test:android`: disposable emulator journeys, including nested Back and the full decision.
