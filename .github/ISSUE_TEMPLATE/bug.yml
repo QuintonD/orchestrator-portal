@@ -16,10 +16,16 @@ body:
   - type: input
     attributes:
       label: Version or commit
+      description: Include the release tag or source commit and relevant runtime version.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Operating system and browser
   - type: dropdown
     attributes:
       label: Deployment
-      options: [Native loopback, Docker, Tailscale Serve, Other]
+      options: [Desktop download, Source build, Android app, Docker, Tailscale Serve, Other]
   - type: checkboxes
     attributes:
       label: Privacy check

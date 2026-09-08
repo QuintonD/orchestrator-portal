@@ -6,7 +6,7 @@ Security fixes are applied to the latest released minor version. Before the firs
 
 ## Reporting a vulnerability
 
-Use GitHub private vulnerability reporting on this repository. If that is unavailable, contact the maintainer through the private address listed on the maintainer’s GitHub profile and request a secure channel.
+Use [GitHub private vulnerability reporting](https://github.com/QuintonD/orchestrator-portal/security/advisories/new) on this repository. Sign in to GitHub to submit a report. If the form is temporarily unavailable, do not publish vulnerability details in Issues or Discussions.
 
 Do not open a public issue. Do not include real passphrases, ingest keys, connector credentials, assistant messages, or knowledge documents. A useful report includes affected commit or version, deployment shape, reproduction steps using synthetic data, impact, and suggested mitigations.
 

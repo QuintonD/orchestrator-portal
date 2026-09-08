@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup help and questions
+    url: https://github.com/QuintonD/orchestrator-portal/discussions
+    about: Ask the community about installation, usage, and integrations.
+  - name: Documentation
+    url: https://github.com/QuintonD/orchestrator-portal/blob/main/docs/README.md
+    about: Find setup guides, integration references, and validation records.
+  - name: Report a security vulnerability privately
+    url: https://github.com/QuintonD/orchestrator-portal/security/advisories/new
+    about: Do not disclose vulnerabilities in public issues.
