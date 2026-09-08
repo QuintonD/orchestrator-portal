@@ -71,6 +71,12 @@ subtree.
 
 ## Testing and verification
 
+- The application remains **alpha**. Use `0.1.0-alpha.N` for distributions until
+  the owner explicitly approves a stage change. Run `npm run release:check` and
+  follow `docs/releases.md` for matching desktop/Android assets and in-place
+  upgrade verification. Historical beta-labelled records are evidence, not an
+  approved promotion; preserve their tags, assets and stored identifiers.
+
 - Add or update tests for changed behavior.
 - Run the narrowest relevant checks first, then broader checks when warranted.
 - Do not claim a command passed unless it was actually run successfully.

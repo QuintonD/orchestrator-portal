@@ -28,7 +28,7 @@ import { registerAlpha } from "./alpha.js";
 import { registerGrok } from "./grok.js";
 import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.2.0-beta.2";
+const version = "0.1.0-alpha.3";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {

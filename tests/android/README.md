@@ -1,5 +1,15 @@
 # Android QA
 
+For release upgrades, run `npm run test:upgrade` with a fresh dedicated emulator
+selected through `ANDROID_QA_SERIAL`. Download the prior alpha 2 native desktop
+archive, signed APK and `SHA256SUMS.txt` into `test-results/release-assets/`, and
+build the current desktop package and signed APK first. This test runs the actual
+old launcher, creates synthetic records and phone settings, then upgrades both
+programs without uninstalling or clearing app data. It refuses an emulator with
+an existing Orchestrator package. Evidence stays in `test-results/upgrades/`;
+only screenshots/results, never databases or keys, belong in published evidence.
+The clean-install suites below do not substitute for this upgrade check.
+
 After the full suite, `node tests/android/visual.mjs` captures the current gateway
 build on that same disposable emulator in both themes. It starts a fresh synthetic
 gateway on port 4461 and captures Portal, Reports, Connections and Assistants,

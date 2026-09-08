@@ -1,6 +1,6 @@
 # Alpha build
 
-The current source is the [0.2.0-beta.1 build](beta.md). This page records the
+The current release is [alpha 3](releases.md), including [prepared teams](beta.md). This page records the
 earlier alpha scope and remains useful for its integration history.
 
 See the [experience refinement and visual QA notes](alpha-refinement-qa.md) for

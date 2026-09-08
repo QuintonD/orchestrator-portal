@@ -1,5 +1,7 @@
 # Beta implementation and acceptance
 
+> Historical development record. The beta labels below describe the names used during that work, not an approved beta release. The application remains alpha; original results and artifact names are preserved. See [release history](releases.md).
+
 This beta completes the supported local portal workflows. It does not imply a
 universal execution adapter, independent verification of arbitrary outcomes,
 or permission to send messages, deploy or spend money through connected tools.
