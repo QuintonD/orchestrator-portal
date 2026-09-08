@@ -1,158 +1,90 @@
-# Orchestrator
+<h1 align="center">Orchestrator</h1>
 
-[Documentation](docs/README.md) | [Downloads](https://github.com/QuintonD/orchestrator-portal/releases) | [Discussions](https://github.com/QuintonD/orchestrator-portal/discussions) | [Contributing](CONTRIBUTING.md)
+<p align="center">A local-first home for your AI assistants and their work.</p>
 
-Orchestrator is an open-source, local-first portal for following your AI assistants and their work. Review reports, inspect evidence, continue assistant conversations, and see which decisions need your attention from a browser or Android phone. Your connected runtimes retain execution authority.
+<p align="center">
+  <a href="https://github.com/QuintonD/orchestrator-portal/releases"><strong>All releases</strong></a> &middot;
+  <a href="#download">Download</a> &middot;
+  <a href="docs/README.md">Documentation</a> &middot;
+  <a href="https://github.com/QuintonD/orchestrator-portal/discussions">Community</a>
+</p>
 
-**Status:** `main` contains **0.2.0-beta.2**, available to build from source. The latest published downloads are **0.1.0-alpha.2** for Windows, macOS, Linux, and Android. Beta features shown here are not all available in those alpha downloads. There is no stable release yet.
+![Orchestrator overview with assistant activity and reports](docs/assets/overview-light.png)
 
-## Start here
+Follow assistant conversations, review reports and their evidence, and see which decisions need your attention. Orchestrator runs on your computer, with a browser interface and an Android companion. Connected runtimes keep control of execution and permissions.
 
-| Your goal | Start with |
-| --- | --- |
-| Try a download without installing developer tools | [Alpha downloads](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2) and [desktop setup](docs/desktop.md) |
-| Explore the current beta with synthetic data | [Run the demo](#try-the-beta-demo) |
-| Connect a phone to your gateway | [Android setup](docs/android.md) |
-| Connect assistants or search your notes | [Adapter guide](docs/adapters.md) and [knowledge setup](docs/knowledge.md) |
-| Understand beta features and limitations | [Beta guide](docs/beta.md), [personal workflows](docs/personal-workflows.md), and [validation](docs/personal-validation.md) |
-| Ask a question or contribute | [Support](SUPPORT.md) and [contributor guide](CONTRIBUTING.md) |
+**Pre-release software.** Desktop downloads are alpha 2. The source tree is beta 2, and a separate Android QA snapshot is available for testing. [Compare the builds](docs/releases.md) before downloading.
 
-OpenClaw, Hermes, custom harnesses, and connected knowledge stores remain authoritative. Orchestrator records whether an outcome was claimed, committed, observed, or verified; an assistant's response alone does not establish success.
+## Download
 
-![Orchestrator overview](docs/assets/overview-light.png)
+Desktop bundles include the runtime: no Node.js, Git, or build tools needed.
 
-## What is included
+| Platform | Download alpha 2 | Setup |
+| --- | --- | --- |
+| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
+| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
+| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
+| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2.apk) | [Phone setup](docs/android.md) |
 
-- A responsive, installable React interface with light and dark themes
-- A customizable overview designed around exceptions and outcomes
-- Assistant profiles with purpose, success criteria, provider mandates, and dispatch pause
-- Reviewable reports, preserved revisions, and targeted corrections
-- Bounded councils with independent assessments and a lead synthesis
-- Persistent activity watches and scoped, revocable knowledge grants
-- Direct assistant messaging with text attachments and explicit delivery receipts
-- Project, routine, attention, usage, mail-summary, and provider-health views
-- Guided connections with an immediate check and recoverable setup errors
-- Full-text search over selected local documents, Obsidian vaults and Notion pages
-- OpenClaw CLI, Hermes API, generic webhook and experimental gbrain adapters
-- Guided Grok Bot handoffs and previewed manual result imports, preserved as claims
-- Source-owned OpenClaw recurring briefs and deduplicated report import
-- An editable context handoff to an independent T3 Code workspace
-- An adapter SDK and stable shared contracts for other runtimes and knowledge stores
-- Encrypted connector secrets and message content in a local SQLite database
-- Passphrase authentication, HttpOnly sessions, CSRF protection, strict origins, CSP, rate limits, and an audit trail
-- Bearer-key event ingestion for runtimes that push normalized events
-- Server-sent updates without a cloud relay
-- Docker and Tailscale Serve deployment paths
-- No telemetry
+**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/SHA256SUMS.txt) &middot; [Beta Android QA build](docs/releases.md#android-qa-snapshots)
 
-The assistant channel carries the same operational context and evidence model into conversation:
+Desktop bundles are portable and unsigned. The Android app connects to the gateway on your computer; it does not run assistants on your phone. There is no stable release or automatic updater yet.
 
-![Orchestrator assistant channel](docs/assets/assistant-dark.png)
+## Get started
 
-## Quick start
-
-1. Download and extract the [desktop bundle](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.2) for your computer.
+1. Download the desktop archive for your computer and extract it completely.
 2. Open `Orchestrator.cmd` on Windows, `Orchestrator.command` on macOS, or `./orchestrator` on Linux. Keep the launcher running.
-3. Create your workspace in the browser that opens. In **Connections**, start with a local folder or Obsidian vault; no AI account is needed to search your notes.
+3. Create your workspace in the browser that opens. Add a local folder or Obsidian vault in **Connections** to explore your notes without an AI account.
 
-For Notion, connect a read-only internal integration and choose individual pages. For Grok Bot, prepare a task, copy it into Grok Bot and import the result after reviewing its preview. See [knowledge setup](docs/knowledge.md) and [Grok Bot handoffs](docs/grok-bot.md).
+Next, [connect knowledge sources](docs/knowledge.md), [connect a runtime](docs/adapters.md), or [set up private phone access](docs/android.md). [Desktop setup](docs/desktop.md) covers launch warnings, upgrades, backups, and troubleshooting.
 
-The portable alpha downloads are unsigned. Workspace data is stored separately from the program, so replacing the extracted program preserves your workspace. [Desktop setup](docs/desktop.md) covers launch warnings, diagnostics, upgrades and commands an agent can use.
+## What you can do
 
-### Run from source
+- **Follow your assistants.** Keep conversations, activity, and source delivery receipts together.
+- **Review the work.** Inspect reports and evidence, ask for corrections, and preserve previous revisions.
+- **Find your context.** Search selected local folders, Obsidian vaults, and Notion pages.
+- **Keep decisions in view.** Use attention items, projects, routines, and bounded councils to review what needs you.
 
-Contributors need Node.js 24 or newer and Git:
+Beta 2 adds prepared teams, automatic local briefs, and personal project, money, coaching, and agenda workflows. These features require a beta source build; see the [beta guide](docs/beta.md) and [personal workflows](docs/personal-workflows.md).
+
+<details>
+<summary>See the assistant conversation view</summary>
+
+![Assistant conversation in Orchestrator's dark theme](docs/assets/assistant-dark.png)
+
+</details>
+
+## Try the beta from source
+
+Install Node.js 24 or newer and Git, then run:
 
 ```bash
 git clone https://github.com/QuintonD/orchestrator-portal.git
 cd orchestrator-portal
 npm ci
-npm run build
-npm start
-```
-
-Open `http://127.0.0.1:4400`, create the first local workspace, then add a connection. The server binds to loopback by default.
-
-### Try the beta demo
-
-After cloning the repository and running `npm ci` as above:
-
-```bash
 npm run demo
 ```
 
-Open `http://127.0.0.1:4425`. This builds the beta and starts a fresh, populated synthetic workspace, separate from your real gateway data. Stop it with Ctrl+C. The simulated decisions do not publish content or send external messages.
+Open `http://127.0.0.1:4425` for a fresh synthetic workspace, separate from your real gateway data. Stop it with Ctrl+C. Demo decisions do not publish content or send external messages.
 
-Demo mode is intentionally refused on non-loopback interfaces.
+For your own workspace, run `npm run build` followed by `npm start`, then open `http://127.0.0.1:4400`. The server binds to loopback by default. See [deployment](docs/deployment.md) before enabling private remote access.
 
-## How it fits
+## Privacy and evidence
 
-| Layer | Owns | Examples |
-| --- | --- | --- |
-| Orchestrator portal | Interaction, normalized signal, receipts, attention policy, layouts, audit | This project |
-| Runtime adapter | Turns, task state, schedules, runtime health | OpenClaw CLI, webhook |
-| Knowledge adapter | Search and source references | Local folders, Obsidian, Notion, gbrain CLI |
-| Source system | Execution and source-of-truth policy | OpenClaw, custom agents, calendars, mail |
+Workspace data stays in a local SQLite database, with encrypted connector secrets and message content. Requests to connected runtimes and services follow the connections you configure. Orchestrator has no telemetry.
 
-Assistant responses remain `claimed`; an ambiguous timeout is `unknown`. Source events preserve their reported states and evidence. A useful rating does not establish independent verification. The portal has no general-purpose independent verifier.
+Assistant responses remain **claimed**; a timeout can remain **unknown**. Source receipts do not automatically establish verified outcomes. Read the [security model](docs/security.md), [architecture](docs/architecture.md), and [validation limits](docs/personal-validation.md).
 
-## Connecting OpenClaw
+## Explore the project
 
-Choose **OpenClaw** in Connections. The adapter uses the installed `openclaw` executable and its documented CLI surface:
+| Looking for | Go to |
+| --- | --- |
+| Versions, downloads, and release notes | [All releases](https://github.com/QuintonD/orchestrator-portal/releases) and [build guide](docs/releases.md) |
+| Setup and integration guides | [Documentation](docs/README.md) |
+| Questions and troubleshooting | [Community discussions](https://github.com/QuintonD/orchestrator-portal/discussions) and [support](SUPPORT.md) |
+| Bugs and feature proposals | [Open an issue](https://github.com/QuintonD/orchestrator-portal/issues/new/choose) |
+| Development setup and pull requests | [Contributing](CONTRIBUTING.md) |
+| Product direction and research | [Product direction](docs/product-direction.md) and [research index](docs/README.md#research-dossier) |
+| Private vulnerability reporting | [Security policy](SECURITY.md) |
 
-- `openclaw agent --message ... --json` for assistant turns
-- `openclaw tasks list --json` for background work
-- `openclaw cron list --all --json` for recurring tasks
-
-This keeps the integration compatible with the installed runtime rather than binding the portal to a beta SDK. Orchestrator does not read `~/.openclaw` configuration or credentials directly.
-
-## Private remote access
-
-Tailscale Serve is the recommended remote path. Keep Orchestrator on loopback and proxy it inside your tailnet:
-
-```bash
-tailscale serve --bg --https=443 http://127.0.0.1:4400
-```
-
-Add the resulting HTTPS origin to `ORCHESTRATOR_ALLOWED_ORIGINS`. Portal authentication remains required; tailnet membership is an additional boundary, not a replacement for app authentication. See [deployment](docs/deployment.md).
-
-## Development
-
-```bash
-npm ci
-npm run dev:demo
-npm run check
-npm run build
-npm run test:e2e
-```
-
-See [Contributing](CONTRIBUTING.md) for prerequisites, validation, and the pull-request process. The repository is an npm-workspaces monorepo:
-
-- `apps/server` — Fastify API, SQLite persistence, security, built-in adapters
-- `apps/web` — React/Vite interface
-- `packages/contracts` — validated public data contracts
-- `packages/adapter-sdk` — provider capability interfaces
-- `tests/e2e` — desktop and mobile browser coverage
-- `research` — the research dossier that shaped the product boundaries
-
-## Documentation
-
-The [documentation index](docs/README.md) groups setup guides, integration references, validation records, and the complete research dossier.
-
-- [Product direction and prototype refinement proposal](docs/product-direction.md)
-- [Shared product vocabulary](CONTEXT.md)
-- [Architecture and evidence model](docs/architecture.md)
-- [Adapter authoring](docs/adapters.md)
-- [Security and privacy model](docs/security.md)
-- [Deployment and backup](docs/deployment.md)
-- [Research synthesis](research/00-executive-synthesis.md)
-- [High-level research gap review](research/11-high-level-gap-review.md)
-- [Evaluation benchmark](research/10-evaluation-benchmark.md)
-
-## Project status
-
-This is pre-release software. Authentication, persistence, encryption, adapter boundaries, and automated tests are implemented, but live integration acceptance and operator evaluation remain incomplete. Read the [beta validation](docs/beta-validation.md) and [beta 2 validation](docs/personal-validation.md) for tested behavior and remaining limits. The [product direction](docs/product-direction.md) describes proposals, not a delivery commitment.
-
-For help, use [Discussions](https://github.com/QuintonD/orchestrator-portal/discussions). Report reproducible defects through [Issues](https://github.com/QuintonD/orchestrator-portal/issues/new/choose) and vulnerabilities through the [security policy](SECURITY.md). Participation follows our [code of conduct](CODE_OF_CONDUCT.md).
-
-Orchestrator is Apache-2.0 licensed. It contains no copied T3 Code implementation; T3 Code informed interaction and local-serving research only. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache-2.0 licensed. See [LICENSE](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md), and our [code of conduct](CODE_OF_CONDUCT.md).
