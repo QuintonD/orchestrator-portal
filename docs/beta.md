@@ -1,6 +1,6 @@
 > For the personal-workflows extension, see [the guide](personal-workflows.md) and [validation](personal-validation.md).
 
-# Prepared teams and local briefs ? alpha 3
+# Prepared teams and local briefs - alpha 3
 
 The filename is retained for existing links. Earlier development documents called this work beta; the application remains alpha. See [release history](releases.md).
 
