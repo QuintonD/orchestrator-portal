@@ -133,7 +133,7 @@ public final class MainActivity extends Activity {
         destroyWebView();
         newRoot();
         LinearLayout content = panel();
-        content.addView(text("ORCHESTRATOR  /  BETA", 12));
+        content.addView(text("ORCHESTRATOR  /  ALPHA", 12));
         TextView heading = text("Your assistants.\nYour gateway.", 32);
         heading.setTypeface(null, Typeface.NORMAL);
         content.addView(heading);

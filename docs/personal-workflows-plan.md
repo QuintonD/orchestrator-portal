@@ -1,5 +1,7 @@
 # Personal workflows implementation plan
 
+> Historical development record. The beta labels below describe the names used during that work, not an approved beta release. The application remains alpha; original results and artifact names are preserved. See [release history](releases.md).
+
 The personal-needs review exposed missing operational records, not merely missing
 assistant prompts. This change adds persistent workflows above existing source
 runtimes. It includes the previously validated, uncommitted beta work on which it

@@ -1,5 +1,7 @@
 # Beta 2 validation — 6 September 2026
 
+> Historical development record. The beta labels below describe the names used during that work, not an approved beta release. The application remains alpha; original results and artifact names are preserved. See [release history](releases.md).
+
 Version: **0.2.0-beta.2**, Android version code **4**. Testing uses synthetic,
 disposable workspaces. No personal financial accounts or production runtimes were
 used as fixtures. The [implementation plan](personal-workflows-plan.md) and

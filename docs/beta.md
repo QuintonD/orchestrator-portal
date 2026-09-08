@@ -1,8 +1,10 @@
-> For the personal-workflows extension in beta 2, see [the guide](personal-workflows.md) and [validation](personal-validation.md).
+> For the personal-workflows extension, see [the guide](personal-workflows.md) and [validation](personal-validation.md).
 
-# Orchestrator 0.2.0-beta.1
+# Prepared teams and local briefs ? alpha 3
 
-This beta prepares useful work before asking the operator to configure a role or
+The filename is retained for existing links. Earlier development documents called this work beta; the application remains alpha. See [release history](releases.md).
+
+This alpha prepares useful work before asking the operator to configure a role or
 reconstruct a decision. Compass produces the first local brief automatically.
 Each connection offers a small prepared team, with its execution path visible.
 
@@ -114,6 +116,4 @@ comparative superiority or replace sessions with actual operators.
 - `node tests/android/visual.mjs`: final native WebView screenshots and animation checks.
 - `npm run desktop:package` and `npm run desktop:smoke`: self-contained desktop bundle and extracted-package checks.
 
-Use a separate workspace when evaluating beta changes against real runtimes.
-Existing alpha release links remain historical; this repository does not publish
-the beta or replace an installed personal gateway automatically.
+Alpha 3 includes these features in the desktop bundles. Follow the [upgrade guide](desktop.md#workspace-files-and-upgrades) to retain your workspace. Runtime connections still require their normal authorization.

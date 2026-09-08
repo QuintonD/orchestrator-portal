@@ -9,7 +9,7 @@ Start with the [documentation index](docs/README.md), especially [desktop setup]
 | Concrete feature or adapter proposal | [Feature proposal](https://github.com/QuintonD/orchestrator-portal/issues/new?template=feature.yml) |
 | Suspected vulnerability | [Private security report](https://github.com/QuintonD/orchestrator-portal/security/advisories/new); see [SECURITY.md](SECURITY.md) |
 
-Search existing discussions and issues before opening a new one. Include your version or commit, operating system, deployment method, expected behavior, and steps to reproduce with synthetic data. State whether you use a published alpha download or a beta source build.
+Search existing discussions and issues before opening a new one. Include your version or commit, operating system, deployment method, expected behavior, and steps to reproduce with synthetic data. State whether you use a published alpha download, a source build, or a historical debug QA snapshot.
 
 Public posts must not contain passphrases, API keys, assistant conversations, personal documents, or unredacted logs and screenshots. Share only the minimum diagnostic information needed.
 

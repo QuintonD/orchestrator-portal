@@ -26,11 +26,14 @@ jobs:
           - { runner: ubuntu-24.04-arm, target: linux-arm64 }
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24.19.0
           cache: npm
       - run: npm ci
+      - run: npm run release:check
       - run: npm run desktop:test
       - run: npm run desktop:package -- ${{ matrix.target }}
       - run: npm run desktop:smoke

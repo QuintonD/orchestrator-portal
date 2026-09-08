@@ -2,7 +2,7 @@
 
 [Project home](../README.md) | [Get help](../SUPPORT.md) | [Contribute](../CONTRIBUTING.md)
 
-The source tree contains 0.2.0-beta.2. Packaged desktop and signed Android downloads remain at 0.1.0-alpha.2; a separate beta 2 Android QA snapshot is also available. Use the documentation at a release's tag when you need instructions for that exact version.
+The application remains alpha. Alpha 3 unifies the current source, desktop gateway and signed Android client. Earlier beta labels were development naming errors, not a maturity promotion. See [releases and upgrades](releases.md). Use documentation at a release tag for that exact build.
 
 ## Install and use
 
@@ -13,7 +13,7 @@ The source tree contains 0.2.0-beta.2. Packaged desktop and signed Android downl
 - [Deployment and backup](deployment.md): local hosting, Docker, and private remote access.
 - [Knowledge sources](knowledge.md): local folders, Obsidian, and Notion.
 - [Grok Bot handoffs](grok-bot.md): prepare tasks and review manual result imports.
-- [Beta guide](beta.md): prepared teams, conversations, reports, and the simulated decision journey.
+- [Prepared teams guide](beta.md): prepared teams, conversations, reports, and the simulated decision journey.
 - [Personal workflows](personal-workflows.md): projects, money, coaching, agenda, and Today.
 
 ## Build and understand
@@ -34,8 +34,9 @@ These records describe checks at a particular version and date; they are not a g
 
 | Milestone | Scope and evidence |
 | --- | --- |
-| Beta 2 | [Personal workflow plan](personal-workflows-plan.md), [validation and remaining limits](personal-validation.md) |
-| Beta 1 | [Research and acceptance scope](beta-scope.md), [validation](beta-validation.md) |
+| Alpha 3 | [Release and upgrade validation](alpha-3-validation.md) |
+| Personal-workflow development (historically labelled beta 2) | [Personal workflow plan](personal-workflows-plan.md), [validation and remaining limits](personal-validation.md) |
+| Prepared-team development (historically labelled beta 1) | [Research and acceptance scope](beta-scope.md), [validation](beta-validation.md) |
 | Alpha | [Guide](alpha.md), [expansion plan](alpha-expansion-plan.md), [expansion QA](alpha-expansion-qa.md), [refinement QA](alpha-refinement-qa.md) |
 | Android | [QA record](android-qa.md), [test harness](../tests/android/README.md) |
 | Demo and visual design | [Sprites and demo](assistant-sprites-and-demo.md), [critical review](demo-critical-review.md) |

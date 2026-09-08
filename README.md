@@ -9,26 +9,26 @@
   <a href="https://github.com/QuintonD/orchestrator-portal/discussions">Community</a>
 </p>
 
-![Orchestrator beta 2 Today view with projects and next steps](docs/assets/personal/today-desktop.png)
+![Orchestrator alpha Today view with projects and next steps](docs/assets/personal/today-desktop.png)
 
-<p align="center"><sub>Beta 2 preview using a synthetic workspace.</sub></p>
+<p align="center"><sub>Alpha preview using a synthetic workspace.</sub></p>
 
 Follow assistant conversations, review reports and their evidence, and see which decisions need your attention. Orchestrator runs on your computer, with a browser interface and an Android companion. Connected runtimes keep control of execution and permissions.
 
-**Pre-release software.** Desktop downloads are alpha 2. The source tree is beta 2, and a separate Android QA snapshot is available for testing. [Compare the builds](docs/releases.md) before downloading.
+**Alpha software.** Alpha 3 consolidates the latest interface, prepared teams and personal workflows into matching desktop and signed Android downloads. [Compare the builds](docs/releases.md) before downloading.
 
 ## Download
 
 Desktop bundles include the runtime: no Node.js, Git, or build tools needed.
 
-| Platform | Download alpha 2 | Setup |
+| Platform | Download alpha 3 | Setup |
 | --- | --- | --- |
-| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
-| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
-| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
-| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/orchestrator-0.1.0-alpha.2.apk) | [Phone setup](docs/android.md) |
+| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
+| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
+| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
+| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3.apk) | [Phone setup](docs/android.md) |
 
-**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.2/SHA256SUMS.txt) &middot; [Beta Android QA build](docs/releases.md#android-qa-snapshots)
+**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/SHA256SUMS.txt) &middot; [Historical QA snapshots](docs/releases.md#android-qa-snapshots)
 
 Desktop bundles are portable and unsigned. The Android app connects to the gateway on your computer; it does not run assistants on your phone. There is no stable release or automatic updater yet.
 
@@ -47,7 +47,7 @@ Next, [connect knowledge sources](docs/knowledge.md), [connect a runtime](docs/a
 - **Find your context.** Search selected local folders, Obsidian vaults, and Notion pages.
 - **Keep decisions in view.** Use attention items, projects, routines, and bounded councils to review what needs you.
 
-Beta 2 adds prepared teams, automatic local briefs, and personal project, money, coaching, and agenda workflows. These features require a beta source build; see the [beta guide](docs/beta.md) and [personal workflows](docs/personal-workflows.md).
+Alpha 3 adds prepared teams, automatic local briefs, and personal project, money, coaching, and agenda workflows. See the [prepared teams guide](docs/beta.md) and [personal workflows](docs/personal-workflows.md).
 
 <details>
 <summary>See the assistant conversation view</summary>
@@ -56,7 +56,7 @@ Beta 2 adds prepared teams, automatic local briefs, and personal project, money,
 
 </details>
 
-## Try the beta from source
+## Run the alpha from source
 
 Install Node.js 24 or newer and Git, then run:
 

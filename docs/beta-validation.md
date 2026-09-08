@@ -1,5 +1,7 @@
 # Beta validation — 6 September 2026
 
+> Historical development record. The beta labels below describe the names used during that work, not an approved beta release. The application remains alpha; original results and artifact names are preserved. See [release history](releases.md).
+
 Build: **0.2.0-beta.1**. Validation uses disposable synthetic workspaces, local
 filesystem fixtures and mock service contracts. Personal runtime workspaces are
 not used as test fixtures.

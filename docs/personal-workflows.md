@@ -60,7 +60,7 @@ cannot be inferred from its first and last transactions.
 Use the month picker for history. **My money plan** can prepare category limits
 from the previous completed calendar month's recorded spending. Inspect coverage
 and adopt or edit the proposal. Limits are an editable recurring monthly plan.
-The current beta does not retain separate historical versions of those limits.
+The current alpha does not retain separate historical versions of those limits.
 
 Holding columns:
 
@@ -146,4 +146,4 @@ pilots remain necessary before claiming that level of coverage.
 Financial interface design was informed by the
 [CFPB cash-flow toolkit](https://www.consumerfinance.gov/consumer-tools/educator-tools/your-money-your-goals/toolkit/)
 and [Investor.gov's introduction to investing](https://www.investor.gov/introduction-investing).
-Validation evidence is in [the beta 2 review](personal-validation.md).
+Validation evidence is in [the historical personal-workflows review](personal-validation.md).
