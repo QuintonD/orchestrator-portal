@@ -34,7 +34,7 @@ if (retryPath) {
   assert.equal(retry.serial, serial); assert.equal(retry.passed, false); assert.equal(retry.previousVersion, previousVersion);
   assert.equal(run("shell", "dumpsys", "package", pkg).match(/versionName=([^\r\n]+)/)[1].trim(), previousVersion);
   run("shell", "am", "force-stop", pkg);
-} else assert.equal(run("shell", "pm", "list", "packages", pkg).trim(), "", "Use a fresh emulator; failed pre-upgrade fixtures may be retried explicitly without clearing data");
+} else assert.ok(!run("shell", "pm", "list", "packages", pkg).split(/\r?\n/).includes(`package:${pkg}`), "Use a fresh emulator; failed pre-upgrade fixtures may be retried explicitly without clearing data");
 const sha = async (file) => createHash("sha256").update(await readFile(file)).digest("hex");
 const sums = await readFile(path.join(assets, "SHA256SUMS.txt"), "utf8");
 for (const file of [previousArchive, previousApk]) assert.ok(sums.includes(`${await sha(file)}  ${path.basename(file)}`), "published baseline checksum");
@@ -104,10 +104,8 @@ try {
   layout.widgets.reverse(); layout.widgets[0].visible = !layout.widgets[0].visible;
   db.prepare("UPDATE dashboard_layouts SET config_json=?").run(JSON.stringify(layout));
   const tables = ["users", "connectors", "messages", "knowledge_documents", "projects", "dashboard_layouts", "alpha_records"];
-  const before = Object.fromEntries(tables.map(table => [table, db.prepare(`SELECT * FROM ${table}`).all()]));
   db.close();
   const key = await readFile(path.join(data, "master.key"));
-  await cp(data, path.join(output, "backup"), { recursive: true });
   await start(oldBundle);
   browser = await chromium.launch();
   const page = await browser.newPage();
@@ -132,7 +130,13 @@ try {
   const oldDump = run("shell", "dumpsys", "package", pkg);
   const oldCode = Number(oldDump.match(/versionCode=(\d+)/)[1]);
   const oldInstall = oldDump.match(/firstInstallTime=([^\r\n]+)/)[1];
-  await stop(); await start(newBundle);
+  await stop();
+  // Snapshot the stopped baseline after its automatic guide has processed the fixtures.
+  const baseline = new DatabaseSync(path.join(data, "orchestrator.db"));
+  const before = Object.fromEntries(tables.map(table => [table, baseline.prepare(`SELECT * FROM ${table}`).all()]));
+  baseline.close();
+  await cp(data, path.join(output, "backup"), { recursive: true });
+  await start(newBundle);
   assert.equal((await (await fetch(`${url}/healthz`)).json()).version, version);
   assert.equal((await api("/api/auth/status")).authenticated, true, "existing gateway session");
   await page.reload();

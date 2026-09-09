@@ -72,10 +72,10 @@ it is not an independent external audit.
 - Streaming, native usage reporting, enforceable shared metered budgets and
   durable dispatch reconciliation are not implemented here.
 - No desktop archive, Android APK, emulator run or in-place release upgrade was
-  performed. This change is an unreleased HTTP/web integration; native packaging,
-  signing and migration code are unchanged. Pixel 7 browser QA is not native
-  Android QA. The release workflow still requires fresh matching artifacts and
-  in-place upgrade verification before any release to `main` is complete.
+  performed at this initial integration checkpoint. Subsequent native packaging,
+  Android and upgrade results are recorded in [alpha 4 validation](alpha-4-validation.md).
+  Pixel 7 browser QA alone is not native Android QA; publication requires matching
+  final-commit artifacts and in-place upgrade evidence.
 - No T3 side-by-side performance benchmark, screen-reader audit, independent
   penetration test or multi-user product trial was performed. Passing local
   checks does not establish parity with T3 Code or general product effectiveness.
