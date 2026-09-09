@@ -61,8 +61,11 @@ instead of an inferred form navigation. The motion journey restores its original
 preference after verifying persistence. The renderer also retains unchanged count
 text nodes and attributes during animation; a browser mutation check covers this
 with 36 grouped assistants while the geometry keeps moving. The precise legacy
-renderer failure cause is unconfirmed; passing the complete rerun remains
-required. No application rendering or animation check is disabled.
+renderer failure cause is unconfirmed. Covered avatars now settle while a dialog
+takes focus, avoiding continuous full-page backdrop repaints, and resume on close;
+the avatar inside its own ecosystem panel stays animated. Browser and native
+checks assert this behavior. Failure artifacts include frame and input diagnostics.
+Passing the complete rerun remains required. No animation check is disabled.
 
 Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,

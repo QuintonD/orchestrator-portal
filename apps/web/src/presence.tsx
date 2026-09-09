@@ -21,12 +21,13 @@ export function PresenceField({ active = false, state, paused = false, policy = 
   const ref = useRef<HTMLDivElement>(null);
   const mode = state ?? (active ? "thinking" : "resting");
   const [visible, setVisible] = useState(false);
+  const [covered, setCovered] = useState(false);
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === "visible");
   const [reduced, setReduced] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [finished, setFinished] = useState<{ mode: PresenceState; revision: number | undefined; network: AssistantMarkProps["network"] } | null>(null);
   useLayoutEffect(() => setFinished(null), [mode, rigProps.revision, rigProps.network, rigProps.assistants, rigProps.leads]);
   const completed = finished?.mode === mode && finished.revision === rigProps.revision && finished.network === rigProps.network;
-  const moving = animatedPresenceStates.has(mode) && !completed && !reference && !paused && visible && pageVisible && policy !== "still" && (policy === "full" || !reduced);
+  const moving = animatedPresenceStates.has(mode) && !completed && !reference && !paused && !covered && visible && pageVisible && policy !== "still" && (policy === "full" || !reduced);
   const source = buildNetwork();
   const original = reference || (mode === "still" && (rigProps.network ? rigProps.network.length === source.length && rigProps.network.every((node, i) => ["x", "y", "r", "id", "parent", "members"].every(key => node[key as keyof typeof node] === source[i]![key as keyof typeof node])) : (rigProps.assistants ?? 5) === 5 && !rigProps.leads));
 
@@ -37,11 +38,20 @@ export function PresenceField({ active = false, state, paused = false, policy = 
     const update = () => { setReduced(preference.matches); setPageVisible(document.visibilityState === "visible"); };
     const observer = new IntersectionObserver(([entry]) => setVisible(Boolean(entry?.isIntersecting)));
     observer.observe(element);
+    // A dialog takes attention and can blur the whole page behind it. Settle
+    // covered illustrations; an avatar inside the focused dialog stays alive.
+    const coverage = () => setCovered([...document.querySelectorAll("dialog[open]")].some(dialog => !dialog.contains(element)));
+    const dialogs = new MutationObserver(records => {
+      if (records.some(record => record.type === "attributes" ? record.target instanceof HTMLDialogElement : [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element && (node.matches("dialog") || node.querySelector("dialog"))))) coverage();
+    });
+    dialogs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["open"] });
+    coverage();
     update();
     preference.addEventListener("change", update);
     document.addEventListener("visibilitychange", update);
     return () => {
       observer.disconnect();
+      dialogs.disconnect();
       preference.removeEventListener("change", update);
       document.removeEventListener("visibilitychange", update);
     };

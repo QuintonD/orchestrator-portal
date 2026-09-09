@@ -89,4 +89,5 @@ jobs:
             apps/android/app/build/outputs/apk/debug/*.apk
             apps/android/app/build/reports/lint-results-debug.html
             test-results/android/**/*.png
+            test-results/android/**/failure-*.txt
             test-results/android/**/results.json

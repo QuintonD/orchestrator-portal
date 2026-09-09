@@ -36,6 +36,17 @@ test("ecosystem follows navigation, grows actual identities, and preserves contr
   await page.screenshot({ path: `test-results/ecosystem/${info.project.name}-panel.png` });
   await page.keyboard.press("Escape");
   await expect(dock).toBeFocused();
+  const dockField = dock.locator(".presence-field");
+  await expect(dockField).toHaveAttribute("data-state", "thinking", { timeout: 7000 });
+  await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
+  const setup = page.getByRole("dialog", { name: "Set up an assistant" });
+  await expect(setup).toBeVisible();
+  await expect(dockField).toHaveAttribute("data-motion", "paused");
+  const held = await dockField.locator("svg").getAttribute("data-time");
+  await page.waitForTimeout(250);
+  expect(await dockField.locator("svg").getAttribute("data-time")).toBe(held);
+  await setup.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await expect(dockField).toHaveAttribute("data-motion", "running");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

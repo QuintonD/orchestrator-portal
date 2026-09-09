@@ -183,6 +183,7 @@ try {
     await navigate("Team");
     await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
     let dialog = page.getByRole("dialog", { name: "Set up an assistant" });
+    await expect(page.locator(".ecosystem-dock__button .presence-field")).toHaveAttribute("data-motion", "paused");
     await dialog.getByLabel("Name", { exact: true }).fill("Android project partner");
     await dialog.getByLabel("What should it help you achieve?").fill("Keep the Android alpha test plan moving.");
     await ui.hideKeyboard();
@@ -415,6 +416,10 @@ try {
   console.log(`Android QA passed: ${results.length} journeys. Evidence: ${output}`);
 } catch (error) {
   if (device) await shot("failure").catch(() => {});
+  // Retain bounded graphics/input evidence when the hosted WebView stalls.
+  for (const [name, args] of [["failure-frames.txt", ["shell", "dumpsys", "gfxinfo", pkg, "framestats"]], ["failure-input.txt", ["shell", "dumpsys", "input"]]]) {
+    try { await writeFile(path.join(output, name), execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8", timeout: 10000 })); } catch {}
+  }
   throw error;
 } finally {
   await writeFile(path.join(output, "results.json"), JSON.stringify({ serial, passed: results, webview: page ? await page.evaluate(() => navigator.userAgent).catch(() => "unavailable") : "unavailable" }, null, 2));
