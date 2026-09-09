@@ -54,8 +54,12 @@ software backend (`swangle`); `swiftshader_indirect` is
 [deprecated by Android](https://developer.android.com/studio/run/emulator-acceleration).
 It also releases Gradle daemon memory and captures host/crash diagnostics on
 failure. The API 36 image, GLES rendering and all 15 journeys remain enabled.
-The precise host failure cause is unconfirmed; passing the complete rerun remains
-required. No application rendering or animation check is disabled.
+The ANGLE run retained the emulator and passed the ecosystem journey. It exposed
+a CDP navigation wait after the assistant wizard had already advanced (confirmed
+by its failure screenshot). That transition now uses the existing native touch
+helper and explicitly asserts the selected runtime. The precise legacy renderer
+failure cause is unconfirmed; passing the complete rerun remains required. No
+application rendering or animation check is disabled.
 
 Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,

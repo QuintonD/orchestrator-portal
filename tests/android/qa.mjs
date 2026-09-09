@@ -184,7 +184,10 @@ try {
     await dialog.getByLabel("What should it help you achieve?").fill("Keep the Android alpha test plan moving.");
     await ui.hideKeyboard();
     await shot("04-assistant-setup");
-    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    // This submit advances React state without navigating. CDP can retain a
+    // phantom navigation wait; use real Android touch and assert the next step.
+    await ui.tapWeb(page, dialog.getByRole("button", { name: "Continue", exact: true }));
+    await expect(dialog.getByRole("combobox", { name: "Existing runtime" })).toHaveValue("demo");
     await dialog.getByLabel("I have restricted this runtime", { exact: false }).check();
     await dialog.getByRole("button", { name: "Save assistant" }).click();
     const assistant = page.locator("article.agent-surface").filter({ hasText: "Android project partner" });
