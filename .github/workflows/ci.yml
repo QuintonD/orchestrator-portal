@@ -55,6 +55,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run android:build
+      - name: Release build-daemon memory before emulator QA
+        run: ./gradlew --stop
+        working-directory: apps/android
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -66,7 +69,9 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          # This WebView client needs GLES, not Vulkan. Headless Vulkan lost the
+          # emulator process in two runs during private setup; keep all UI tests.
+          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -cores 2 -noaudio -no-boot-anim -no-snapshot
           script: ANDROID_QA_SERIAL=emulator-5554 npm run test:android
       - uses: actions/upload-artifact@v7
         if: always()

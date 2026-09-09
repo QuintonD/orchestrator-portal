@@ -42,7 +42,19 @@ builds passed unit tests and lint. The native ecosystem journey caught a close
 control that the previous Android Back handler did not recognize; using the
 standard `Close dialog` control fixed it. Reopening and Back then passed on API 36.
 
-Final browser, Android and upgrade results are recorded as they complete. The
+All 15 native/WebView journeys passed locally on API 36, including the ecosystem,
+Back, keyboard and rotation, large text, all routes, source setup, reports and
+offline recovery. Evidence: `test-results/android/emulator-5560-1788965710482/`.
+
+Hosted CI passed its functional/browser, Docker, CodeQL and six native desktop
+jobs. Two Android attempts lost the entire emulator during private setup, before
+the new ecosystem journey. CI now stops the Gradle daemon before emulator testing
+and disables the emulator's Vulkan path while retaining GLES and every assertion.
+The latter follows [Android's emulator troubleshooting guidance](https://developer.android.com/studio/run/emulator-troubleshooting?hl=en).
+The precise host failure cause is unconfirmed; passing the complete rerun remains
+required. No application rendering or animation check is disabled.
+
+Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,
 all seven distribution hashes and matching in-place upgrade evidence. No physical
 device, TalkBack or independent security audit is implied.
