@@ -1,12 +1,13 @@
 # Releases and upgrades
 
-**Orchestrator is still alpha.** [Alpha 3](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.3) is the consolidated distribution: six desktop gateway bundles and the signed Android client, built from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
+**Orchestrator is still alpha.** [Alpha 4](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.4) adds subscription/local model connections to the desktop gateway and Android client. Each distribution contains six desktop bundles and a signed APK from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
 
 ## Which version to use
 
 | Version | Status |
 | --- | --- |
-| `0.1.0-alpha.3` | Current alpha: prepared teams, automatic local briefs, personal workflows and the latest monochrome interface |
+| `0.1.0-alpha.4` | Subscription/local model API connections, platform integration roadmap and mobile connection-name layout fix |
+| `0.1.0-alpha.3` | Previous alpha: prepared teams, automatic local briefs, personal workflows and the monochrome interface; upgrade baseline for alpha 4 |
 | `0.1.0-alpha.2` | Previous packaged alpha; supported starting point for the alpha 3 upgrade |
 | `0.1.0-alpha.1` | Historical initial Android distribution |
 | `0.2.0-beta.1` | Historical development label in validation records; never a published versioned release |
@@ -22,8 +23,8 @@ The owner confirmed that the product remains alpha. The corrective commit and th
 ## Upgrade without losing your workspace
 
 1. Stop the existing gateway. Back up its entire workspace directory, including the database and encryption key. Keep any externally supplied master key.
-2. Extract the alpha 3 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
-3. Install the signed alpha 3 APK over the signed alpha 2 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances to 5. See [Android setup](android.md).
+2. Extract the alpha 4 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
+3. Install the signed alpha 4 APK over the signed alpha 3 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances from 5 to 6. See [Android setup](android.md).
 4. Check your records, connections and settings before retiring the previous program. Rollback means restoring the stopped pre-upgrade workspace backup with its matching key and previous program; database downgrade compatibility is not promised.
 
 Updating only the phone cannot upgrade the gateway's features. There is no automatic updater. A source installation must keep its existing `ORCHESTRATOR_DATA_DIR`; switching launch methods without specifying that path can open a different, empty workspace.
@@ -35,6 +36,7 @@ The two old QA snapshots are retained with their original tags and assets for re
 ## Maintainer release contract
 
 - `package.json` defines the application version; the lockfile, gateway health response and Android `versionName` must match. Workspace npm packages have independent internal versions.
+- `package.json` also identifies `orchestratorRelease.previousVersion`, the published upgrade baseline shared by the upgrade test and release manifest. Advance it to the prior published alpha when preparing a release.
 - Remain on `0.1.0-alpha.N` until the owner explicitly changes release stage. Debug variants add `-qa`; commit hashes identify snapshots, not maturity levels.
 - Every release is a new immutable tag on reviewed `main`, with an increasing Android version code and the original signed application identity.
 - Run `npm run release:check`, local functional/security/browser checks, native Android QA, desktop packaging/smoke, and `npm run test:upgrade` against the prior published desktop archive and signed APK. Record exact evidence and limitations in the PR and release.
@@ -44,4 +46,4 @@ The two old QA snapshots are retained with their original tags and assets for re
 
 With the complete asset set staged, run `node scripts/release-manifest.mjs <assets-directory> <CI-run-id> <desktop-run-id> <upgrade-results.json>`. It checks the clean main commit, downloads the named workflow's desktop artifacts to compare bytes, verifies the APK's embedded commit/version/signature, and requires successful upgrade evidence matching the staged APK and native desktop archive before writing the manifest and checksums. Android build tools 35.0.0 and JDK tooling must be installed. Keep the generated release manifest with the release.
 
-See [alpha 3 validation](alpha-3-validation.md) for this release's evidence.
+See [alpha 4 validation](alpha-4-validation.md) for this release's evidence and [alpha 3 validation](alpha-3-validation.md) for the previous release.

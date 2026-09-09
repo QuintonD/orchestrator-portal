@@ -308,6 +308,23 @@ try {
     await noOverflow();
     await nativeKey("Back");
   });
+  await step("Subscription connection setup preserves consent and native Back", async () => {
+    await navigate("Connections");
+    await ui.tapWeb(page, page.getByRole("button", { name: "Add connection", exact: true }));
+    const dialog = page.getByRole("dialog", { name: "Add connection", exact: true });
+    await dialog.getByLabel("Source", { exact: true }).selectOption("openai-compatible");
+    await expect(dialog.getByLabel("API base address")).toBeVisible();
+    await expect(dialog.getByLabel("Proxy access token")).toHaveAttribute("type", "password");
+    await expect(dialog.getByRole("checkbox")).not.toBeChecked();
+    await shot("19-subscription-setup");
+    await dialog.getByRole("checkbox").scrollIntoViewIfNeeded();
+    await expect(dialog).toContainText("paid fallback disabled");
+    await shot("20-subscription-consent");
+    await noOverflow();
+    await nativeKey("Back");
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Add connection", exact: true })).toBeFocused();
+  });
   await step("Large text, narrow screen and all routes remain reachable", async () => {
     await displayProfile(true);
     for (const name of ["Portal", "Conversations", "Work", "Team", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {

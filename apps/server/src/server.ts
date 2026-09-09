@@ -22,13 +22,14 @@ import { Vault, hashPassword, randomToken, tokenHash, verifyPassword } from "./c
 import { audit, createDatabase, defaultDashboard, seedDemo } from "./db.js";
 import { createSession, readSession, requireAuth, sessionCookie } from "./auth.js";
 import { publicAdapterCatalog, runtimeAdapters, searchGbrain } from "./adapters.js";
+import { validateCompatibleApiConfig } from "./compatible-api.js";
 import { ftsQuery, indexDirectory } from "./knowledge.js";
 import { indexNotion, validateNotionConfig } from "./notion.js";
 import { registerAlpha } from "./alpha.js";
 import { registerGrok } from "./grok.js";
 import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.1.0-alpha.3";
+const version = "0.1.0-alpha.4";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {
@@ -517,6 +518,7 @@ function buildBrief(attentionCount: number, activeWork: number, projects: Array<
 }
 
 function validateConnectorConfig(kind: string, config: Record<string, unknown>): void {
+  if (kind === "openai-compatible") validateCompatibleApiConfig(config);
   if (["generic-webhook", "hermes-api", "t3-workspace"].includes(kind)) {
     if (typeof config.endpoint !== "string") throw new Error("Webhook endpoint is required");
     const url = new URL(config.endpoint);

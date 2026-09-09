@@ -1,7 +1,8 @@
 # Android QA
 
 For release upgrades, run `npm run test:upgrade` with a fresh dedicated emulator
-selected through `ANDROID_QA_SERIAL`. Download the prior alpha 2 native desktop
+selected through `ANDROID_QA_SERIAL`. Download the native desktop release identified
+by `package.json`'s `orchestratorRelease.previousVersion` (alpha 3 for alpha 4), its
 archive, signed APK and `SHA256SUMS.txt` into `test-results/release-assets/`, and
 build the current desktop package and signed APK first. This test runs the actual
 old launcher, creates synthetic records and phone settings, then upgrades both

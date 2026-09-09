@@ -20,7 +20,9 @@ for (const [name, id, workflowName] of [["ci", ciRun, "CI"], ["desktop", desktop
   assert.equal(run.headBranch, "main"); assert.ok(["push", "workflow_dispatch"].includes(run.event));
   workflows[name] = run.url;
 }
-const version = JSON.parse(await readFile("package.json", "utf8")).version;
+const releasePackage = JSON.parse(await readFile("package.json", "utf8"));
+const version = releasePackage.version;
+const previousVersion = releasePackage.orchestratorRelease.previousVersion;
 const targets = ["win32-x64", "win32-arm64", "darwin-x64", "darwin-arm64", "linux-x64", "linux-arm64"];
 const expected = [...targets.map(target => `orchestrator-${version}-${target}.${target.startsWith("win32") ? "zip" : "tar.gz"}`), `orchestrator-${version}.apk`].sort();
 const entries = await readdir(directory);
@@ -56,7 +58,7 @@ const apkPath = path.resolve(directory, apk.name);
 const java = path.join(process.env.JAVA_HOME, "bin", process.platform === "win32" ? "java.exe" : "java");
 const certificate = file => execFileSync(java, ["-jar", path.join(sdkTools, "lib/apksigner.jar"), "verify", "--print-certs", file], { encoding: "utf8" }).match(/certificate SHA-256 digest: ([a-f0-9]+)/)[1];
 const signer = certificate(apkPath);
-const previousApk = path.resolve("test-results/release-assets/orchestrator-0.1.0-alpha.2.apk");
+const previousApk = path.resolve(`test-results/release-assets/orchestrator-${previousVersion}.apk`);
 assert.equal(signer, certificate(previousApk), "Preserve the published alpha signing identity");
 const aapt = path.join(sdkTools, process.platform === "win32" ? "aapt2.exe" : "aapt2");
 const badging = file => execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8" });
@@ -75,6 +77,7 @@ assert.equal(identity.dirty, false, "APK was built from a clean checkout");
 assert.equal(identity.variant, "Release");
 const upgrade = JSON.parse(await readFile(upgradeResults, "utf8"));
 assert.equal(upgrade.passed, true); assert.equal(upgrade.version, version);
+assert.equal(upgrade.previousVersion, previousVersion);
 assert.equal(upgrade.artifacts[apk.name], apk.sha256);
 const testedDesktop = artifacts.find(item => item.name.includes(`-${upgrade.target}.`));
 assert.equal(upgrade.artifacts[testedDesktop.name], testedDesktop.sha256);

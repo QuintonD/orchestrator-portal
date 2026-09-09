@@ -1,6 +1,9 @@
 {
   "name": "orchestrator-portal",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
+  "orchestratorRelease": {
+    "previousVersion": "0.1.0-alpha.3"
+  },
   "private": true,
   "description": "A local-first command centre for personal AI assistants.",
   "license": "Apache-2.0",

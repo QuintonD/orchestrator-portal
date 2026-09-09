@@ -4,6 +4,9 @@ import { execFileSync } from "node:child_process";
 
 const read = (file) => readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
 const version = JSON.parse(read("package.json")).version;
+const previousVersion = JSON.parse(read("package.json")).orchestratorRelease.previousVersion;
+assert.match(previousVersion, /^0\.1\.0-alpha\.[1-9]\d*$/);
+assert.ok(Number(previousVersion.split(".").at(-1)) < Number(version.split(".").at(-1)), "Upgrade baseline must precede this release");
 assert.match(version, /^0\.1\.0-alpha\.[1-9]\d*$/, "An explicit owner decision is required before changing release stage");
 const lock = JSON.parse(read("package-lock.json"));
 assert.equal(lock.version, version);

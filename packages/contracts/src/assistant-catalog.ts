@@ -6,7 +6,7 @@ export interface AssistantTemplate {
   criteria: string; mode: AssistantMode; kinds: Array<ConnectorKind | "workspace">;
   trigger: "on-request" | "source-change"; icon: number;
 }
-const runtimes: ConnectorKind[] = ["demo", "openclaw-cli", "hermes-api", "generic-webhook"];
+const runtimes: ConnectorKind[] = ["demo", "openclaw-cli", "hermes-api", "generic-webhook", "openai-compatible"];
 const indexes: ConnectorKind[] = ["markdown-directory", "obsidian-vault", "notion"];
 const summaries: Record<string, string> = {
   "project-partner": "Turn an outcome into a plan, a useful draft and a critical review.", "money-guide": "Explain cash flow and portfolio gaps using records you choose to share.", "personal-coach": "Help you choose a manageable next step and learn from your progress.", "personal-secretary": "Prepare your agenda, meeting notes and correspondence drafts.",
