@@ -3,7 +3,9 @@
 Direction confirmed by the owner on 9 September 2026: Orchestrator should bring
 major assistant platforms into one home, with the integration depth and engineering
 scrutiny expected of T3 Code. This extends the existing personal and professional
-assistant workflows. Coding remains one important use case.
+assistant workflows. The owner clarified that coding agents and general assistant
+services have equal priority from the first integrations, including personal-agent
+services such as Muse Assistant.
 
 This is a development plan and coverage record, not a claim that every platform is
 integrated. The branch starts with subscription and local model access. Native
@@ -44,6 +46,7 @@ authorized, maintainable surface, not a promise of an undocumented API.
 | Claude / Claude Code | Same generic model route; no native adapter | Native account/session adapter, tool and approval events, recoverable turns |
 | Gemini / Antigravity | Same generic model route; no native adapter | Verify each source's supported account/protocol boundary, then native sessions and work |
 | Grok / Grok Bot / Grok Build | Grok Bot manual handoff and claimed result import; generic model route where configured | Keep Bot and Build separate; add native capabilities only after protocol and authority checks |
+| Muse Assistant (working assumption: Meta Muse at muse.ai) | No integration; no external control API verified | First-wave investigation of authorized account access, task/activity reads, artifacts and handoffs; retain Muse's native permissions and execution |
 | Cursor, GitHub Copilot, OpenCode | No native adapters | Separate account/runtime probes and versioned conformance fixtures |
 | Perplexity, Mistral, DeepSeek, Qwen and other general assistants | No platform-specific integration | Establish supported APIs, exports or handoffs; distinguish model access from the hosted assistant product |
 | Local models and CLIProxyAPI | New `openai-compatible` text adapter and setup form | Live compatibility record per server/version/model/auth route |
@@ -52,6 +55,15 @@ The proxy's published coverage includes multiple provider login paths and API
 formats. Availability and entitlements are upstream concerns; proxy support does
 not establish vendor endorsement or access to a hosted app's tools and history.
 [CLIProxyAPI overview](https://github.com/router-for-me/CLIProxyAPI#overview).
+
+Muse is included as a personal-agent service, independently of access to any
+underlying model. Its product team describes background tasks, goals, persistent
+context, artifacts, activity history and structured approval controls. These are
+useful capabilities to preserve in a portal integration. The reviewed product
+description does not establish an API for another application to control Muse.
+Record its integration route as unverified until supported documentation and a
+working probe establish it. [Muse product design](https://introducing.muse.ai/),
+[Meta's Muse announcement](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/).
 
 ## Use an existing subscription or local model
 
@@ -142,12 +154,19 @@ stage and existing release workflow.
 1. **Subscription access foundation:** complete the new connection's setup,
    message, failure, privacy and mobile fixtures; record live upstream testing
    separately from protocol fixtures.
-2. **Native runtime integration:** implement and validate Codex and Claude Code
-   adapters alongside the existing OpenClaw/Hermes journeys. Establish a reusable
-   conformance suite around account identity, sessions, native events and recovery.
-3. **Broader coverage:** add Gemini/Antigravity, Grok Build, Cursor, Copilot and
-   OpenCode against that suite. Investigate supported general-assistant surfaces
-   and exports without equating model API access with full app integration.
+2. **First-wave platform integrations, with equal priority:** advance coding
+   agents (Codex, Claude Code and Gemini CLI), general assistant services
+   (ChatGPT, Claude and Gemini), and personal-agent services (including Muse,
+   OpenClaw, Hermes and Grok Bot) together. Verify each service's actual access
+   route early. Establish a reusable conformance suite around account identity,
+   sessions, native events and recovery. The first integration milestone needs
+   a working coding-agent journey and a working general/personal-assistant
+   journey, with source/version and access limitations recorded for each.
+3. **Broader coverage:** extend those journeys to Antigravity, Grok Build, Cursor,
+   Copilot, OpenCode and the remaining general assistants against the same suite.
+   Track unsupported service APIs explicitly; pursue authorized exports or
+   handoffs where useful, and label their narrower coverage. A model-only route
+   does not satisfy a native service-integration milestone.
 4. **Cross-platform continuity:** preserve source ownership through handoffs,
    shared deliverables, corrections, attention items and bounded councils. Compare
    matched personal/professional tasks against native tools and T3 where relevant.

@@ -81,3 +81,13 @@ it is not an independent external audit.
   checks does not establish parity with T3 Code or general product effectiveness.
 
 See [coverage and delivery order](assistant-platforms.md) for the remaining work.
+
+## Scope clarification follow-up
+
+The owner's follow-up gives coding agents and general assistants equal first-wave
+priority and explicitly includes Muse Assistant. Updated the product direction,
+coverage inventory and delivery milestone accordingly. Muse is provisionally
+identified as Meta's service at muse.ai, based on its product announcement; an
+external integration API remains unverified. Reviewed the primary product pages
+and checked the documentation diff. This follow-up changes documentation only,
+so functional and platform tests from the implementation were not repeated.
