@@ -12,12 +12,14 @@ type ConnectionData = { connectors: Connector[]; catalog: CatalogItem[] };
 const failure = (error: unknown) => error instanceof Error ? error.message : "The connection could not be checked.";
 const labels: Record<string, string> = {
   "openclaw-cli": "OpenClaw", "hermes-api": "Hermes", "gbrain-cli": "gbrain",
+  "openai-compatible": "Subscription / local model API",
   "markdown-directory": "Local documents", "obsidian-vault": "Obsidian", "notion": "Notion",
   "t3-workspace": "T3 Code", "generic-webhook": "Custom assistant", demo: "Sample workspace",
 };
 const descriptions: Record<string, string> = {
   "openclaw-cli": "Use an OpenClaw assistant already installed and configured on this computer. Orchestrator uses its existing account and model settings.",
   "hermes-api": "Connect your running Hermes API server. Its address is shown in your Hermes setup; use a private HTTPS address for another computer.",
+  "openai-compatible": "Use CLIProxyAPI or another compatible server with your existing subscription or a local model. Sign in at the source, then connect it here for text conversations and drafts. Native platform tools and existing chats are not imported.",
   "gbrain-cli": "Search the knowledge source configured in your installed gbrain command-line app. No notes are copied automatically.",
   "markdown-directory": "Read a folder on the computer running Orchestrator. Markdown, text and JSON documents are copied into a local search index. Your original files stay unchanged.",
   "obsidian-vault": "Read Markdown notes from one Obsidian vault on the computer running Orchestrator. Hidden settings, plugins and attachments are excluded. Your notes stay unchanged.",
@@ -79,7 +81,7 @@ export function ConnectionsPage({ notify, navigate }: { notify: Notify; navigate
       <span className="connection-logo">{connector.capabilities.includes("knowledge.read") ? <FileText size={21} /> : <Bot size={21} />}</span>
       <div className="connection-card__body">
         <div className="connection-card__head"><h2>{connector.name}</h2><StatusPill state={connector.status} /></div>
-        <p>{labels[connector.kind] ?? connector.kind} · {connector.capabilities.includes("message.send") ? "Conversation and assistant tasks" : connector.capabilities.includes("knowledge.search") ? "Read-only knowledge search" : "Workspace availability"}</p>
+        <p>{labels[connector.kind] ?? connector.kind} · {connector.kind === "openai-compatible" ? "Text conversations and drafts" : connector.capabilities.includes("message.send") ? "Conversation and assistant tasks" : connector.capabilities.includes("knowledge.search") ? "Read-only knowledge search" : "Workspace availability"}</p>
         <dl><div><dt>Last checked</dt><dd>{connector.lastSyncAt ? relativeTime(connector.lastSyncAt) : "Not checked yet"}</dd></div></dl>
         {connector.error && <div className="connection-error" role="status">{connector.error}</div>}
       </div>
@@ -102,6 +104,10 @@ function AddConnection({ catalog, close, changed, initialKind, navigate }: { cat
   const [error, setError] = useState("");
   const [count, setCount] = useState<number | null>(null);
   const [consent, setConsent] = useState(false);
+  const [model, setModel] = useState("");
+  const [accessMode, setAccessMode] = useState("subscription");
+  const [maxOutputTokens, setMaxOutputTokens] = useState(4096);
+  const compatible = kind === "openai-compatible";
   const local = kind === "markdown-directory" || kind === "obsidian-vault";
   const knowledge = local || kind === "notion";
   async function check(connector: Connector) {
@@ -118,6 +124,7 @@ function AddConnection({ catalog, close, changed, initialKind, navigate }: { cat
     const config = kind === "openclaw-cli" ? { agentId: fieldA || "main", sessionKey: fieldB || undefined }
       : kind === "gbrain-cli" ? {}
       : kind === "notion" ? { pages: fieldA, token: fieldB }
+      : compatible ? { endpoint: fieldA, token: fieldB || undefined, model, accessMode, maxOutputTokens, policyConfirmed: consent }
       : local ? { path: fieldA.trim().replace(/^"(.*)"$/, "$1") }
       : { endpoint: fieldA, token: fieldB || undefined };
     try {
@@ -134,13 +141,14 @@ function AddConnection({ catalog, close, changed, initialKind, navigate }: { cat
       {error && <><p className="notice" role="status">{error}</p><p>{checked ? "The readable documents are available in Knowledge. Some content is outside this connection's supported scope or could not be included; refreshing may give the same coverage." : "Your connection is saved. Check the source's installation or access, then retry. To change its address or secret, close this dialog, remove the connection and add it again."}</p></>}
       {!busy && <div className="dialog-actions">{error && !checked && <button className="button button--secondary" onClick={() => check(created)}>Retry check</button>}<button className="button button--secondary" onClick={close}>Done</button>{checked && !error && <button className="button button--primary" onClick={() => { close(); navigate(`/agents?source=${encodeURIComponent(created.id)}`); }}>Prepare this team<ArrowRight size={16} /></button>}</div>}
     </div> : <form className="alpha-form" onSubmit={submit}>
-      <label>Source<select aria-label="Source" value={kind} onChange={(e) => { setKind(e.target.value); setFieldA(""); setFieldB(""); setConsent(false); setError(""); }}>{catalog.map((item) => <option key={item.id} value={item.id}>{labels[item.id] ?? item.displayName}</option>)}</select></label>
+      <label>Source<select aria-label="Source" value={kind} onChange={(e) => { setKind(e.target.value); setFieldA(""); setFieldB(""); setModel(""); setAccessMode("subscription"); setMaxOutputTokens(4096); setConsent(false); setError(""); }}>{catalog.map((item) => <option key={item.id} value={item.id}>{labels[item.id] ?? item.displayName}</option>)}</select></label>
       <p className="source-instructions">{descriptions[kind]}</p>
       <label>Connection name <small>optional</small><input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={labels[kind]} /></label>
       {local ? <><label>{kind === "obsidian-vault" ? "Vault folder" : "Document folder"}<input value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="C:\Notes or /home/me/notes" required /></label><p className="form-note">Use the full folder path. In Windows Explorer, choose Copy as path; on macOS use Copy as Pathname in Finder. This is a folder on your gateway computer, even when you use your phone.</p></>
         : kind === "notion" ? <><p className="form-note"><a href="https://www.notion.so/profile/integrations" target="_blank" rel="noreferrer">Open Notion connections</a>. Enable Read content only. In each page's menu, add your connection.</p><label>Page links or IDs<textarea value={fieldA} onChange={(e) => setFieldA(e.target.value)} rows={3} placeholder="One page link per line" required /></label><p className="form-note">Only these pages are indexed. Add child pages separately if you want to include them.</p><label>Notion connection secret<input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} required placeholder="Stored in your local vault" /></label></>
         : kind === "openclaw-cli" ? <><label>Agent ID <small>optional</small><input value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="main" /></label><label>Session key <small>optional</small><input value={fieldB} onChange={(e) => setFieldB(e.target.value)} placeholder="Use a dedicated portal conversation" /></label><a href="https://docs.openclaw.ai/start/getting-started" target="_blank" rel="noreferrer">OpenClaw setup instructions</a></>
         : kind === "gbrain-cli" ? null
+        : compatible ? <><label>API base address<input type="url" value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="http://127.0.0.1:8317/v1" required /></label><p className="form-note">Use the proxy address on your gateway computer. Connections to another computer require HTTPS.</p><label>Access mode<select value={accessMode} onChange={(e) => { setAccessMode(e.target.value); setConsent(false); }}><option value="subscription">Existing subscription through a proxy</option><option value="local">Local model</option></select></label><label>Proxy access token <small>{accessMode === "local" ? "optional on this computer" : "required"}</small><input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} required={accessMode === "subscription"} placeholder="Proxy key, not your account password" /></label><label>Model ID<input value={model} onChange={(e) => setModel(e.target.value)} maxLength={200} required placeholder="Exact model ID from your source" /></label><label>Maximum output tokens<input type="number" value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(Number(e.target.value))} min={256} max={16384} step={1} required /></label><p className="form-note">The connection check confirms that the model is listed. A first message checks generation. Subscription quotas and proxy compatibility still apply. Metered API access is not supported here.</p><a href="https://github.com/router-for-me/CLIProxyAPI" target="_blank" rel="noreferrer">CLIProxyAPI setup instructions</a><label className="check-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required /><span>I configured this source for subscription or local access with paid fallback disabled. The portal cannot inspect upstream billing settings.</span></label></>
         : <><label>Server address<input type="url" value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder={kind === "hermes-api" ? "http://127.0.0.1:8642" : kind === "t3-workspace" ? "http://127.0.0.1:3773" : "https://assistant.example/hooks/agent"} required /></label><label>Access token <small>optional</small><input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} placeholder="Stored in your local vault" /></label></>}
       {knowledge && <label className="check-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required /><span>Index the selected documents on this computer for search. I can remove the connection to delete its local index.</span></label>}
       {error && <p className="notice" role="alert">{error}</p>}

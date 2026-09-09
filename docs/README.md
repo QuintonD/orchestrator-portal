@@ -22,6 +22,7 @@ The application remains alpha. Alpha 3 unifies the current source, desktop gatew
 - [Architecture](architecture.md): components and evidence model.
 - [Visual system](visual-system.md): monochrome layout, type, and the presence field.
 - [Adapter guide](adapters.md): runtime and knowledge integration contracts.
+- [Assistant platforms](assistant-platforms.md): subscription/CLIProxyAPI setup, integration coverage and T3 Code quality benchmark.
 - [Security model](security.md): authentication, encryption, and trust boundaries.
 - [Security policy](../SECURITY.md): supported versions and private vulnerability reporting.
 - [Shared vocabulary](../CONTEXT.md): product terms and authority boundaries.

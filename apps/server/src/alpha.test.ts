@@ -59,6 +59,26 @@ describe("alpha workflows and authority boundaries", () => {
     expect((await app.inject({ method: "POST", url: "/api/assistants", payload: profile({ grantAllTools: true }) })).statusCode).toBe(400);
     expect((await app.inject({ method: "POST", url: "/api/assistants/demo-report/run" })).statusCode).toBe(404);
   });
+  it("requires the assistant policy to match a compatible model connection", async () => {
+    const app = await setup();
+    const config = { endpoint: "http://127.0.0.1:8317/v1", model: "fixture-model", token: "synthetic-key", accessMode: "subscription", policyConfirmed: true };
+    const source = await app.inject({ method: "POST", url: "/api/connectors", payload: { name: "Subscription source", kind: "openai-compatible", config } });
+    expect(source.statusCode).toBe(201);
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json({ data: [{ id: config.model }] })).mockResolvedValueOnce(Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Source-backed draft" } }] }));
+    vi.stubGlobal("fetch", fetch);
+    await app.inject({ method: "POST", url: `/api/connectors/${source.json().id}/sync` });
+    const make = async (providerPolicy: string) => (await app.inject({ method: "POST", url: "/api/assistants", payload: profile({ name: `Profile ${providerPolicy}`, connectorId: source.json().id, providerPolicy }) })).json();
+    const mismatch = await make("local");
+    const blocked = await app.inject({ method: "POST", url: `/api/assistants/${mismatch.id}/run` });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.body).toContain("must match");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const matching = await make("subscription");
+    const result = await app.inject({ method: "POST", url: `/api/assistants/${matching.id}/run` });
+    expect(result.statusCode).toBe(201);
+    expect(result.json()).toMatchObject({ state: "claimed", body: "Source-backed draft" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it("retains ambiguous timeouts and blocks silent retry", async () => {
     const app = await setup();
     vi.spyOn(runtimeAdapters.get("demo")!, "sendMessage").mockRejectedValue(new Error("secret token must not leak"));

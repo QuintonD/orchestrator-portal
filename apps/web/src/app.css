@@ -671,9 +671,10 @@ p.notice { display: block; }
 /* ---------- Conversations ---------- */
 .assistant-layout { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 48px; }
 .assistant-main { min-width: 0; }
-.assistant-main .page-header { margin-bottom: 12px; }
-.connector-select { display: flex; align-items: center; gap: 8px; }
-.connector-select select { min-height: 38px; padding: 0 8px; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: transparent; font-size: 14px; font-weight: 500; }
+.assistant-main .page-header { margin-bottom: 12px; flex-wrap: wrap; }
+.assistant-main .page-actions { min-width: 0; max-width: 100%; }
+.connector-select { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 320px; }
+.connector-select select { min-width: 0; width: 100%; min-height: 38px; padding: 0 8px; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: transparent; font-size: 14px; font-weight: 500; }
 .conversation-card { padding: 0; height: calc(100vh - 220px); min-height: 520px; display: flex; flex-direction: column; overflow: hidden; }
 .conversation-day { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; padding: 16px 0 6px; color: var(--ink-soft); font-size: 12px; }
 .conversation-day::before, .conversation-day::after { content: ""; height: 1px; flex: 1; background: var(--line); }

@@ -1,4 +1,7 @@
 import { demoAssessment, presentationText } from "./demo-scenario.js";
+import { compatibleApi } from "./compatible-api.js";
+import { boundedText } from "./source-http.js";
+export { boundedText } from "./source-http.js";
 import type { AssistantProfile, DecisionPacket } from "@orchestrator/contracts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -244,21 +247,6 @@ const genericWebhook: RuntimeAdapter = {
 
 function contextId(value: unknown, fallback: number): string { return typeof value === "string" ? value : String(fallback); }
 
-export async function boundedText(response: Response, maximum = 1024 * 1024): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) return "";
-  const chunks: Uint8Array[] = []; let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      size += value.byteLength;
-      if (size > maximum) { await reader.cancel(); throw new Error("Source response exceeds the 1 MiB limit"); }
-      chunks.push(value);
-    }
-    return Buffer.concat(chunks).toString("utf8");
-  } finally { reader.releaseLock(); }
-}
-
 const hermes: RuntimeAdapter = {
   manifest: { id: "hermes-api", displayName: "Hermes API", version: "1.0.0", capabilities: ["message.send", "health.read"] },
   async sendMessage(context, body) {
@@ -323,6 +311,7 @@ export const runtimeAdapters = new Map<string, RuntimeAdapter>([
   [openclaw.manifest.id, openclaw],
   [genericWebhook.manifest.id, genericWebhook],
   [hermes.manifest.id, hermes],
+  [compatibleApi.manifest.id, compatibleApi],
   [gbrain.manifest.id, gbrain],
   [t3.manifest.id, t3],
 ]);

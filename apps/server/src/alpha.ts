@@ -61,6 +61,7 @@ export function registerAlpha(app: FastifyInstance, db: DatabaseSync, vault: Vau
     if (profile.providerPolicy === "metered") fail("Metered dispatch is unavailable until this runtime can enforce the shared spending limit. Use a configured subscription or local model.");
     const row = db.prepare("SELECT * FROM connectors WHERE id=?").get(profile.connectorId) as Record<string, unknown> | undefined;
     if (!row) fail("The assistant's connection has been removed.");
+    if (row.kind === "openai-compatible" && vault.open<Record<string, unknown>>(String(row.config_encrypted)).accessMode !== profile.providerPolicy) fail("The assistant's provider policy must match its connection's subscription or local access mode.");
     if (row.status !== "connected") fail("Sync the assistant's connection successfully before dispatching.");
     const adapter = runtimeAdapters.get(String(row.kind));
     if (!adapter?.sendMessage) fail("This connection does not support assistant turns.");

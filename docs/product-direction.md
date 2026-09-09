@@ -1,6 +1,6 @@
 # Product direction: a useful portal to autonomous assistants
 
-Date: 2026-09-05
+Date: 2026-09-09
 
 Status: confirmed direction for a competitive, feature-complete alpha; detailed implementation recommendations below are not claims of implemented capabilities. The first release is the broad alpha, not a separate narrow prototype or beta. The dated research dossier remains historical evidence; its read-only proof recommendation is not the user's current deliverable request.
 
@@ -14,6 +14,7 @@ The portal should be useful across personal and professional work. Coding is an 
 
 ## Confirmed direction
 
+- Major assistant platforms should be housed in one portal, with T3 Code as an integration-depth and engineering-quality benchmark. Existing subscriptions, supported APIs and user-configured CLI proxies are first-class access routes. This supplements the personal-assistant scope; it is not a claim of universal support today. See [platform coverage, delivery order and quality gates](assistant-platforms.md).
 - A local-first, open-source portal over autonomous assistants and existing knowledge architectures. Source systems retain execution and knowledge authority.
 - A usable assistant interaction surface and modular dashboard, with useful defaults and bounded assistant-driven customization saved to the user's profile.
 - OpenClaw is the default, without lock-in; Hermes and collaboration between assistants are in scope. A lead assistant can convene different perspectives for hard topics.
