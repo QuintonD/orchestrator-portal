@@ -47,11 +47,13 @@ Back, keyboard and rotation, large text, all routes, source setup, reports and
 offline recovery. Evidence: `test-results/android/emulator-5560-1788965710482/`.
 
 Hosted CI passed its functional/browser, Docker, CodeQL and six native desktop
-jobs. Hosted emulator 37.1.11 repeatedly exited, including with Vulkan disabled.
-CI now pins emulator 36.6.11 (build 15507667), matching the version that passed
-local QA, releases Gradle daemon memory and captures host diagnostics on failure.
-The API 36 image, GLES rendering and all 15 journeys remain enabled. Disabling
-Vulkan follows [Android's emulator troubleshooting guidance](https://developer.android.com/studio/run/emulator-troubleshooting?hl=en).
+jobs. The hosted emulator repeatedly exited with the legacy SwiftShader backend,
+on both 37.1.11 and 36.6.11. Host diagnostics showed available memory and no OOM
+kill. CI pins emulator 36.6.11 (build 15507667) and uses the maintained ANGLE
+software backend (`swangle`); `swiftshader_indirect` is
+[deprecated by Android](https://developer.android.com/studio/run/emulator-acceleration).
+It also releases Gradle daemon memory and captures host/crash diagnostics on
+failure. The API 36 image, GLES rendering and all 15 journeys remain enabled.
 The precise host failure cause is unconfirmed; passing the complete rerun remains
 required. No application rendering or animation check is disabled.
 
