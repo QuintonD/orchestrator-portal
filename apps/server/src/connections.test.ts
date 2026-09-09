@@ -53,6 +53,65 @@ function mockNotion(responses: unknown[] = [pageResponse, blockList()]) {
   return fetchMock;
 }
 
+describe("compatible model connection lifecycle", () => {
+  const config = { endpoint: "http://127.0.0.1:8317/v1", model: "fixture-model", token: "synthetic-proxy-key", accessMode: "subscription", policyConfirmed: true };
+  const answer = { choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Synthetic answer" } }] };
+
+  it("authenticates, encrypts credentials, checks the model and isolates conversation history", async () => {
+    const { app, db, headers, cookie, create } = await fixture();
+    const fetchMock = mockNotion([{ data: [{ id: config.model }] }, answer, answer, answer]);
+    expect((await app.inject({ method: "POST", url: "/api/connectors", payload: { name: "Proxy", kind: "openai-compatible", config } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/connectors", headers: { cookie }, payload: { name: "Proxy", kind: "openai-compatible", config } })).statusCode).toBe(403);
+    const created = await create("openai-compatible", config);
+    expect(created.statusCode).toBe(201);
+    const id = created.json().id;
+    expect(created.json().capabilities).toEqual(["message.send", "health.read"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT config_encrypted FROM connectors WHERE id=?").get(id)?.config_encrypted).not.toContain(config.token);
+    expect((await app.inject({ method: "POST", url: `/api/connectors/${id}/sync`, headers })).json().connector.status).toBe("connected");
+    const send = (connectorId: string, body: string, auth = headers) => app.inject({ method: "POST", url: "/api/messages", headers: auth, payload: { connectorId, body } });
+    expect((await send(id, "Private question", {} as typeof headers)).statusCode).toBe(401);
+    expect((await send(id, "Private question", { cookie } as typeof headers)).statusCode).toBe(403);
+    expect((await send(id, "Private question")).json().reply).toMatchObject({ body: "Synthetic answer", state: "claimed" });
+    expect((await send(id, "Follow up")).statusCode).toBe(201);
+    const second = (await create("openai-compatible", config)).json().id;
+    expect((await send(second, "Separate conversation")).statusCode).toBe(201);
+    const calls = fetchMock.mock.calls as unknown as Array<[URL, RequestInit]>;
+    expect(JSON.parse(String(calls[2]![1].body)).messages).toHaveLength(3);
+    expect(JSON.parse(String(calls[3]![1].body)).messages).toEqual([{ role: "user", content: "Separate conversation" }]);
+    for (const url of ["/api/connectors", "/api/audit", "/api/overview"]) expect((await app.inject({ method: "GET", url, headers })).body).not.toContain(config.token);
+    expect((await app.inject({ method: "DELETE", url: `/api/connectors/${id}`, headers })).statusCode).toBe(204);
+    expect((await send(id, "After deletion")).statusCode).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects metered and unconfirmed configuration before persistence", async () => {
+    const { db, create } = await fixture();
+    const fetchMock = mockNotion([]);
+    for (const invalid of [{ accessMode: "metered" }, { policyConfirmed: false }, { endpoint: "https://private:secret@proxy.example" }, { token: "private\r\nInjected: value" }]) {
+      const response = await create("openai-compatible", { ...config, ...invalid });
+      expect(response.statusCode).toBe(400);
+      expect(response.body).not.toContain("private");
+    }
+    expect(db.prepare("SELECT COUNT(*) AS count FROM connectors").get()?.count).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recovers failed checks, records ambiguous sends and keeps provider errors private", async () => {
+    const { app, headers, create } = await fixture();
+    const fetchMock = mockNotion([new Response(config.token, { status: 401 }), { data: [{ id: config.model }] }, new Error(config.token)]);
+    const id = (await create("openai-compatible", config)).json().id;
+    expect((await app.inject({ method: "POST", url: `/api/connectors/${id}/sync`, headers })).statusCode).toBe(502);
+    expect((await app.inject({ method: "GET", url: "/api/connectors", headers })).json().connectors[0].status).toBe("degraded");
+    expect((await app.inject({ method: "POST", url: `/api/connectors/${id}/sync`, headers })).statusCode).toBe(200);
+    const response = await app.inject({ method: "POST", url: "/api/messages", headers, payload: { connectorId: id, body: "Hello" } });
+    expect(response.statusCode).toBe(502);
+    expect(response.json().message.state).toBe("unknown");
+    for (const url of ["/api/connectors", "/api/audit", `/api/messages?connectorId=${id}`]) expect((await app.inject({ method: "GET", url, headers })).body).not.toContain(config.token);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("source connection API", () => {
   it.each(["markdown-directory", "obsidian-vault", "notion"])("requires real authentication and CSRF throughout the %s lifecycle", async (kind) => {
     const { app, source, headers, cookie, create } = await fixture();

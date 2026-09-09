@@ -339,7 +339,7 @@ function SourceConversation({ notify }: NotifyProps) {
         </Card>
       </div>
       <aside className="context-rail">
-        <p className="eyebrow">Connection</p><h3>{selected?.name ?? "No assistant connected"}</h3><p>{selected ? `${selected.kind} · ${selected.status}` : "Add a connection before starting a conversation."}</p><p>Only the message you send is shared with this runtime. Inspect its data access and model configuration in the source.</p><div className="context-item"><Clock3 size={16} /><span>{selected?.lastSyncAt ? `Last checked ${relativeTime(selected.lastSyncAt)}` : "Health not yet checked"}</span></div>
+        <p className="eyebrow">Connection</p><h3>{selected?.name ?? "No assistant connected"}</h3><p>{selected ? `${selected.kind} · ${selected.status}` : "Add a connection before starting a conversation."}</p><p>{selected?.kind === "openai-compatible" ? "Your message, attached text and up to 20 prior messages from this connection are shared with the selected model. Native platform chats and tools are not imported." : "Your message, attached text and relevant conversation history may be shared with this runtime. Inspect its data access and model configuration in the source."}</p><div className="context-item"><Clock3 size={16} /><span>{selected?.lastSyncAt ? `Last checked ${relativeTime(selected.lastSyncAt)}` : "Health not yet checked"}</span></div>
         <div className="receipt-legend"><h4>Message receipts</h4><p><span className="receipt-dot receipt-dot--accepted" /> Accepted by portal</p><p><span className="receipt-dot receipt-dot--observed" /> Observed at runtime</p><p><span className="receipt-dot receipt-dot--verified" /> Outcome verified</p></div>
       </aside>
     </div>

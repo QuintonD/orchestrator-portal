@@ -2,6 +2,11 @@
 
 Adapters let Orchestrator remain independent of runtimes and knowledge stores. A connector advertises capabilities; the interface enables only workflows supported by those capabilities.
 
+For subscription/local model access, CLIProxyAPI setup, native-platform coverage
+and integration quality gates, see [Assistant platforms](assistant-platforms.md).
+The `openai-compatible` adapter currently advertises text messaging and model
+catalog health only; it does not imply native assistant tools or session access.
+
 ## Capability vocabulary
 
 - `message.send`, `message.stream`

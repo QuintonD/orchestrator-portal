@@ -15,20 +15,20 @@
 
 Follow assistant conversations, review reports and their evidence, and see which decisions need your attention. Orchestrator runs on your computer, with a browser interface and an Android companion. Connected runtimes keep control of execution and permissions.
 
-**Alpha software.** Alpha 3 consolidates the latest interface, prepared teams and personal workflows into matching desktop and signed Android downloads. [Compare the builds](docs/releases.md) before downloading.
+**Alpha software.** Alpha 4 adds subscription and local model connections, with matching desktop and signed Android downloads. [Compare the builds](docs/releases.md) before downloading.
 
 ## Download
 
 Desktop bundles include the runtime: no Node.js, Git, or build tools needed.
 
-| Platform | Download alpha 3 | Setup |
+| Platform | Download alpha 4 | Setup |
 | --- | --- | --- |
-| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
-| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
-| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
-| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/orchestrator-0.1.0-alpha.3.apk) | [Phone setup](docs/android.md) |
+| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
+| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
+| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
+| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/orchestrator-0.1.0-alpha.4.apk) | [Phone setup](docs/android.md) |
 
-**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.3/SHA256SUMS.txt) &middot; [Historical QA snapshots](docs/releases.md#android-qa-snapshots)
+**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.4/SHA256SUMS.txt) &middot; [Historical QA snapshots](docs/releases.md#android-qa-snapshots)
 
 Desktop bundles are portable and unsigned. The Android app connects to the gateway on your computer; it does not run assistants on your phone. There is no stable release or automatic updater yet.
 

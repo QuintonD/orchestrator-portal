@@ -29,6 +29,7 @@ export const connectorKindSchema = z.enum([
   "obsidian-vault",
   "notion",
   "hermes-api",
+  "openai-compatible",
   "gbrain-cli",
   "t3-workspace",
 ]);
