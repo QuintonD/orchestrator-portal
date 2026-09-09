@@ -1,8 +1,8 @@
 {
   "name": "orchestrator-portal",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "orchestratorRelease": {
-    "previousVersion": "0.1.0-alpha.3"
+    "previousVersion": "0.1.0-alpha.4"
   },
   "private": true,
   "description": "A local-first command centre for personal AI assistants.",
@@ -15,6 +15,7 @@
     "packages/*"
   ],
   "scripts": {
+    "assets:assistant-motion": "tsx --tsconfig apps/web/tsconfig.json scripts/export-assistant-motion.mts",
     "desktop:package": "npm run build && node scripts/desktop/package.mjs",
     "desktop:test": "node --test scripts/desktop/paths.test.mjs scripts/desktop/staging.test.mjs",
     "desktop:smoke": "node scripts/desktop/smoke.mjs",

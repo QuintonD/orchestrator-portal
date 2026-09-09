@@ -8,12 +8,19 @@ function csrfToken(): string | undefined {
   return document.cookie.split("; ").find((part) => part.startsWith("orchestrator_csrf="))?.split("=")[1];
 }
 
+let requestSequence = 0;
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const csrf = csrfToken();
   if (csrf && !["GET", "HEAD"].includes(options.method ?? "GET")) headers.set("x-csrf-token", decodeURIComponent(csrf));
-  const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+  const mutation = !["GET", "HEAD"].includes(options.method ?? "GET");
+  const requestId = mutation ? String(++requestSequence) : null;
+  // Only lifecycle metadata is exposed to the avatar; never request/response content.
+  if (requestId) window.dispatchEvent(new CustomEvent("orchestrator:request", { detail: { id: requestId, active: true } }));
+  let response: Response;
+  try { response = await fetch(path, { ...options, headers, credentials: "same-origin" }); }
+  finally { if (requestId) window.dispatchEvent(new CustomEvent("orchestrator:request", { detail: { id: requestId, active: false } })); }
   if (!response.ok) {
     const body = await response.json().catch(() => ({ error: `Request failed (${response.status})` })) as { error?: string };
     throw new ApiError(body.error ?? `Request failed (${response.status})`, response.status);

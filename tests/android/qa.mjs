@@ -65,7 +65,9 @@ async function attach(port = 4460) {
       return true;
     } catch { return false; }
   }, { timeout: 45000 }).toBe(true);
-  page.setDefaultTimeout(12000);
+  // Hosted software rendering needs a larger input-acknowledgement budget;
+  // the explicit next-state assertions retain their independent deadlines.
+  page.setDefaultTimeout(process.env.CI ? 30000 : 12000);
   return page;
 }
 async function noOverflow() {
@@ -157,15 +159,41 @@ try {
     await cdp.detach();
     await shot("03-demo-portal");
   });
+  await step("Living ecosystem, motion preference and native Back", async () => {
+    await navigate("Team");
+    const dock = page.locator(".ecosystem-dock__button");
+    await expect(dock).toBeVisible();
+    await dock.click();
+    const panel = page.getByRole("dialog", { name: "Your ecosystem" });
+    await expect(panel).toBeVisible();
+    const originalMotion = await panel.getByRole("combobox", { name: "Assistant motion" }).inputValue();
+    await panel.getByRole("combobox", { name: "Assistant motion" }).selectOption("full");
+    await expect(panel.locator(".presence-field")).toHaveAttribute("data-motion", "running");
+    await expect(panel.getByRole("button", { name: "Sound off", exact: true })).toHaveAttribute("aria-pressed", "false");
+    await shot("03-ecosystem");
+    await nativeKey("Back");
+    await expect(panel).toHaveCount(0);
+    await dock.click();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("combobox", { name: "Assistant motion" })).toHaveValue("full");
+    // Restore the device preference before the remaining native UI journeys.
+    await panel.getByRole("combobox", { name: "Assistant motion" }).selectOption(originalMotion);
+    await nativeKey("Back");
+    await expect(panel).toHaveCount(0);
+  });
   await step("Assistant setup, report review and native Back", async () => {
     await navigate("Team");
     await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
     let dialog = page.getByRole("dialog", { name: "Set up an assistant" });
+    await expect(page.locator(".ecosystem-dock__button .presence-field")).toHaveAttribute("data-motion", "paused");
     await dialog.getByLabel("Name", { exact: true }).fill("Android project partner");
     await dialog.getByLabel("What should it help you achieve?").fill("Keep the Android alpha test plan moving.");
     await ui.hideKeyboard();
     await shot("04-assistant-setup");
-    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    // This submit advances React state without navigating. Wait for the actual
+    // next step instead of WebView CDP's inferred form-navigation signal.
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click({ noWaitAfter: true });
+    await expect(dialog.getByRole("combobox", { name: "Existing runtime" })).toHaveValue("demo");
     await dialog.getByLabel("I have restricted this runtime", { exact: false }).check();
     await dialog.getByRole("button", { name: "Save assistant" }).click();
     const assistant = page.locator("article.agent-surface").filter({ hasText: "Android project partner" });
@@ -390,6 +418,10 @@ try {
   console.log(`Android QA passed: ${results.length} journeys. Evidence: ${output}`);
 } catch (error) {
   if (device) await shot("failure").catch(() => {});
+  // Retain bounded graphics/input evidence when the hosted WebView stalls.
+  for (const [name, args] of [["failure-frames.txt", ["shell", "dumpsys", "gfxinfo", pkg, "framestats"]], ["failure-input.txt", ["shell", "dumpsys", "input"]]]) {
+    try { await writeFile(path.join(output, name), execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8", timeout: 10000 })); } catch {}
+  }
   throw error;
 } finally {
   await writeFile(path.join(output, "results.json"), JSON.stringify({ serial, passed: results, webview: page ? await page.evaluate(() => navigator.userAgent).catch(() => "unavailable") : "unavailable" }, null, 2));

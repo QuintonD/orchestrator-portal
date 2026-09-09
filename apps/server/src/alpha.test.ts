@@ -22,9 +22,31 @@ afterEach(async () => {
 describe("alpha workflows and authority boundaries", () => {
   it("protects all new workspace data with authentication", async () => {
     const app = await setup(false);
-    for (const route of ["assistants", "reports", "councils", "activity", "watches", "broker/grants", "knowledge/documents", "handoffs"])
+    for (const route of ["presence", "assistants", "reports", "councils", "activity", "watches", "broker/grants", "knowledge/documents", "handoffs"])
       expect((await app.inject(`/api/${route}`)).statusCode).toBe(401);
     expect((await app.inject("/api/broker/knowledge")).statusCode).toBe(401);
+  });
+  it("projects ecosystem state without assistant instructions or report contents", async () => {
+    const app = await setup();
+    const before = await app.inject("/api/presence");
+    expect(before.statusCode).toBe(200);
+    expect(before.headers["cache-control"]).toBe("no-store");
+    const created = (await app.inject({ method: "POST", url: "/api/assistants", payload: profile({ purpose: "Private mandate must not appear in presence" }) })).json();
+    const arrived = (await app.inject({ method: "POST", url: `/api/assistants/${created.id}/run` })).json();
+    await app.inject({ method: "PATCH", url: `/api/reports/${before.json().latestReport.id}`, payload: { review: "useful" } });
+    await app.inject({ method: "PATCH", url: `/api/assistants/${created.id}`, payload: { state: "paused" } });
+    await app.inject({ method: "PUT", url: "/api/dispatch", payload: { paused: true } });
+    const response = await app.inject("/api/presence");
+    const snapshot = response.json();
+    expect(snapshot.assistants).toHaveLength(before.json().assistants.length + 1);
+    expect(snapshot.assistants.find((a: { id: string }) => a.id === created.id)).toEqual({ id: created.id, connectorId: "demo", state: "paused" });
+    expect(snapshot.dispatchPaused).toBe(true);
+    expect(snapshot.latestReport).toEqual({ id: arrived.id, state: "claimed" });
+    expect(response.body).not.toContain("Private mandate");
+    for (const source of snapshot.connectors) expect(Object.keys(source).sort()).toEqual(["id", "lastSyncAt", "status"]);
+    for (const assistant of snapshot.assistants) expect(Object.keys(assistant).sort()).toEqual(["connectorId", "id", "state"]);
+    expect(Object.keys(snapshot.latestReport).sort()).toEqual(["id", "state"]);
+    expect(snapshot.reportCount).toBeGreaterThan(0);
   });
   it("creates an assistant, requests a report and retains the original after correction", async () => {
     const app = await setup();

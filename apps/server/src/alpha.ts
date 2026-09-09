@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { assistantProfileSchema, councilRequestSchema, watchInputSchema, type AssistantProfile, type Council, type Report } from "@orchestrator/contracts";
+import { assistantProfileSchema, councilRequestSchema, ecosystemSnapshotSchema, watchInputSchema, type AssistantProfile, type Council, type Report } from "@orchestrator/contracts";
 import { Vault, randomToken, tokenHash } from "./crypto.js";
 import { audit } from "./db.js";
 import { runtimeAdapters, runOpenClaw } from "./adapters.js";
@@ -93,6 +93,21 @@ export function registerAlpha(app: FastifyInstance, db: DatabaseSync, vault: Vau
     return reply.code(error.statusCode ?? 500).send({ error: error.statusCode && error.statusCode < 500 ? error.message : "The request could not be completed." });
   });
   app.get("/api/assistants", opts, async () => ({ assistants: list<AssistantProfile>("assistant"), dispatchPaused: read<{ paused: boolean }>("dispatch")?.paused ?? false }));
+  app.get("/api/presence", opts, async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    // Arrival order survives edits to older reports; UPSERT retains their rowid.
+    const last = db.prepare("SELECT payload FROM alpha_records WHERE kind='report' ORDER BY rowid DESC LIMIT 1").get() as { payload: string } | undefined;
+    const report = last ? vault.open<Report>(last.payload) : null;
+    return ecosystemSnapshotSchema.parse({
+      version: 1,
+      assistants: list<AssistantProfile>("assistant").map(({ id, connectorId, state }) => ({ id, connectorId, state })).sort((a, b) => a.id.localeCompare(b.id)),
+      connectors: db.prepare("SELECT id,status,last_sync_at FROM connectors ORDER BY id").all().map(row => ({ id: row.id, status: row.status, lastSyncAt: row.last_sync_at })),
+      attentionCount: (db.prepare("SELECT COUNT(*) AS count FROM attention_items WHERE resolved_at IS NULL").get() as { count: number }).count,
+      dispatchPaused: read<{ paused: boolean }>("dispatch")?.paused ?? false,
+      reportCount: (db.prepare("SELECT COUNT(*) AS count FROM alpha_records WHERE kind='report'").get() as { count: number }).count,
+      latestReport: report ? { id: report.id, state: report.state } : null,
+    });
+  });
   app.post("/api/assistants", opts, async (request, reply) => {
     const body = parse(assistantProfileSchema, request.body);
     const connector = db.prepare("SELECT capabilities_json FROM connectors WHERE id=?").get(body.connectorId) as { capabilities_json: string } | undefined;

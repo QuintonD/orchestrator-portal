@@ -8,6 +8,7 @@ test("assistant setup produces a reviewable report", async ({ page }, testInfo) 
   await dialog.getByLabel("Name", { exact: true }).fill(name);
   await dialog.getByLabel("What should it help you achieve?").fill("Keep active projects moving and identify missing commitments.");
   await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Existing runtime" })).toHaveValue("demo");
   await dialog.getByLabel("I have restricted this runtime", { exact: false }).check();
   await dialog.getByRole("button", { name: "Save assistant" }).click();
   await expect(dialog).not.toBeVisible();

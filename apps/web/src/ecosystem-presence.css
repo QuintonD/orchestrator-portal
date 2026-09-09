@@ -1,0 +1,32 @@
+.ecosystem-dock { flex: none; }
+.ecosystem-dock__button { display: flex; align-items: center; gap: 5px; padding: 0 10px 0 2px; width: 192px; min-height: 44px; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 12px; cursor: pointer; }
+.ecosystem-dock__button:hover { border-color: var(--line-strong); background: var(--surface-muted); }
+.ecosystem-dock__button > span { max-width: 134px; font-size: 11px; line-height: 1.3; text-align: left; }
+.ecosystem-dock__button .presence-field { flex: none; width: 56px; height: 44px; margin: 0; }
+.ecosystem-dock__button .presence-field svg { width: 100%; height: 100%; }
+.ecosystem-dock[data-home-visible="true"] > .ecosystem-dock__button { visibility: hidden; }
+.ecosystem-hero { display: block; padding: 0; color: inherit; border: 0; background: transparent; border-radius: 20px; cursor: pointer; }
+.ecosystem-hero:hover { background: var(--surface-muted); }
+.ecosystem-motion { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-soft); }
+.ecosystem-motion select { width: auto; min-width: 0; padding: 5px 7px; font-size: 11px; }
+.portal-presence > .ecosystem-motion { justify-content: center; }
+.ecosystem-panel { width: min(410px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 0; overflow: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 22px; box-shadow: 0 28px 100px #0003; }
+.ecosystem-panel::backdrop { background: #15202555; backdrop-filter: blur(5px); }
+.ecosystem-panel__inside { padding: 22px; }
+.ecosystem-panel__heading { display: flex; justify-content: space-between; align-items: center; }
+.ecosystem-panel__heading .eyebrow { margin: 0; }
+.ecosystem-panel__avatar { width: 238px; max-width: 100%; margin: 4px auto 8px; }
+.ecosystem-panel__avatar .presence-field { width: 100%; height: 200px; margin: 0; }
+.ecosystem-panel__avatar .presence-field svg { width: 100%; height: 100%; }
+.ecosystem-panel h2 { margin: 0 0 9px; text-align: center; font-size: 21px; letter-spacing: -.6px; }
+.ecosystem-panel__detail { margin: 0 auto 22px; max-width: 320px; color: var(--ink-soft); font-size: 12px; line-height: 1.65; text-align: center; }
+.ecosystem-panel__counts { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 20px; text-align: center; }
+.ecosystem-panel__counts div + div { border-left: 1px solid var(--line-strong); }
+.ecosystem-panel__counts dt { font-size: 10px; color: var(--ink-soft); }
+.ecosystem-panel__counts dd { margin: 5px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; }
+.ecosystem-panel__actions { display: flex; justify-content: center; margin: 18px 0 22px; }
+.ecosystem-panel__preferences { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 15px; border-top: 1px solid var(--line-strong); padding-top: 18px; }
+.ecosystem-panel__note { margin: 17px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.6; }
+.ecosystem-panel .text-button { display: flex; align-items: center; gap: 8px; margin: auto; border: 0; background: transparent; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 1000px) { .ecosystem-dock__button > span { display: none; } .ecosystem-dock__button { padding: 0; width: auto; } }
+@media (max-width: 600px) { .ecosystem-dock__button .presence-field { width: 46px; } .ecosystem-panel__inside { padding: 18px; } .portal-presence > .ecosystem-motion { font-size: 0; gap: 0; } .portal-presence > .ecosystem-motion select { max-width: 105px; } }

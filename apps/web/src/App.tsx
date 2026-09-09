@@ -3,6 +3,7 @@ import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "./lib.js";
 import { AppShell, Mark, Toast, routes } from "./components.js";
 import { PresenceField } from "./presence.js";
+import { EcosystemProvider } from "./ecosystem-presence.js";
 import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
 import { ConnectionsPage } from "./connections.js";
 import { PersonalPage } from "./personal-page.js";
@@ -72,13 +73,13 @@ export function App() {
                 : <OverviewPage {...pageProps} displayName={auth.user?.displayName ?? "Operator"} navigate={navigate} onAttentionCount={setAttentionCount} />;
 
   return (
-    <>
+    <EcosystemProvider>
       <AppShell route={route} navigate={navigate} displayName={auth.user?.displayName ?? "Operator"} theme={theme} setTheme={setThemeState} attentionCount={attentionCount}>
         {auth.mode === "demo" && <div className="demo-banner">EXPLORATION MODE <span>Synthetic workspace · no external work is performed</span></div>}
         {page}
       </AppShell>
       {toast && <Toast {...toast} dismiss={() => setToast(null)} />}
-    </>
+    </EcosystemProvider>
   );
 }
 

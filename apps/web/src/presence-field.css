@@ -1,0 +1,29 @@
+.assistant-mark { display: block; width: 100%; height: 100%; overflow: visible; }
+/* The rig owns interpolation; global reduced-motion CSS must not add transitions. */
+.assistant-mark * { transition: none !important; animation: none !important; }
+.assistant-mark .rig-halo { stroke-width: .8; }
+.assistant-mark .rig-count { fill: currentColor; stroke: none; font-family: ui-monospace, monospace; }
+.assistant-mark .rig-symbol { stroke-width: 1.8; }
+.assistant-mark .rig-signal { fill: currentColor; stroke: none; }
+.assistant-mark[data-material="ink"] .rig-ring { fill: none; }
+:root[data-theme="dark"] .rig-gradients stop:nth-of-type(1) { stop-opacity: var(--rig-shade, .4); }
+:root[data-theme="dark"] .rig-gradients stop:nth-of-type(2) { stop-opacity: .18; }
+:root[data-theme="dark"] .rig-gradients stop:nth-of-type(3) { stop-opacity: .055; }
+:root[data-theme="dark"] .rig-gradients stop:nth-of-type(4) { stop-opacity: 0; }
+.presence-field[data-original="true"] > .assistant-mark { visibility: hidden; }
+.presence-field__original { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; }
+.assistant-sound-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.assistant-sound-controls .button { font-size: 11px; }
+.assistant-sound-controls label { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 10px; }
+.assistant-sound-controls input[type="range"] { width: 78px; accent-color: var(--ink); }
+.assistant-sound-controls > span { max-width: 230px; font-size: 11px; }
+.portal-presence { flex: none; }
+.portal-presence__controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.portal-presence__controls .button { min-height: 28px; font-size: 10px; padding: 0 8px; }
+.portal-presence__controls select { max-width: 100px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 4px; padding: 4px; font-size: 10px; }
+@media (max-width: 760px) { .portal-presence { max-width: 112px; } .portal-presence__controls { gap: 4px; } }
+:root[data-theme="dark"] .presence-field__original { filter: invert(1); }
+@media (forced-colors: active) {
+  .assistant-mark { color: CanvasText; }
+  .assistant-mark .rig-ring { fill: Canvas; }
+}
