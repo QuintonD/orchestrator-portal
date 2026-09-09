@@ -1,12 +1,13 @@
 # Releases and upgrades
 
-**Orchestrator is still alpha.** [Alpha 5](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.5) adds a living ecosystem avatar, source-driven motion and optional local sound. Each distribution contains six desktop bundles and a signed APK from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
+**Orchestrator is still alpha.** [Alpha 6](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.6) includes the living ecosystem avatar and restores its original PNG in desktop packages. Each distribution contains six desktop bundles and a signed APK from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
 
 ## Which version to use
 
 | Version | Status |
 | --- | --- |
-| `0.1.0-alpha.5` | Living ecosystem avatar, persistent header presence, motion suite and optional sound |
+| `0.1.0-alpha.6` | Original artwork included in desktop packages; packaged image MIME and byte checks |
+| `0.1.0-alpha.5` | Living ecosystem avatar and optional sound; desktop packages omitted the original comparison PNG; upgrade baseline for alpha 6 |
 | `0.1.0-alpha.4` | Previous alpha: subscription/local model API connections and mobile connection-name layout fix; upgrade baseline for alpha 5 |
 | `0.1.0-alpha.3` | Previous alpha: prepared teams, automatic local briefs, personal workflows and the monochrome interface; upgrade baseline for alpha 4 |
 | `0.1.0-alpha.2` | Previous packaged alpha; supported starting point for the alpha 3 upgrade |
@@ -24,8 +25,8 @@ The owner confirmed that the product remains alpha. The corrective commit and th
 ## Upgrade without losing your workspace
 
 1. Stop the existing gateway. Back up its entire workspace directory, including the database and encryption key. Keep any externally supplied master key.
-2. Extract the alpha 5 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
-3. Install the signed alpha 5 APK over the signed alpha 4 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances from 6 to 7. See [Android setup](android.md).
+2. Extract the alpha 6 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
+3. Install the signed alpha 6 APK over the signed alpha 5 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances from 7 to 8. See [Android setup](android.md).
 4. Check your records, connections and settings before retiring the previous program. Rollback means restoring the stopped pre-upgrade workspace backup with its matching key and previous program; database downgrade compatibility is not promised.
 
 Updating only the phone cannot upgrade the gateway's features. There is no automatic updater. A source installation must keep its existing `ORCHESTRATOR_DATA_DIR`; switching launch methods without specifying that path can open a different, empty workspace.
@@ -47,4 +48,4 @@ The two old QA snapshots are retained with their original tags and assets for re
 
 With the complete asset set staged, run `node scripts/release-manifest.mjs <assets-directory> <CI-run-id> <desktop-run-id> <upgrade-results.json>`. It checks the clean main commit, downloads the named workflow's desktop artifacts to compare bytes, verifies the APK's embedded commit/version/signature, and requires successful upgrade evidence matching the staged APK and native desktop archive before writing the manifest and checksums. Android build tools 35.0.0 and JDK tooling must be installed. Keep the generated release manifest with the release.
 
-See [alpha 5 validation](alpha-5-validation.md) for this release's evidence and [alpha 4 validation](alpha-4-validation.md) for the previous release.
+See [alpha 6 validation](alpha-6-validation.md) for this release's evidence and [alpha 5 validation](alpha-5-validation.md) for the previous release.

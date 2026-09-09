@@ -22,9 +22,9 @@ test("web packaging excludes arbitrary build files and rejects directory symlink
   const root = await mkdtemp(path.join(os.tmpdir(), "orchestrator-web-staging-"));
   const dist = path.join(root, "dist");
   await mkdir(path.join(dist, "assets"), { recursive: true });
-  for (const filename of ["index.html", "mark.svg", "manifest.webmanifest", "master.key", ".env"]) await writeFile(path.join(dist, filename), "sentinel");
+  for (const filename of ["index.html", "mark.svg", "manifest.webmanifest", "assistant-original.png", "unrelated.png", "master.key", ".env"]) await writeFile(path.join(dist, filename), "sentinel");
   for (const filename of ["index-abc123.js", "index-abc123.css", "index-abc123.js.map", "orchestrator.db"]) await writeFile(path.join(dist, "assets", filename), "sentinel");
-  assert.deepEqual((await webFiles(dist)).sort(), [path.join("assets", "index-abc123.css"), path.join("assets", "index-abc123.js"), "index.html", "manifest.webmanifest", "mark.svg"].sort());
+  assert.deepEqual((await webFiles(dist)).sort(), [path.join("assets", "index-abc123.css"), path.join("assets", "index-abc123.js"), "index.html", "manifest.webmanifest", "mark.svg", "assistant-original.png"].sort());
   // Windows directory junctions exercise the symlink boundary without administrator privileges.
   await symlink(dist, path.join(root, "linked-dist"), process.platform === "win32" ? "junction" : "dir");
   await assert.rejects(webFiles(path.join(root, "linked-dist")), /symlinks/);

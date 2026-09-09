@@ -1,5 +1,14 @@
 # Alpha 5 release validation
 
+Final distribution checks passed at `5af54457a0222cd6874977fcfa9325e26a2c0749`,
+including main CI `34385632661`, all six desktop targets `34385632747`, and the
+published alpha 4 to alpha 5 desktop/Android upgrade. The release manifest records
+the exact inputs and checks. A subsequent installed-gateway check found that the
+desktop staging allowlist omitted `assistant-original.png`: its URL returned the
+SPA HTML rather than an image. The animated ecosystem worked, but the original
+comparison was blank. Alpha 6 corrects packaging and adds a MIME/byte regression
+to every native desktop smoke job. The original alpha 5 tag and assets are retained.
+
 Alpha 5 integrates the source-based assistant animation and sound suite into the
 authenticated application. The avatar represents recorded ecosystem state and
 remains available in the header outside the Portal's main illustration. See the
