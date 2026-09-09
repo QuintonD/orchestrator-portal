@@ -2,7 +2,7 @@
 
 The desktop bundle runs Orchestrator on your computer and opens it in your browser. It includes Node.js; you do not need to install Node, npm, Git, Docker, or an administrator-level service. Your assistants and knowledge sources remain separate connections.
 
-Download the archive for your computer from the [alpha 5 release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.5). A source-code ZIP or the Android APK is not the desktop gateway. The **Desktop gateway** GitHub Actions workflow builds and tests each native target; maintainer workflow artifacts contain the same archive format.
+Download the archive for your computer from the [alpha 6 release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.6). A source-code ZIP or the Android APK is not the desktop gateway. The **Desktop gateway** GitHub Actions workflow builds and tests each native target; maintainer workflow artifacts contain the same archive format.
 
 ## Start
 

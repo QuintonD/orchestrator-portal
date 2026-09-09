@@ -28,7 +28,7 @@ export async function compiledFiles(source, dist) {
 export async function webFiles(dist) {
   return (await regularFiles(dist)).filter((file) => {
     const relative = file.split(path.sep).join("/");
-    return ["index.html", "mark.svg", "manifest.webmanifest"].includes(relative)
+    return ["index.html", "mark.svg", "manifest.webmanifest", "assistant-original.png"].includes(relative)
       || /^assets\/[a-zA-Z0-9_-]+\.(?:js|css|woff2?|ttf|otf|svg|png|jpe?g|webp|ico)$/.test(relative);
   });
 }

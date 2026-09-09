@@ -103,6 +103,10 @@ try {
   const asset = html.match(/src="([^"]+\.js)"/)?.[1];
   assert.ok(asset, "built JavaScript asset reference");
   assert.equal((await fetch(new URL(asset, url))).status, 200);
+  const original = await fetch(`${url}/assistant-original.png`);
+  assert.equal(original.status, 200, "original artwork is served by the packaged gateway");
+  assert.match(original.headers.get("content-type"), /^image\/png\b/, "original artwork must not fall through to the SPA page");
+  assert.equal(hash(Buffer.from(await original.arrayBuffer())), hash(await readFile(path.join(repo, "apps/web/public/assistant-original.png"))), "packaged artwork matches the supplied PNG bytes");
   assert.equal((await (await fetch(`${url}/api/auth/status`)).json()).setupRequired, true);
   const setup = await fetch(`${url}/api/auth/setup`, { method: "POST", headers: { "Content-Type": "application/json", Origin: url }, body: JSON.stringify({ displayName: "Desktop smoke", password: "desktop-smoke-passphrase-only" }) });
   assert.equal(setup.status, 201);
