@@ -69,10 +69,17 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7
-          # This WebView client needs GLES, not Vulkan. Headless Vulkan lost the
-          # emulator process in two runs during private setup; keep all UI tests.
+          # Match the locally validated 36.6.11 emulator. Floating 37.1.11 lost
+          # its process repeatedly on this runner, including with Vulkan off.
+          emulator-build: 15507667
           emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -cores 2 -noaudio -no-boot-anim -no-snapshot
           script: ANDROID_QA_SERIAL=emulator-5554 npm run test:android
+      - name: Diagnose emulator host failure
+        if: failure()
+        run: |
+          free -h
+          ps -eo pid,comm,rss --sort=-rss | head -n 20
+          sudo dmesg | tail -n 160
       - uses: actions/upload-artifact@v7
         if: always()
         with:

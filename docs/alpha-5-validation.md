@@ -47,10 +47,11 @@ Back, keyboard and rotation, large text, all routes, source setup, reports and
 offline recovery. Evidence: `test-results/android/emulator-5560-1788965710482/`.
 
 Hosted CI passed its functional/browser, Docker, CodeQL and six native desktop
-jobs. Two Android attempts lost the entire emulator during private setup, before
-the new ecosystem journey. CI now stops the Gradle daemon before emulator testing
-and disables the emulator's Vulkan path while retaining GLES and every assertion.
-The latter follows [Android's emulator troubleshooting guidance](https://developer.android.com/studio/run/emulator-troubleshooting?hl=en).
+jobs. Hosted emulator 37.1.11 repeatedly exited, including with Vulkan disabled.
+CI now pins emulator 36.6.11 (build 15507667), matching the version that passed
+local QA, releases Gradle daemon memory and captures host diagnostics on failure.
+The API 36 image, GLES rendering and all 15 journeys remain enabled. Disabling
+Vulkan follows [Android's emulator troubleshooting guidance](https://developer.android.com/studio/run/emulator-troubleshooting?hl=en).
 The precise host failure cause is unconfirmed; passing the complete rerun remains
 required. No application rendering or animation check is disabled.
 
