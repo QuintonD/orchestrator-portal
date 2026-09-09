@@ -42,6 +42,7 @@ export function createRigPainter(svg: SVGSVGElement, gradientId: string) {
       attr(entry.group, "data-x", node.x); attr(entry.group, "data-y", node.y);
       attr(entry.group, "data-depth", node.z); attr(entry.group, "data-members", node.members);
       attr(entry.group, "data-parent", node.parent ?? "");
+      attr(entry.group, "data-activity", node.activity ?? "ready");
       attr(entry.ring, "r", Math.max(0, node.r));
       attr(entry.ring, "stroke-width", 2.6 * Math.min(1, Math.max(.55, node.r / 8)));
       attr(entry.shade, "cx", node.lightX ?? .3); attr(entry.shade, "cy", node.lightY ?? .2);
@@ -50,7 +51,7 @@ export function createRigPainter(svg: SVGSVGElement, gradientId: string) {
       attr(entry.cutout, "cx", node.x); attr(entry.cutout, "cy", node.y); attr(entry.cutout, "r", Math.max(0, node.r - .25));
       entry.label.textContent = node.members > 1 ? String(node.members) : "";
       attr(entry.label, "font-size", Math.min(8, node.r));
-      const symbol = node.parent ? "none" : frame.symbol;
+      const symbol = node.activity === "unknown" ? "alert" : node.parent ? "none" : frame.symbol;
       attr(entry.symbol, "d", symbol === "check" ? "m-6 0 4 4 8-9" : symbol === "alert" ? "M0-6v7m0 4v.3" : symbol === "pause" ? "M-3-5V5M3-5V5" : "M0 0");
       attr(entry.symbol, "opacity", symbol === "none" ? 0 : 1);
       const parent = frame.nodes.find(n => n.id === node.parent);
@@ -59,7 +60,7 @@ export function createRigPainter(svg: SVGSVGElement, gradientId: string) {
         attr(entry.edge, "d", edgePath(parent, node));
         attr(entry.edge, "data-child", node.id);
         attr(entry.edge, "opacity", segment.visible ? Math.min(parent.opacity, node.opacity) * Math.min(1, 1 + node.z / 250) : 0);
-        attr(entry.edge, "stroke-dasharray", state === "offline" ? "2 4" : "none");
+        attr(entry.edge, "stroke-dasharray", state === "offline" || node.activity === "unknown" || node.activity === "paused" ? "2 4" : "none");
         const p = state === "thinking" || state === "listening" ? 1 - frame.pulse : frame.pulse;
         attr(entry.signal, "cx", segment.x1 + (segment.x2 - segment.x1) * p); attr(entry.signal, "cy", segment.y1 + (segment.y2 - segment.y1) * p);
         attr(entry.signal, "opacity", segment.visible && ["thinking", "connecting", "responding", "listening"].includes(state) ? node.opacity * Math.sin(p * Math.PI) : 0);

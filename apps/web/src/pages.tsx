@@ -48,10 +48,8 @@ import { api, ApiError, compactNumber, cx, money, relativeTime } from "./lib.js"
 import { Dialog, HandoffPanel, KnowledgeLibrary } from "./alpha-pages.js";
 import { Card, EmptyState, PageHeader, Skeleton, StatusPill } from "./components.js";
 import { IconThemePicker } from "./icon-appearance.js";
-import { AssistantSigil, PresenceField } from "./presence.js";
-import { AssistantSoundControls, useMotionPreference } from "./assistant-motion-controls.js";
-import { useAssistantSound } from "./assistant-sound.js";
-import type { MotionPolicy } from "./assistant-rig.js";
+import { AssistantSigil } from "./presence.js";
+import { EcosystemHero } from "./ecosystem-presence.js";
 
 interface NotifyProps { notify(message: string, tone?: "neutral" | "success" | "error"): void }
 
@@ -100,8 +98,6 @@ export function OverviewPage({ notify, navigate, onAttentionCount }: NotifyProps
   const [loadError, setLoadError] = useState("");
   const [layout, setLayout] = useState<DashboardLayout | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const presenceSound = useAssistantSound();
-  const presenceMotion = useMotionPreference();
 
   async function load() {
     const next = await api<OverviewData>("/api/overview");
@@ -151,7 +147,7 @@ export function OverviewPage({ notify, navigate, onAttentionCount }: NotifyProps
       />
 
       <section className="system-focus">
-        <div className="portal-presence"><PresenceField state={refreshing ? "connecting" : stale.length ? "offline" : data.attention.length ? "aware" : "resting"} assistants={data.assistantCount} policy={presenceMotion.policy} onFrame={presenceSound.tick} onActivity={presenceSound.activity} /><div className="portal-presence__controls"><AssistantSoundControls sound={presenceSound} compact /><select aria-label="Assistant motion" value={presenceMotion.policy} onChange={event => presenceMotion.setPolicy(event.target.value as MotionPolicy)}><option value="system">{presenceMotion.reduced ? "Reduced motion" : "Device motion"}</option><option value="full">Full motion</option><option value="still">Still</option></select></div></div>
+        <EcosystemHero />
         <div className="system-focus__copy"><p className="eyebrow">{refreshing ? "Checking sources" : data.connectors.length ? "System pulse" : "Start here"}</p>
           <h2>{!data.connectors.length ? "Connect a source to begin." : stale.length ? "A source needs a check." : data.attention.length ? `${data.attentionCount} things need you.` : "Nothing needs you right now."}</h2>
           <p>{!data.connectors.length ? "Connect what you already use. Its work comes into focus here." : stale.length ? "Refresh the picture before relying on it." : "Your next decision, with the work around it."}</p>

@@ -34,7 +34,7 @@ export type PresenceState = typeof assistantMotions[number]["id"];
 export type MotionPolicy = "system" | "full" | "still";
 export type MarkMaterial = "ink" | "satin";
 export interface NetworkOptions { assistants?: number; leads?: number; network?: readonly RigNode[] | undefined; }
-export interface RigNode { id: string; parent: string | null; x: number; y: number; z: number; r: number; opacity: number; members: number; lightX?: number; lightY?: number; shade?: number; }
+export interface RigNode { id: string; parent: string | null; x: number; y: number; z: number; r: number; opacity: number; members: number; lightX?: number; lightY?: number; shade?: number; activity?: "ready" | "running" | "paused" | "unknown" | undefined; }
 export interface RigFrame { nodes: RigNode[]; pulse: number; halo: number; symbol: "check" | "alert" | "pause" | "none"; }
 export const animatedPresenceStates = new Set<PresenceState>(assistantMotions.filter(m => m.duration > 0).map(m => m.id));
 export const motionDefinition = (state: PresenceState) => assistantMotions.find(m => m.id === state)!;
@@ -152,6 +152,8 @@ export function sampleRig(state: PresenceState, seconds: number, options: Networ
     let dx = (node.x - rigCentre.x) * scale, dy = (node.y - rigCentre.y) * scale;
     let size = node.r, opacity = node.opacity;
     if (index) {
+      if (node.activity === "running" && !["still", "paused", "offline"].includes(state)) { size *= 1 + Math.sin(t * 3.4 + index * 1.7) * .055; dy += Math.sin(t * 2.2 + index) * 1.6; }
+      if (node.activity === "paused") opacity *= .55;
       if (state === "thinking") { dx += (Math.sin(a + index * 1.7) - Math.sin(index * 1.7)) * 2; dy += (Math.cos(a + index * 1.3) - Math.cos(index * 1.3)) * 2; }
       if (state === "connecting") { const reach = Math.sin(a - index * .75); dx *= 1 + reach * .10; dy *= 1 + reach * .10; }
       if (state === "aware" && index === Math.min(2, scene.length - 1)) { dy -= (beat(.12, .06, .05, .08) + beat(.34, .045, .025, .09) * .6) * 8; }

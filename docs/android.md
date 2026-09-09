@@ -8,7 +8,7 @@ The [Android QA record](android-qa.md) includes test coverage, visual evidence a
 
 ## Install the APK
 
-1. Download `orchestrator-0.1.0-alpha.4.apk` from the repository's [Android alpha release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.4).
+1. Download `orchestrator-0.1.0-alpha.5.apk` from the repository's [Android alpha release](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.5).
 2. Open the download on your Android phone. Allow installation from that browser or file manager when Android asks, then install **Orchestrator Alpha**. You can turn that installation permission off afterward.
 3. Follow either USB or private HTTPS setup below. Android 8.0/API 26 or later and an updated Android System WebView are required.
 
@@ -16,7 +16,7 @@ The published APK has debugging disabled and is signed with a dedicated alpha ke
 
 ## Start the gateway on your computer
 
-Download and extract the [desktop gateway bundle](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.4) for Windows, macOS or Linux. Open its launcher and create a workspace in the browser. Keep the launcher running; your phone uses the same workspace and passphrase. No Node, Git or build commands are needed. See the [desktop guide](desktop.md) for workspace locations and upgrades.
+Download and extract the [desktop gateway bundle](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.5) for Windows, macOS or Linux. Open its launcher and create a workspace in the browser. Keep the launcher running; your phone uses the same workspace and passphrase. No Node, Git or build commands are needed. See the [desktop guide](desktop.md) for workspace locations and upgrades.
 
 For a source checkout instead, install Node.js 24 or newer and Git, then run:
 
@@ -56,7 +56,7 @@ This is the shortest path and needs no remote hosting or TLS certificate.
 
 Here, `127.0.0.1` reaches the computer through USB forwarding. Do not enter your computer's LAN IP. Repeat `adb reverse` after reconnecting USB or restarting the device. With multiple devices, use `adb -s DEVICE_SERIAL reverse tcp:4400 tcp:4400`.
 
-Alternatively, install from your computer with `adb install -r orchestrator-0.1.0-alpha.4.apk`.
+Alternatively, install from your computer with `adb install -r orchestrator-0.1.0-alpha.5.apk`.
 
 ## Option B: Private HTTPS for wireless use
 

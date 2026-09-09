@@ -29,7 +29,7 @@ import { registerAlpha } from "./alpha.js";
 import { registerGrok } from "./grok.js";
 import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.1.0-alpha.4";
+const version = "0.1.0-alpha.5";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {

@@ -1,5 +1,44 @@
 # Main assistant motion and sound
 
+## Living ecosystem: application integration, 9 September 2026
+
+The avatar now follows the authenticated workspace across every application view.
+The Portal shows it beside the system pulse. When that area leaves the viewport,
+or another destination opens, a compact avatar appears in the sticky header.
+Either opens the same ecosystem panel, with counts, the next relevant destination,
+motion preference, sound toggle and volume. Native dialog behavior retains focus,
+Escape and Android Back. Audio starts only after an explicit gesture.
+
+An authenticated, uncached `/api/presence` snapshot supplies assistant identity,
+source identity/health, recorded activity, unresolved attention, dispatch pause,
+and the latest report identifier/state. It excludes names, mandates, report bodies,
+messages, connection settings and credentials. Portal events and request lifecycle
+changes trigger debounced refreshes; visible clients also refresh every 15 seconds.
+Requests are serialized and time out after 10 seconds. Hidden clients suspend the
+stream, polling, animation and audio. Network failures retain the last graph and
+explicitly show that its current activity is unavailable.
+
+Each assistant retains its node and position through sorting, navigation, additions
+and removals. Working members pulse individually; paused members dim; uncertain
+outcomes carry an alert. Above 18 members, branches group assistants sharing a
+source and preserve total membership. This grouping does not invent a delegation
+hierarchy. Source relationships are not yet available as authoritative data;
+adjacent subteam choreography remains available in the studio for future adapters.
+
+Growth and consolidation reflect actual membership changes. New reports receive
+an acknowledgment, with success reserved for an explicitly verified receipt.
+Attention, uncertainty and unavailable state take priority over decorative
+gestures. Pausing dispatch does not imply that already-running source work stopped.
+The restrained idle breath makes the ecosystem present without fabricating work.
+Satin lighting follows each node through depth; all branches use the same geometry
+for nodes, edges and travelling signals. The original supplied artwork remains
+available unchanged in the motion studio and portable export.
+
+Model tests cover identity, counts, large source groups and evidence semantics.
+Browser journeys cover navigation, growth, disabled motion, focus, network failure
+and retry at desktop and mobile widths. The Android suite adds a native Back and
+motion-preference journey. See [alpha 5 validation](../alpha-5-validation.md).
+
 ## Study 03: refinement, 9 September 2026
 
 Ink is now the default surface; the texture surface has been removed. Satin

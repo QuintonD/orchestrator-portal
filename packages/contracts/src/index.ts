@@ -175,6 +175,18 @@ export type AssistantProfile = AssistantProfileInput & {
   lastRunAt: string | null; nextExpectedAt: string | null; createdAt: string;
   templateId?: string; templateVersion?: number; mode?: AssistantMode; icon?: number; autoReview?: boolean;
 };
+
+/** Read-only avatar projection. No mandates, messages, report bodies or credentials. */
+export const ecosystemSnapshotSchema = z.object({
+  version: z.literal(1),
+  assistants: z.array(z.object({ id: z.string().max(160), connectorId: z.string().max(160), state: z.enum(["ready", "paused", "running", "unknown"]) })).max(120),
+  connectors: z.array(connectorSchema.pick({ id: true, status: true, lastSyncAt: true })).max(500),
+  attentionCount: z.number().int().nonnegative(),
+  dispatchPaused: z.boolean(),
+  reportCount: z.number().int().nonnegative(),
+  latestReport: z.object({ id: z.string().max(160), state: receiptStateSchema }).nullable(),
+});
+export type EcosystemSnapshot = z.infer<typeof ecosystemSnapshotSchema>;
 export const councilRequestSchema = z.object({
   question: z.string().trim().min(10).max(4000),
   assistantIds: z.array(z.string()).min(2).max(3).refine((ids) => new Set(ids).size === ids.length, "Choose distinct assistants"),

@@ -18,7 +18,8 @@ test("reference field respects motion controls in both themes and leaves the com
   }
 });
 
-test("only a pending source check moves the field and motion preferences adapt live", async ({ page }) => {
+test("source checks wake a stale ecosystem and motion preferences adapt live", async ({ page }) => {
+  await page.route("**/api/presence", route => route.fulfill({ json: { version: 1, assistants: [{ id: "one", connectorId: "demo", state: "ready" }], connectors: [{ id: "demo", status: "degraded", lastSyncAt: null }], attentionCount: 0, dispatchPaused: false, reportCount: 0, latestReport: null } }));
   await page.route("**/api/overview", async route => {
     const data = await (await route.fetch()).json();
     await route.fulfill({ json: { ...data, connectors: data.connectors.map((source: object) => ({ ...source, status: "degraded", lastSyncAt: null })) } });

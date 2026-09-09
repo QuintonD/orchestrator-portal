@@ -23,6 +23,7 @@ import {
   Activity,
 } from "lucide-react";
 import { cx } from "./lib.js";
+import { EcosystemDock } from "./ecosystem-presence.js";
 
 export const routes = [
   { path: "/", label: "Portal", icon: Gauge },
@@ -112,6 +113,7 @@ export function AppShell({
           <div className="workspace-label"><b>ORCHESTRATOR</b><span> / </span> {routes.find((item) => item.path === route)?.label}</div>
           <button className="command-search" onClick={() => navigate("/brain")}><Search size={17} /><span>Search knowledge</span></button>
           <div className="topbar__actions">
+            <EcosystemDock navigate={navigate} />
             <button className="icon-button" aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>

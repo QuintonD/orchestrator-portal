@@ -157,6 +157,25 @@ try {
     await cdp.detach();
     await shot("03-demo-portal");
   });
+  await step("Living ecosystem, motion preference and native Back", async () => {
+    await navigate("Team");
+    const dock = page.locator(".ecosystem-dock__button");
+    await expect(dock).toBeVisible();
+    await dock.click();
+    const panel = page.getByRole("dialog", { name: "Your ecosystem" });
+    await expect(panel).toBeVisible();
+    await panel.getByRole("combobox", { name: "Assistant motion" }).selectOption("full");
+    await expect(panel.locator(".presence-field")).toHaveAttribute("data-motion", "running");
+    await expect(panel.getByRole("button", { name: "Sound off", exact: true })).toHaveAttribute("aria-pressed", "false");
+    await shot("03-ecosystem");
+    await nativeKey("Back");
+    await expect(panel).toHaveCount(0);
+    await dock.click();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("combobox", { name: "Assistant motion" })).toHaveValue("full");
+    await nativeKey("Back");
+    await expect(panel).toHaveCount(0);
+  });
   await step("Assistant setup, report review and native Back", async () => {
     await navigate("Team");
     await page.getByRole("button", { name: "Custom assistant", exact: true }).click();
