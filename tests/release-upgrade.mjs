@@ -1,4 +1,4 @@
-// Actual published alpha 2 programs -> current packaged alpha, using only disposable data.
+// Actual published baseline programs -> current packaged alpha, using only disposable data.
 // Never clears or uninstalls an Android package. Use a fresh dedicated emulator.
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -10,13 +10,17 @@ import { DatabaseSync } from "node:sqlite";
 import { chromium, _android as android, expect } from "@playwright/test";
 import { nativeControls } from "./android/native.mjs";
 
-const version = JSON.parse(await readFile("package.json", "utf8")).version;
+const metadata = JSON.parse(await readFile("package.json", "utf8"));
+const version = metadata.version;
+const previousVersion = metadata.orchestratorRelease.previousVersion;
+assert.match(previousVersion, /^0\.1\.0-alpha\.[1-9]\d*$/);
+assert.ok(Number(previousVersion.split(".").at(-1)) < Number(version.split(".").at(-1)));
 const assets = path.resolve("test-results/release-assets");
 const target = `${process.platform}-${process.arch}`;
 const extension = process.platform === "win32" ? "zip" : "tar.gz";
-const previousArchive = path.join(assets, `orchestrator-0.1.0-alpha.2-${target}.${extension}`);
+const previousArchive = path.join(assets, `orchestrator-${previousVersion}-${target}.${extension}`);
 const nextArchive = path.resolve(`dist/desktop/orchestrator-${version}-${target}.${extension}`);
-const previousApk = path.join(assets, "orchestrator-0.1.0-alpha.2.apk");
+const previousApk = path.join(assets, `orchestrator-${previousVersion}.apk`);
 const nextApk = path.resolve("apps/android/app/build/outputs/apk/release/app-release.apk");
 const serial = process.env.ANDROID_QA_SERIAL ?? "emulator-5560";
 assert.match(serial, /^emulator-\d+$/);
@@ -27,13 +31,13 @@ const pkg = "io.github.quintond.orchestrator";
 const retryPath = process.env.ORCHESTRATOR_UPGRADE_RETRY;
 if (retryPath) {
   const retry = JSON.parse(await readFile(path.join(retryPath, "results.json"), "utf8"));
-  assert.equal(retry.serial, serial); assert.equal(retry.passed, false); assert.equal(retry.previousVersion, "0.1.0-alpha.2");
-  assert.match(run("shell", "dumpsys", "package", pkg), /versionName=0\.1\.0-alpha\.2\s/);
+  assert.equal(retry.serial, serial); assert.equal(retry.passed, false); assert.equal(retry.previousVersion, previousVersion);
+  assert.equal(run("shell", "dumpsys", "package", pkg).match(/versionName=([^\r\n]+)/)[1].trim(), previousVersion);
   run("shell", "am", "force-stop", pkg);
 } else assert.equal(run("shell", "pm", "list", "packages", pkg).trim(), "", "Use a fresh emulator; failed pre-upgrade fixtures may be retried explicitly without clearing data");
 const sha = async (file) => createHash("sha256").update(await readFile(file)).digest("hex");
 const sums = await readFile(path.join(assets, "SHA256SUMS.txt"), "utf8");
-for (const file of [previousArchive, previousApk]) assert.ok(sums.includes(`${await sha(file)}  ${path.basename(file)}`), "published alpha 2 checksum");
+for (const file of [previousArchive, previousApk]) assert.ok(sums.includes(`${await sha(file)}  ${path.basename(file)}`), "published baseline checksum");
 assert.equal(await sha(nextArchive), (await readFile(`${nextArchive}.sha256`, "utf8")).split(" ")[0]);
 await mkdir("test-results/upgrades", { recursive: true });
 const output = await mkdtemp(path.resolve("test-results/upgrades/alpha-"));
@@ -49,7 +53,7 @@ const url = "http://127.0.0.1:4482";
 const env = { ...process.env, ORCHESTRATOR_DATA_DIR: data, ORCHESTRATOR_PORT: "4482", ORCHESTRATOR_ALLOWED_ORIGINS: url };
 for (const key of ["ORCHESTRATOR_MASTER_KEY", "ORCHESTRATOR_DEMO", "NODE_OPTIONS", "NODE_PATH"]) delete env[key];
 let child, browser, device;
-const evidence = { version, previousVersion: "0.1.0-alpha.2", target, serial, passed: false, checks: [] };
+const evidence = { version, previousVersion, target, serial, passed: false, checks: [] };
 async function start(bundle) {
   const entry = path.join(bundle, process.platform === "win32" ? "Orchestrator.cmd" : process.platform === "darwin" ? "Orchestrator.command" : "orchestrator");
   child = process.platform === "win32"
@@ -77,7 +81,7 @@ const api = async (route) => {
 };
 try {
   await start(oldBundle);
-  assert.equal((await (await fetch(`${url}/healthz`)).json()).version, "0.1.0-alpha.2");
+  assert.equal((await (await fetch(`${url}/healthz`)).json()).version, previousVersion);
   const setup = await fetch(`${url}/api/auth/setup`, { method: "POST", headers: { "Content-Type": "application/json", Origin: url }, body: JSON.stringify({ displayName: "Upgrade fixture", password }) });
   assert.equal(setup.status, 201);
   cookies = setup.headers.getSetCookie().map(value => value.split(";")[0]).join("; ");
@@ -162,7 +166,7 @@ try {
   }
   assert.equal(vault.open(upgraded.prepare("SELECT body_encrypted FROM messages WHERE id='message-fixture'").get().body_encrypted), "Preserve this conversation");
   upgraded.close();
-  evidence.checks = ["published input checksums", "old desktop launcher and login", "encrypted connection/message and custom assistant/report/watch/project/knowledge/layout retained", "workspace backup and unchanged master key", "SQLite integrity", "existing desktop session and theme", "exactly one Compass", "signed APK installed over alpha 2 without clearing or uninstalling", "increasing versionCode and retained firstInstallTime", "phone origin and session retained", "non-debuggable APK"];
+  evidence.checks = ["published input checksums", "old desktop launcher and login", "encrypted connection/message and custom assistant/report/watch/project/knowledge/layout retained", "workspace backup and unchanged master key", "SQLite integrity", "existing desktop session and theme", "exactly one Compass", `signed APK installed over ${previousVersion} without clearing or uninstalling`, "increasing versionCode and retained firstInstallTime", "phone origin and session retained", "non-debuggable APK"];
   evidence.artifacts = Object.fromEntries(await Promise.all([previousArchive, nextArchive, previousApk, nextApk].map(async file => [file === nextApk ? `orchestrator-${version}.apk` : path.basename(file), await sha(file)])));
   evidence.passed = true;
   console.log("PASS", evidence.checks.join("; "));

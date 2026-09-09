@@ -2,7 +2,7 @@
 
 [Project home](../README.md) | [Get help](../SUPPORT.md) | [Contribute](../CONTRIBUTING.md)
 
-The application remains alpha. Alpha 3 unifies the current source, desktop gateway and signed Android client. Earlier beta labels were development naming errors, not a maturity promotion. See [releases and upgrades](releases.md). Use documentation at a release tag for that exact build.
+The application remains alpha. Alpha 4 adds subscription/local model connections to the desktop gateway and Android client. Earlier beta labels were development naming errors, not a maturity promotion. See [releases and upgrades](releases.md). Use documentation at a release tag for that exact build.
 
 ## Install and use
 
@@ -35,6 +35,7 @@ These records describe checks at a particular version and date; they are not a g
 
 | Milestone | Scope and evidence |
 | --- | --- |
+| Alpha 4 | [Release validation](alpha-4-validation.md), [integration QA and limitations](assistant-platforms-validation.md) |
 | Alpha 3 | [Release and upgrade validation](alpha-3-validation.md) |
 | Personal-workflow development (historically labelled beta 2) | [Personal workflow plan](personal-workflows-plan.md), [validation and remaining limits](personal-validation.md) |
 | Prepared-team development (historically labelled beta 1) | [Research and acceptance scope](beta-scope.md), [validation](beta-validation.md) |
