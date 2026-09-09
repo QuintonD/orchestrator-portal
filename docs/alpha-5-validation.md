@@ -73,6 +73,12 @@ of 1080×2400 at 420 dpi with 56% fewer pixels and four emulator CPU cores.
 Hosted input acknowledgement has a 30-second deadline; explicit next-state
 assertions keep their own deadlines. Local native QA retains full resolution.
 
+The adjusted hosted Android run passed all 15 journeys (run `34383034727`). Its
+browser dependency setup encountered an independently reproduced checksum mismatch
+in Google's Chrome APT index. CI excludes that unused Chrome source from the
+disposable runner; it still verifies Ubuntu packages and installs Playwright's
+bundled Chromium. All browser assertions remain enabled.
+
 Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,
 all seven distribution hashes and matching in-place upgrade evidence. No physical
