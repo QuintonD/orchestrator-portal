@@ -1,0 +1,156 @@
+{
+  "source": "../Main_agent_assets/file_000000007eec81f5b3371bdf2befa371.png",
+  "sourceSize": [
+    1371,
+    1148
+  ],
+  "generator": "npm run assets:assistant-motion",
+  "viewBox": "0 0 238.85017421602785 200",
+  "format": "Transparent SVG with sampled geometry animation; original PNG and raster-backed original.svg preserve the supplied pixels",
+  "states": [
+    {
+      "id": "still",
+      "name": "Original",
+      "group": "Idle",
+      "detail": "The original pose. Your supplied PNG is used for the five-branch team.",
+      "duration": 0,
+      "sound": "Silent"
+    },
+    {
+      "id": "resting",
+      "name": "Breathe",
+      "group": "Idle",
+      "detail": "The branches stretch and settle with a slow breath.",
+      "duration": 5.6,
+      "sound": "Warm, soft breath"
+    },
+    {
+      "id": "drifting",
+      "name": "Drift in 3D",
+      "group": "Idle",
+      "detail": "Nodes pass in front of and behind the centre.",
+      "duration": 9,
+      "sound": "Air and glass"
+    },
+    {
+      "id": "curious",
+      "name": "Curious",
+      "group": "Idle",
+      "detail": "A small lean, a look around, then back to you.",
+      "duration": 6,
+      "sound": "A questioning pair"
+    },
+    {
+      "id": "listening",
+      "name": "Listening",
+      "group": "Active",
+      "detail": "The network leans inward to catch the next signal.",
+      "duration": 3.2,
+      "sound": "Soft inward shimmer"
+    },
+    {
+      "id": "thinking",
+      "name": "Thinking",
+      "group": "Active",
+      "detail": "A turning constellation, with signals travelling between nodes.",
+      "duration": 4.8,
+      "sound": "Measured plucks"
+    },
+    {
+      "id": "connecting",
+      "name": "Connecting",
+      "group": "Active",
+      "detail": "Branches reach outward and make contact in sequence.",
+      "duration": 3.6,
+      "sound": "Rising connection notes"
+    },
+    {
+      "id": "responding",
+      "name": "Responding",
+      "group": "Active",
+      "detail": "A wave moves from the centre out through the team.",
+      "duration": 2.8,
+      "sound": "An open, warm chord"
+    },
+    {
+      "id": "growing",
+      "name": "Grow a team",
+      "group": "Network",
+      "detail": "One new branch grows from your chosen parent. The existing team stays in place.",
+      "duration": 4.5,
+      "sound": "A note for each arrival"
+    },
+    {
+      "id": "consolidating",
+      "name": "Consolidate",
+      "group": "Network",
+      "detail": "The current team gathers into fewer, counted groups.",
+      "duration": 5,
+      "sound": "Many notes resolve into one"
+    },
+    {
+      "id": "delegating",
+      "name": "Form subteams",
+      "group": "Network",
+      "detail": "A new lead grows from your chosen parent, followed by two adjacent assistants.",
+      "duration": 5,
+      "sound": "Call and response"
+    },
+    {
+      "id": "playful",
+      "name": "Little jump",
+      "group": "Personality",
+      "detail": "A squash, a light jump, and a springy landing.",
+      "duration": 4,
+      "sound": "Rounded pop and landing"
+    },
+    {
+      "id": "jitter",
+      "name": "Jitter",
+      "group": "Personality",
+      "detail": "A quick shiver runs along the branches, then releases.",
+      "duration": 3,
+      "sound": "A short textured flutter"
+    },
+    {
+      "id": "aware",
+      "name": "Needs you",
+      "group": "Personality",
+      "detail": "The upper node gives a small nudge to catch your attention.",
+      "duration": 5.2,
+      "sound": "A gentle double tap"
+    },
+    {
+      "id": "success",
+      "name": "Complete",
+      "group": "Outcome",
+      "detail": "One buoyant lift settles into a check.",
+      "duration": 1.5,
+      "sound": "A resolved three-note chord"
+    },
+    {
+      "id": "error",
+      "name": "Interrupted",
+      "group": "Outcome",
+      "detail": "A brief recoil, then a held point of attention.",
+      "duration": 1,
+      "sound": "A low, soft knock"
+    },
+    {
+      "id": "paused",
+      "name": "Paused",
+      "group": "Outcome",
+      "detail": "The network holds until you are ready.",
+      "duration": 0,
+      "sound": "Silent"
+    },
+    {
+      "id": "offline",
+      "name": "Disconnected",
+      "group": "Outcome",
+      "detail": "Open connections show a source that needs a check.",
+      "duration": 0,
+      "sound": "Silent"
+    }
+  ]
+}

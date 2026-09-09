@@ -12,6 +12,7 @@
     "packages/*"
   ],
   "scripts": {
+    "assets:assistant-motion": "tsx --tsconfig apps/web/tsconfig.json scripts/export-assistant-motion.mts",
     "desktop:package": "npm run build && node scripts/desktop/package.mjs",
     "desktop:test": "node --test scripts/desktop/paths.test.mjs scripts/desktop/staging.test.mjs",
     "desktop:smoke": "node scripts/desktop/smoke.mjs",
