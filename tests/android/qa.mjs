@@ -164,6 +164,7 @@ try {
     await dock.click();
     const panel = page.getByRole("dialog", { name: "Your ecosystem" });
     await expect(panel).toBeVisible();
+    const originalMotion = await panel.getByRole("combobox", { name: "Assistant motion" }).inputValue();
     await panel.getByRole("combobox", { name: "Assistant motion" }).selectOption("full");
     await expect(panel.locator(".presence-field")).toHaveAttribute("data-motion", "running");
     await expect(panel.getByRole("button", { name: "Sound off", exact: true })).toHaveAttribute("aria-pressed", "false");
@@ -173,6 +174,8 @@ try {
     await dock.click();
     await expect(panel).toBeVisible();
     await expect(panel.getByRole("combobox", { name: "Assistant motion" })).toHaveValue("full");
+    // Restore the device preference before the remaining native UI journeys.
+    await panel.getByRole("combobox", { name: "Assistant motion" }).selectOption(originalMotion);
     await nativeKey("Back");
     await expect(panel).toHaveCount(0);
   });
@@ -184,9 +187,9 @@ try {
     await dialog.getByLabel("What should it help you achieve?").fill("Keep the Android alpha test plan moving.");
     await ui.hideKeyboard();
     await shot("04-assistant-setup");
-    // This submit advances React state without navigating. CDP can retain a
-    // phantom navigation wait; use real Android touch and assert the next step.
-    await ui.tapWeb(page, dialog.getByRole("button", { name: "Continue", exact: true }));
+    // This submit advances React state without navigating. Wait for the actual
+    // next step instead of WebView CDP's inferred form-navigation signal.
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click({ noWaitAfter: true });
     await expect(dialog.getByRole("combobox", { name: "Existing runtime" })).toHaveValue("demo");
     await dialog.getByLabel("I have restricted this runtime", { exact: false }).check();
     await dialog.getByRole("button", { name: "Save assistant" }).click();

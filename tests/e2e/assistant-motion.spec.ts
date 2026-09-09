@@ -175,6 +175,15 @@ test("growth starts on the original rim, preserves the team, and supports adjace
   await field.scrollIntoViewIfNeeded();
   await expect(page.getByTestId("team-total")).toHaveText("36");
   await expect(field.locator('.rig-count').filter({ hasText: /^[78]$/ })).toHaveCount(5);
+  const driftTime = await field.locator("svg").getAttribute("data-time");
+  expect(await field.evaluate(element => new Promise<number>(resolve => {
+    let changes = 0;
+    const observer = new MutationObserver(records => { changes += records.length; });
+    for (const label of element.querySelectorAll(".rig-count")) observer.observe(label, { childList: true, characterData: true, subtree: true });
+    for (const node of element.querySelectorAll(".assistant-mark__node")) observer.observe(node, { attributes: true, attributeFilter: ["data-members", "data-parent", "data-activity"] });
+    setTimeout(() => { observer.disconnect(); resolve(changes); }, 400);
+  }))).toBe(0);
+  expect(await field.locator("svg").getAttribute("data-time")).not.toBe(driftTime);
   await field.evaluate(el => { el.style.position = "fixed"; el.style.top = "-2000px"; });
   await expect(field).toHaveAttribute("data-motion", "paused");
   const time = await field.locator("svg").getAttribute("data-time");

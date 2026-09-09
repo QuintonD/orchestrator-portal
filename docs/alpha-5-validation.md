@@ -56,10 +56,13 @@ It also releases Gradle daemon memory and captures host/crash diagnostics on
 failure. The API 36 image, GLES rendering and all 15 journeys remain enabled.
 The ANGLE run retained the emulator and passed the ecosystem journey. It exposed
 a CDP navigation wait after the assistant wizard had already advanced (confirmed
-by its failure screenshot). That transition now uses the existing native touch
-helper and explicitly asserts the selected runtime. The precise legacy renderer
-failure cause is unconfirmed; passing the complete rerun remains required. No
-application rendering or animation check is disabled.
+by its failure screenshot). That transition now waits for the selected runtime
+instead of an inferred form navigation. The motion journey restores its original
+preference after verifying persistence. The renderer also retains unchanged count
+text nodes and attributes during animation; a browser mutation check covers this
+with 36 grouped assistants while the geometry keeps moving. The precise legacy
+renderer failure cause is unconfirmed; passing the complete rerun remains
+required. No application rendering or animation check is disabled.
 
 Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,

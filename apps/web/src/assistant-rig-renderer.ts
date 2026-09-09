@@ -2,7 +2,10 @@ import { edgePath, edgeSegment, type RigFrame, type PresenceState } from "./assi
 
 const ns = "http://www.w3.org/2000/svg";
 const number = (value: number) => String(Number(value.toFixed(3)));
-const attr = (el: Element, name: string, value: number | string) => el.setAttribute(name, typeof value === "number" ? number(value) : value);
+const attr = (el: Element, name: string, value: number | string) => {
+  const next = typeof value === "number" ? number(value) : value;
+  if (el.getAttribute(name) !== next) el.setAttribute(name, next);
+};
 
 /** Reuses SVG elements. No React renders, filters or allocations of audio per frame. */
 export function createRigPainter(svg: SVGSVGElement, gradientId: string) {
@@ -46,10 +49,14 @@ export function createRigPainter(svg: SVGSVGElement, gradientId: string) {
       attr(entry.ring, "r", Math.max(0, node.r));
       attr(entry.ring, "stroke-width", 2.6 * Math.min(1, Math.max(.55, node.r / 8)));
       attr(entry.shade, "cx", node.lightX ?? .3); attr(entry.shade, "cy", node.lightY ?? .2);
-      entry.shade.style.setProperty("--rig-shade", number(node.shade ?? .4));
+      const shade = number(node.shade ?? .4);
+      if (entry.shade.style.getPropertyValue("--rig-shade") !== shade) entry.shade.style.setProperty("--rig-shade", shade);
       attr(entry.shadow, "stop-opacity", node.shade ?? .4);
       attr(entry.cutout, "cx", node.x); attr(entry.cutout, "cy", node.y); attr(entry.cutout, "r", Math.max(0, node.r - .25));
-      entry.label.textContent = node.members > 1 ? String(node.members) : "";
+      // Keep count text nodes stable while geometry moves, including in WebView's
+      // accessibility bridge. Team membership changes are the only text updates.
+      const count = node.members > 1 ? String(node.members) : "";
+      if (entry.label.textContent !== count) entry.label.textContent = count;
       attr(entry.label, "font-size", Math.min(8, node.r));
       const symbol = node.activity === "unknown" ? "alert" : node.parent ? "none" : frame.symbol;
       attr(entry.symbol, "d", symbol === "check" ? "m-6 0 4 4 8-9" : symbol === "alert" ? "M0-6v7m0 4v.3" : symbol === "pause" ? "M-3-5V5M3-5V5" : "M0 0");
