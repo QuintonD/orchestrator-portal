@@ -72,7 +72,10 @@ jobs:
           # Keep the emulator reproducible and use its maintained ANGLE backend.
           # Legacy swiftshader_indirect exited during animated WebView rendering.
           emulator-build: 15507667
-          emulator-options: -no-window -gpu swangle -feature -Vulkan -cores 2 -noaudio -no-boot-anim -no-snapshot
+          # 720/280 keeps the same logical viewport as 1080/420, with 56% fewer
+          # software-rendered pixels. Full-resolution native QA also runs locally.
+          pre-emulator-launch-script: sed -i -E -e 's/^hw.lcd.density[[:space:]]*=.*/hw.lcd.density=280/' -e 's/^hw.lcd.width[[:space:]]*=.*/hw.lcd.width=720/' -e 's/^hw.lcd.height[[:space:]]*=.*/hw.lcd.height=1600/' "$ANDROID_AVD_HOME/test.avd/config.ini"
+          emulator-options: -no-window -gpu swangle -feature -Vulkan -cores 4 -skin 720x1600 -noaudio -no-boot-anim -no-snapshot
           script: ANDROID_QA_SERIAL=emulator-5554 npm run test:android
       - name: Diagnose emulator host failure
         if: failure()

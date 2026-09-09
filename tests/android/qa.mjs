@@ -65,7 +65,9 @@ async function attach(port = 4460) {
       return true;
     } catch { return false; }
   }, { timeout: 45000 }).toBe(true);
-  page.setDefaultTimeout(12000);
+  // Hosted software rendering needs a larger input-acknowledgement budget;
+  // the explicit next-state assertions retain their independent deadlines.
+  page.setDefaultTimeout(process.env.CI ? 30000 : 12000);
   return page;
 }
 async function noOverflow() {

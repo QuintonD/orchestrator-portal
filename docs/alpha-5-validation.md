@@ -67,6 +67,12 @@ the avatar inside its own ecosystem panel stays animated. Browser and native
 checks assert this behavior. Failure artifacts include frame and input diagnostics.
 Passing the complete rerun remains required. No animation check is disabled.
 
+Hosted frame diagnostics measured a 500 ms median with the software renderer.
+The CI display therefore uses 720×1600 at 280 dpi, retaining the logical layout
+of 1080×2400 at 420 dpi with 56% fewer pixels and four emulator CPU cores.
+Hosted input acknowledgement has a 30-second deadline; explicit next-state
+assertions keep their own deadlines. Local native QA retains full resolution.
+
 Final hosted and upgrade results are recorded as they complete. The
 release manifest will identify the exact reviewed main commit, hosted CI runs,
 all seven distribution hashes and matching in-place upgrade evidence. No physical
