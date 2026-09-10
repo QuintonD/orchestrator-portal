@@ -6,6 +6,8 @@ import type { FastifyInstance } from "fastify";
 import { assistantTemplates, type AssistantProfile, type ConnectorKind, type Report } from "@orchestrator/contracts";
 import { createApp } from "./server.js";
 import { runtimeAdapters } from "./adapters.js";
+import { DatabaseSync } from "node:sqlite";
+import { Vault } from "./crypto.js";
 
 const apps: FastifyInstance[] = [], dirs: string[] = [];
 async function setup(demo = true, existing?: string) {
@@ -17,6 +19,112 @@ const post = (app: FastifyInstance, url: string, payload?: unknown) => app.injec
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(apps.splice(0).map((app) => app.close())); await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 describe("beta defaults, evidence and continuity", () => {
+  it("refreshes a local report when its template version changes, then deduplicates it", async () => {
+    const { app, dataDir } = await setup();
+    const p = (await app.inject("/api/assistants")).json().assistants.find((item: AssistantProfile) => item.templateId === "workspace-brief");
+    const before = (await app.inject("/api/reports")).json().filter((r: Report) => r.assistantId === p.id);
+    const db = new DatabaseSync(path.join(dataDir, "orchestrator.db")), vault = new Vault(dataDir);
+    try { db.prepare("UPDATE alpha_records SET payload=? WHERE id=?").run(vault.seal({ ...p, templateVersion: p.templateVersion + 1 }), p.id); } finally { db.close(); }
+    await app.inject("/api/outcomes");
+    const after = (await app.inject("/api/reports")).json().filter((r: Report) => r.assistantId === p.id);
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.find((r: Report) => r.id === before[0].id).supersededBy).toBeTruthy();
+    await app.inject("/api/outcomes");
+    expect((await app.inject("/api/reports")).json().filter((r: Report) => r.assistantId === p.id)).toHaveLength(after.length);
+  });
+  it("records uncertain first briefs as needing inspection instead of successful preparation", async () => {
+    const { app } = await setup();
+    vi.spyOn(runtimeAdapters.get("demo")!, "sendMessage").mockResolvedValue({ state: "unknown", reply: "Partial draft" });
+    const result = await post(app, "/api/team/install", { connectorId: "demo", templateIds: ["writer-editor"], runtimePolicyConfirmed: true, startFirstBrief: true });
+    expect(result.statusCode).toBe(201);
+    expect(result.json().results[0]).toMatchObject({ reportId: expect.any(String), error: expect.stringContaining("uncertain") });
+    const profile = (await app.inject("/api/assistants")).json().assistants.find((p: AssistantProfile) => p.id === result.json().assistants[0].id);
+    expect(profile.state).toBe("unknown");
+  });
+  it("offers common roles on knowledge sources as handoffs without reading or dispatching them", async () => {
+    const { app, dataDir } = await setup();
+    await writeFile(path.join(dataDir, "unshared.txt"), "Private synthetic phrase that must not enter a handoff");
+    const source = (await post(app, "/api/connectors", { name: "Selected notes", kind: "markdown-directory", config: { path: dataDir } })).json();
+    await post(app, `/api/connectors/${source.id}/sync`);
+    const send = vi.spyOn(runtimeAdapters.get("demo")!, "sendMessage");
+    const group = (await app.inject("/api/team/catalog")).json().find((g: { id: string }) => g.id === source.id);
+    expect(group.templates).toHaveLength(17);
+    expect(group.templates.find((t: { id: string }) => t.id === "code-reviewer").mode).toBe("handoff");
+    expect(group.templates.find((t: { id: string }) => t.id === "context-guide")).toBeUndefined();
+    const result = await post(app, "/api/team/install", { connectorId: source.id, templateIds: ["code-reviewer"] });
+    expect(result.statusCode).toBe(201);
+    const profile = result.json().assistants[0];
+    expect(profile).toMatchObject({ mode: "handoff", modelClass: "deep", templateVersion: 2 });
+    const report = (await app.inject("/api/reports")).json().find((r: Report) => r.assistantId === profile.id);
+    expect(report.state).toBe("accepted");
+    expect(report.body).toContain("Required inputs");
+    expect(report.body).not.toContain("Private synthetic phrase");
+    expect(send).not.toHaveBeenCalled();
+    expect((await post(app, `/api/assistants/${profile.id}/messages`, { body: "Run this now" })).statusCode).toBe(409);
+    expect((await post(app, "/api/team/install", { connectorId: source.id, templateIds: ["context-guide"] })).statusCode).toBe(400);
+  });
+  it("can prepare a portable task without any source and never upgrades it to dispatch", async () => {
+    const { app } = await setup();
+    const result = await post(app, "/api/team/install", { connectorId: "workspace", templateIds: ["research-analyst"] });
+    expect(result.statusCode).toBe(201);
+    expect(result.json().assistants[0].mode).toBe("handoff");
+    const report = await post(app, `/api/assistants/${result.json().assistants[0].id}/run`);
+    expect(report.json().state).toBe("accepted");
+    expect(report.json().body).toContain("no source documents are attached");
+  });
+  it("cites flagged documents beyond the first inventory page", async () => {
+    const { app, dataDir } = await setup();
+    const source = (await post(app, "/api/connectors", { name: "Review notes", kind: "markdown-directory", config: { path: dataDir } })).json();
+    const db = new DatabaseSync(path.join(dataDir, "orchestrator.db"));
+    try {
+      const insert = db.prepare("INSERT INTO knowledge_documents VALUES (?,?,?,?,?,?)");
+      for (let i = 0; i < 9; i++) insert.run(`review-${i}`, source.id, `Document ${i}`, "Synthetic evidence", `memory://fixture/${i}`, new Date().toISOString());
+      insert.run("review-z-stale", source.id, "Old evidence", "Synthetic old evidence", "memory://fixture/stale", "2020-01-01T00:00:00.000Z");
+    } finally { db.close(); }
+    const installed = (await post(app, "/api/team/install", { connectorId: source.id, templateIds: ["curator"] })).json();
+    const report = (await app.inject("/api/reports")).json().find((r: Report) => r.assistantId === installed.assistants[0].id);
+    expect(report.presentation.sections[0].body).toContain("Old evidence");
+    expect(report.presentation.evidence).toContainEqual(expect.objectContaining({ documentId: "review-z-stale" }));
+    expect(report.presentation.evidence).not.toContainEqual(expect.objectContaining({ documentId: "review-0" }));
+  });
+  it("upgrades pristine v1 mandates while preserving customized, paused and handoff profiles", async () => {
+    const { app, dataDir } = await setup();
+    const base = (await post(app, "/api/team/install", { connectorId: "workspace", templateIds: ["code-planner"] })).json().assistants[0];
+    const oldPurpose = "Prepare a bounded implementation plan, acceptance criteria and validation steps for the connected coding workspace.";
+    const oldCriteria = "A useful finding, an actionable next step, source references, freshness and explicit limits. Never claim an external effect from prose alone.";
+    await app.close(); apps.splice(apps.indexOf(app), 1);
+    const db = new DatabaseSync(path.join(dataDir, "orchestrator.db")), vault = new Vault(dataDir);
+    const legacy = { ...base, templateVersion: 1, purpose: oldPurpose, criteria: oldCriteria, state: "paused", name: "My named planner", modelClass: undefined, modelGuidanceVersion: undefined, requiredInputs: undefined, escalateWhen: undefined };
+    try {
+      db.prepare("UPDATE alpha_records SET payload=? WHERE id=?").run(vault.seal(legacy), base.id);
+      db.prepare("INSERT INTO alpha_records VALUES (?,?,?,?)").run("custom-v1", "assistant", vault.seal({ ...legacy, id: "custom-v1", purpose: "My customized purpose and constraints" }), new Date().toISOString());
+      db.prepare("INSERT INTO alpha_records VALUES (?,?,?,?)").run("custom-history", "assistant-message", vault.seal({ id: "custom-history", assistantId: base.id, body: "Retained conversation", createdAt: new Date().toISOString() }), new Date().toISOString());
+    } finally { db.close(); }
+    const restarted = (await setup(true, dataDir)).app;
+    const profiles = (await restarted.inject("/api/assistants")).json().assistants as AssistantProfile[];
+    expect(profiles.find((p) => p.id === base.id)).toMatchObject({ templateVersion: 2, mode: "handoff", name: "My named planner", state: "paused", modelClass: "balanced", providerPolicy: base.providerPolicy, scope: base.scope });
+    expect(profiles.find((p) => p.id === "custom-v1")).toMatchObject({ templateVersion: 1, purpose: "My customized purpose and constraints" });
+    expect((await restarted.inject(`/api/assistants/${base.id}/messages`)).body).toContain("Retained conversation");
+  });
+  it("drops stale template input instructions when the user changes its mandate", async () => {
+    const { app } = await setup();
+    const p = (await post(app, "/api/team/install", { connectorId: "demo", templateIds: ["data-analyst"], runtimePolicyConfirmed: true })).json().assistants[0];
+    const response = await app.inject({ method: "PUT", url: `/api/assistants/${p.id}/profile`, payload: { name: p.name, purpose: "Prepare a different kind of report", criteria: "Keep it specific and useful" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().requiredInputs).toBeUndefined();
+    expect(response.json().modelClass).toBeUndefined();
+  });
+  it("isolates council sessions from ordinary conversations and other councils", async () => {
+    const { app } = await setup();
+    const send = vi.spyOn(runtimeAdapters.get("demo")!, "sendMessage").mockResolvedValue({ state: "claimed", reply: "Independent bounded answer" });
+    await post(app, "/api/assistants/atlas/messages", { body: "Do not share this ordinary conversation" });
+    const result = await post(app, "/api/councils", { question: "What should the next milestone be?", assistantIds: ["atlas", "sage"], shareContext: true });
+    expect(result.statusCode).toBe(201);
+    const calls = send.mock.calls.slice(1);
+    expect(calls).toHaveLength(3);
+    expect(new Set(calls.map((call) => call[2])).size).toBe(3);
+    for (const call of calls) { expect(call[2]).toContain(`council-${result.json().id}-`); expect(call[0].history).toEqual([]); }
+  });
   it.each(["local", "subscription"] as const)("reuses the %s connection policy without exposing its credentials", async (accessMode) => {
     const { app } = await setup();
     const response = await post(app, "/api/connectors", { name: "Setup source", kind: "openai-compatible", config: { endpoint: "http://127.0.0.1:8317/v1", token: "synthetic-onboarding-key", model: "fixture-model", accessMode, policyConfirmed: true } });

@@ -70,3 +70,7 @@ and automatic application updates are not available yet.
 The implementation deliberately starts with one connected source and one role.
 Prepared teams, extra knowledge sources and recurring source schedules can be
 added after the first useful result.
+
+The [default assistant library](assistant-defaults.md) now includes role-specific
+inputs, acceptance checks and model-class recommendations. Model selection and
+reasoning effort remain configured in the connected source.

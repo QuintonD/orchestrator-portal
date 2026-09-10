@@ -4,13 +4,15 @@ import type { AssistantProfile, AssistantTemplate, DecisionPacket, Report, Repor
 import { Dialog } from "./alpha-pages.js";
 import { AssistantSigil } from "./presence.js";
 import { api, relativeTime } from "./lib.js";
+import { modelClasses } from "@orchestrator/contracts";
+import { ModelGuide, ModelRecommendation } from "./model-guide.js";
 
 type Notify = (message: string, tone?: "neutral" | "success" | "error") => void;
 type Group = { id: string; name: string; kind: string; status: string; providerPolicy?: "local" | "subscription"; templates: Array<AssistantTemplate & { installedId: string | null }> };
 const errorText = (e: unknown) => e instanceof Error ? e.message : "Could not complete the request";
 export function ProfileSummary({ profile, sourceName }: { profile: AssistantProfile; sourceName: string }) {
   const local = profile.mode === "workspace" || profile.mode === "index";
-  return <><p className="readable">{profile.purpose}</p><dl className="detail-list"><div><dt>Connection</dt><dd>{sourceName}</dd></div><div><dt>How it works</dt><dd>{local ? "Local guide. Reads portal records without a model call." : profile.mode === "handoff" ? "Prepares a task to take into the source. Direct dispatch is unavailable." : "A dedicated conversation in the configured runtime."}</dd></div><div><dt>Next update</dt><dd>{profile.autoReview ? "When local records change while the gateway runs" : profile.cadence === "manual" ? "On request" : `${profile.cadence} expected; source schedule must be activated separately`}</dd></div><div><dt>Last result</dt><dd>{profile.lastRunAt ? relativeTime(profile.lastRunAt) : "Not requested yet"}</dd></div><div><dt>Useful result</dt><dd>{profile.criteria}</dd></div>{!local && profile.mode !== "handoff" && <div><dt>Boundaries</dt><dd>{profile.providerPolicy} provider. Tools, source access and isolation are configured in the runtime.</dd></div>}</dl></>;
+  return <><p className="readable">{profile.purpose}</p><dl className="detail-list"><div><dt>Connection</dt><dd>{sourceName}</dd></div><div><dt>How it works</dt><dd>{local ? "Local guide. Reads portal records without a model call." : profile.mode === "handoff" ? "Prepares a task to take into the source. Direct dispatch is unavailable." : "A dedicated conversation in the configured runtime."}</dd></div><div><dt>Next update</dt><dd>{profile.autoReview ? "When local records change while the gateway runs" : profile.cadence === "manual" ? "On request" : `${profile.cadence} expected; source schedule must be activated separately`}</dd></div><div><dt>Last result</dt><dd>{profile.lastRunAt ? relativeTime(profile.lastRunAt) : "Not requested yet"}</dd></div><div><dt>Useful result</dt><dd>{profile.criteria}</dd></div>{!local && profile.mode !== "handoff" && <div><dt>Boundaries</dt><dd>{profile.providerPolicy} provider. Tools, source access and isolation are configured in the runtime.</dd></div>}</dl><p className="form-note"><strong>Model recommendation</strong> · <ModelRecommendation modelClass={profile.modelClass} /></p>{!local && <p className="form-note">The source keeps its configured model. This recommendation does not change it.</p>}{profile.requiredInputs && <p className="form-note"><strong>Bring</strong> · {profile.requiredInputs.join("; ")}</p>}{!local && <ModelGuide />}</>;
 }
 export function ProfileEditor({ profile, close, saved, notify }: { profile: AssistantProfile; close(): void; saved(): void; notify: Notify }) {
   const [name, setName] = useState(profile.name);
@@ -30,22 +32,51 @@ export function TeamCatalog({ close, saved, notify, initialSource, firstAssistan
   const [confirmed, setConfirmed] = useState(false);
   const [provider, setProvider] = useState("subscription");
   const [busy, setBusy] = useState(false);
-  const [firstBrief, setFirstBrief] = useState(!firstAssistant);
+  const [firstBrief, setFirstBrief] = useState(false);
   const [failure, setFailure] = useState("");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
   async function load() { try { setGroups(await api("/api/team/catalog")); setFailure(""); } catch (e) { setFailure(errorText(e)); } }
   useEffect(() => { void load(); }, []);
   const group = groups.find((g) => g.id === source);
-  useEffect(() => { setIds(group?.templates.filter((t) => !t.installedId).slice(0, firstAssistant ? 1 : 3).map((t) => t.id) ?? []); setConfirmed(group?.kind === "demo"); }, [group, firstAssistant]);
+  useEffect(() => { setIds(group?.templates.filter((t) => !t.installedId).slice(0, 1).map((t) => t.id) ?? []); setConfirmed(group?.kind === "demo"); setFirstBrief(false); setQuery(""); setCategory("All"); }, [group]);
   const runtime = group?.templates.some((t) => ids.includes(t.id) && t.mode === "runtime");
+  const visible = group?.templates.filter((t) => (category === "All" || category === t.category) && `${t.name} ${t.role} ${t.summary}`.toLowerCase().includes(query.toLowerCase())) ?? [];
   async function install() {
     if (!group) return; setBusy(true);
     try {
       const result = await api<{ created: number; results: Array<{ error?: string }> }>("/api/team/install", { method: "POST", body: JSON.stringify({ connectorId: group.id, templateIds: ids, runtimePolicyConfirmed: confirmed, providerPolicy: group.providerPolicy ?? provider, startFirstBrief: firstBrief }) });
-      const failures = result.results.filter((r) => r.error); notify(failures.length ? `Team saved; ${failures.length} first results need a source check. Open the profiles to inspect them.` : `${result.created} team members added. ${!runtime || firstBrief ? "First reports are ready." : "Their roles are ready."}`, failures.length ? "neutral" : "success"); saved();
+      const failures = result.results.filter((r) => r.error);
+      notify(failures.length ? `Team saved; ${failures.length} first results need a source check. Open the profiles to inspect them.` : `${result.created} team members added. ${!runtime || firstBrief ? "Results are recorded. Open Reports to inspect their outcome." : "Their roles are ready. Share a task and its inputs to begin."}`, failures.length ? "neutral" : "success"); saved();
     } catch (e) { setFailure(errorText(e)); } finally { setBusy(false); }
   }
   if (groups.length > 0 && !group) return <Dialog title="Connection unavailable" close={close}><p>This connection is no longer available. Close this dialog and choose another source before preparing a team.</p></Dialog>;
-  return <Dialog title="A team, already prepared" close={() => { if (!busy) close(); }}><p className="catalog-intro">Choose a connection. Start with the roles that fit the work it can do.</p>{failure && <div className="notice" role="alert">{failure}<button onClick={load}>Retry</button></div>}<label className="catalog-source">Connection<select aria-label="Team connection" value={group?.id ?? ""} disabled={busy} onChange={(e) => setSource(e.target.value)}>{groups.map((g) => <option key={g.id} value={g.id}>{g.name} · {g.kind}</option>)}</select></label><div className="template-cards">{group?.templates.map((t) => <label className={`template-card ${ids.includes(t.id) ? "is-selected" : ""}`} key={t.id}><input type="checkbox" checked={!!t.installedId || ids.includes(t.id)} disabled={busy || !!t.installedId} onChange={(e) => setIds(e.target.checked ? [...ids, t.id] : ids.filter((id) => id !== t.id))} /><AssistantSigil name={t.name} icon={t.icon} /><div><strong>{t.name} <span>{t.role}</span></strong><p>{t.summary}</p><details className="template-mandate"><summary>Mandate</summary><p>{t.purpose}</p></details><small>{t.installedId ? "Already in your team" : t.mode === "handoff" ? "Prepared source task · no dispatch" : t.trigger === "source-change" ? "Updates when local records change" : "Source turn on request"}</small></div></label>)}</div>{runtime && <div className="runtime-boundaries"><label className="check-label"><input type="checkbox" checked={firstBrief} onChange={(e) => setFirstBrief(e.target.checked)} /><span>Prepare the first brief for each new assistant now. One source turn per selected role.</span></label><label>Configured provider<select value={group?.providerPolicy ?? provider} disabled={!!group?.providerPolicy} onChange={(e) => setProvider(e.target.value)}><option value="subscription">Existing subscription</option><option value="local">Local model</option></select></label><label className="check-label"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /><span>The runtime is already restricted to the intended data, tools and provider. These profiles use separate conversations; they do not create runtime sandboxes.</span></label></div>}<div className="dialog-actions"><button className="button button--ghost" disabled={busy} onClick={close}>Cancel</button><button className="button button--primary" disabled={busy || !ids.length || (runtime && !confirmed)} onClick={install}>{busy ? "Preparing…" : runtime && !firstBrief ? "Add prepared team" : "Add team & prepare reports"}<ArrowRight size={15} /></button></div></Dialog>;
+  return <Dialog title="A team, already prepared" close={() => { if (!busy) close(); }}>
+    <p className="catalog-intro">{firstAssistant ? "Start with one role that fits your first task." : "Choose a connection and the roles you need. Start small; add specialists when the work calls for them."}</p>
+    {failure && <div className="notice" role="alert">{failure}<button onClick={load}>Retry</button></div>}
+    <label className="catalog-source">Connection<select aria-label="Team connection" value={group?.id ?? ""} disabled={busy} onChange={(e) => setSource(e.target.value)}>{groups.map((g) => <option key={g.id} value={g.id}>{g.name} · {g.kind}</option>)}</select></label>
+    <p className="form-note">Local guides run without a model. Other roles use a source conversation where supported, or prepare a task to copy into an assistant you choose. Handoffs attach no source documents.</p>
+    <ModelGuide />
+    <div className="catalog-filters"><label>Find a role<input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Research, writing, code…" /></label><label>Role category<select value={category} onChange={(e) => setCategory(e.target.value)}>{["All", "General", "Personal", "Technical", "Knowledge", "Local"].map((item) => <option key={item}>{item}</option>)}</select></label></div>
+    <p className="form-note" role="status">{visible.length} roles shown · {ids.length} selected across all categories</p>
+    <button className="text-button" disabled={busy || !ids.length} onClick={() => setIds([])}>Clear selection</button>
+    <div className="template-cards">{visible.map((t) => <article className={`template-card ${ids.includes(t.id) ? "is-selected" : ""}`} key={t.id}>
+      <input id={`template-${t.id}`} type="checkbox" checked={!!t.installedId || ids.includes(t.id)} disabled={busy || !!t.installedId} onChange={(e) => setIds(e.target.checked ? [...ids, t.id] : ids.filter((id) => id !== t.id))} />
+      <AssistantSigil name={t.name} icon={t.icon} />
+      <div><label htmlFor={`template-${t.id}`}><strong>{t.name} <span>{t.role}</span></strong></label><p>{t.summary}</p>
+        <small>{t.installedId ? "Already in your team" : t.mode === "handoff" ? "Prepared task · no dispatch" : t.mode === "workspace" || t.mode === "index" ? "Local guide · no model" : "Source turn on request"} · {modelClasses[t.modelClass].label}</small>
+        <details className="template-mandate"><summary>Inputs, mandate and model</summary><p>{t.purpose}</p><p><strong>Bring</strong>{t.requiredInputs.join("; ")}</p><p><strong>Acceptance checks</strong>{t.criteria}</p><p><ModelRecommendation modelClass={t.modelClass} /></p><p><strong>Escalate when</strong>{t.escalateWhen}</p></details>
+      </div>
+    </article>)}</div>
+    {!visible.length && <p>No roles match. Clear the search or choose another category.</p>}
+    {runtime && <div className="runtime-boundaries">
+      <p className="form-note">Every role on this connection uses its configured model and source permissions. Model recommendations do not change them. Supply the listed inputs in your first conversation.</p>
+      <label className="check-label"><input type="checkbox" disabled={busy} checked={firstBrief} onChange={(e) => setFirstBrief(e.target.checked)} /><span>Prepare the first brief for each new assistant now. One source turn per selected role. Without task inputs, the assistant can only ask for context.</span></label>
+      <label>Configured provider<select disabled={busy || !!group?.providerPolicy} value={group?.providerPolicy ?? provider} onChange={(e) => setProvider(e.target.value)}><option value="subscription">Existing subscription</option><option value="local">Local model</option></select></label>
+      <label className="check-label"><input type="checkbox" disabled={busy} checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /><span>The runtime is already restricted to the intended data, tools and provider. These profiles use separate conversations; they do not create runtime sandboxes.</span></label>
+    </div>}
+    <div className="dialog-actions"><button className="button button--ghost" disabled={busy} onClick={close}>Cancel</button><button className="button button--primary" disabled={busy || !ids.length || (runtime && !confirmed)} onClick={install}>{busy ? "Preparing…" : runtime && !firstBrief ? "Add prepared team" : "Add team & prepare reports"}<ArrowRight size={15} /></button></div>
+  </Dialog>;
 }
 
 function safeLink(href?: string) {

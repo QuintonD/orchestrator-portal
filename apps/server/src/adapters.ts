@@ -29,7 +29,7 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function extractReply(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return stringValue(value);
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   for (const key of ["reply", "response", "text", "message", "output"]) {
@@ -42,6 +42,17 @@ function extractReply(value: unknown): string | undefined {
   }
   if (record.result) return extractReply(record.result);
   return undefined;
+}
+
+export function openClawTurnResult(output: unknown): SendResult {
+  const reply = extractReply(output);
+  const failed = (value: unknown, depth = 0): boolean => {
+    if (!value || typeof value !== "object") return false;
+    if (depth > 20) return true;
+    const record = value as Record<string, unknown>;
+    return !!record.error || [record.status, record.state].some((state) => typeof state === "string" && ["error", "failed", "aborted", "cancelled", "canceled", "timeout", "timed-out"].includes(state.toLowerCase())) || failed(record.result, depth + 1);
+  };
+  return { state: reply && !failed(output) ? "claimed" : "unknown", ...(reply ? { reply } : {}), metadata: { transport: "openclaw-cli" } };
 }
 
 export async function runOpenClaw(args: string[], timeout = 30_000): Promise<unknown> {
@@ -128,11 +139,7 @@ const openclaw: RuntimeAdapter = {
     const configuredSession = sessionKey ?? stringValue(context.config.sessionKey);
     if (configuredSession) args.push("--session-key", configuredSession);
     const output = await runOpenClaw(args, 610_000);
-    return {
-      state: output ? "claimed" : "unknown",
-      reply: extractReply(output) ?? "OpenClaw completed the turn, but this version did not return a displayable text reply.",
-      metadata: { transport: "openclaw-cli" },
-    };
+    return openClawTurnResult(output);
   },
   async sync(context): Promise<SyncResult> {
     const startedAt = performance.now();
@@ -258,9 +265,10 @@ const hermes: RuntimeAdapter = {
     });
     if (!response.ok) throw new Error(`Hermes returned HTTP ${response.status}`);
     const result = JSON.parse(await boundedText(response));
-    const reply = result?.choices?.[0]?.message?.content;
-    if (typeof reply !== "string") return { state: "unknown" };
-    return { state: "claimed", reply };
+    const choice = Array.isArray(result?.choices) && result.choices.length === 1 ? result.choices[0] : undefined;
+    const reply = choice?.message?.content;
+    if (choice?.message?.role !== "assistant" || typeof reply !== "string" || !reply.trim() || choice?.message?.tool_calls?.length || choice?.message?.function_call) return { state: "unknown" };
+    return { state: choice.finish_reason === "stop" ? "claimed" : "unknown", reply };
   },
   async sync(context) {
     const base = String(context.config.endpoint).replace(/\/$/, "").replace(/\/v1$/, "");

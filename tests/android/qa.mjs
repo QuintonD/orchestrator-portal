@@ -378,6 +378,17 @@ try {
     await page.getByRole("button", { name: "Add prepared team", exact: true }).click();
     const catalog = page.getByRole("dialog", { name: "A team, already prepared", exact: true });
     await expect(catalog.getByLabel("Team connection")).toHaveValue("workspace");
+    await expect(catalog.locator(".template-card input:checked:not(:disabled)")).toHaveCount(1);
+    await catalog.getByText("Choose the right model", { exact: true }).click();
+    await catalog.getByText("Benchmark evidence", { exact: false }).click();
+    await expect(catalog.getByRole("table")).toContainText("26 (estimate)");
+    await shot("15a-model-class-guidance");
+    expect(await catalog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await catalog.getByText("Choose the right model", { exact: true }).click();
+    await catalog.getByLabel("Find a role").fill("Research");
+    await expect(catalog.locator(".template-card")).toHaveCount(1);
+    await expect(catalog).toContainText("Prepared task · no dispatch");
+    await catalog.getByLabel("Find a role").fill("");
     await shot("15-beta-prepared-team");
     await catalog.getByRole("button", { name: "Add team & prepare reports", exact: true }).click();
     await expect(catalog).not.toBeVisible();
