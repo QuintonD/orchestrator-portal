@@ -1,0 +1,14 @@
+{
+  "package": "Invisible OS Agent Handoff",
+  "canonical_reference": "00_reference_direction.png",
+  "documentation": "INVISIBLE_OS_AGENT_HANDOFF.md",
+  "assets": [
+    "00_reference_direction.png",
+    "01_design_system.png",
+    "02_core_mobile_screens.png",
+    "03_widget_library.png",
+    "04_interaction_states.png",
+    "05_app_assets.png",
+    "06_visual_usage_guide.png"
+  ]
+}

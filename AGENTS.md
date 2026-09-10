@@ -39,8 +39,15 @@ subtree.
 1. Read the relevant documentation, configuration, and nearby implementation.
 2. Check the working tree and preserve unrelated user changes.
 3. Identify the appropriate validation commands and project conventions.
-4. Ask for clarification only when a safe, reasonable assumption would materially
-   change the outcome.
+4. Resolve routine implementation and validation choices independently using
+   repository context and sound judgment. Ask for clarification only when
+   ambiguity materially affects scope, correctness, or safety and cannot be
+   resolved with a safe, reasonable assumption. Continue independent work while
+   awaiting clarification.
+
+- Decide whether a dedicated branch is appropriate and create or use one without
+  asking for confirmation, especially for features, fixes, or larger changes
+  intended for a pull request. Preserve unrelated work when switching branches.
 
 ## Implementation
 
@@ -77,6 +84,43 @@ subtree.
   upgrade verification. Historical beta-labelled records are evidence, not an
   approved promotion; preserve their tags, assets and stored identifiers.
 
+- Own the local CI and QA workflow: select and execute the appropriate checks,
+  inspect their results, and address failures within the task's scope without
+  waiting for the user to request each step. Judge applicability from the change's
+  size, risk, and affected behavior; "where appropriate" means make and act on
+  that judgment, not ask the user to choose. Respect explicit security and
+  authorization requirements.
+- Before opening a pull request to `main`, run local CI, including an explicit
+  quality assurance step. Use the project's existing validation commands and
+  scope checks to the change's size, risk, and affected platforms.
+- Local CI must cover both functional tests (expected behavior, error paths, and
+  regressions) and relevant non-functional tests (such as security, performance,
+  accessibility, and reliability). For documentation-only changes, use document
+  and diff checks; explain any test categories that do not apply.
+- Independently select and perform appropriate computer-use checks, inspection
+  of emulator screenshots, and adversarial LLM reviews that challenge assumptions
+  and look for failure cases. Computer use is time-intensive: reserve it for critical or
+  larger changes where direct interaction provides meaningful QA evidence.
+  Verify LLM review findings against the implementation or reproducible checks.
+- Record local CI and QA results in the pull request, including checks run,
+  findings addressed, and any skipped or unavailable checks with reasons.
+- For every release to `main`, build a new Android APK from the released commit,
+  run the applicable Android validation, and attach the APK to the release using
+  the project's release workflow. Do this without waiting for a separate request,
+  even when the changes do not directly affect Android. Do not reuse an older APK
+  or report the release complete until the new APK is available; report any build
+  or publication blocker explicitly.
+- Ensure every release upgrades an existing application installation in place,
+  preserving user data and settings. For Android, retain the application ID and
+  compatible signing identity, increase `versionCode`, and update the displayed
+  version. Maintain any update metadata required by the project's distribution
+  workflow so existing installations can receive the new release.
+- Verify the upgrade path as part of release QA: install the previous released
+  version with representative data and settings, apply the new release through
+  the supported update workflow, and confirm the new version launches with that
+  data and those settings intact. Do not substitute a clean install, uninstall
+  the existing app, or clear its data to make this check pass. Resolve upgrade
+  failures before declaring the release complete; report blockers explicitly.
 - Add or update tests for changed behavior.
 - Run the narrowest relevant checks first, then broader checks when warranted.
 - Do not claim a command passed unless it was actually run successfully.

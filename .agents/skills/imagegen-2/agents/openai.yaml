@@ -1,0 +1,6 @@
+interface:
+  display_name: "Image Gen 2 via Codex CLI"
+  short_description: "Luna low image generation with a verbatim prompt"
+  default_prompt: "Use $imagegen-2 to generate an image through Codex CLI using my exact image prompt."
+policy:
+  allow_implicit_invocation: false
