@@ -7,7 +7,7 @@ export function ModelRecommendation({ modelClass }: { modelClass: ModelClass | u
 
 export function ModelGuide() {
   return <details className="model-guide"><summary>Choose the right model</summary>
-    <p>Recommendations guide your choice. They do not change the connected model or its reasoning effort. Use the exact model ID your source offers; configure effort there. To use different models for different roles, add separate connections or source agents.</p>
+    <p>Recommendations guide your choice. They do not change the connected model or its reasoning effort. Use the exact model ID your source offers. Choose reasoning in the assistant’s conversation or profile for compatible APIs, Hermes and OpenClaw; configure it in the source for other integrations. To use different models for different roles, add separate connections or source agents.</p>
     <dl>{Object.entries(modelClasses).map(([id, guide]) => <div key={id}><dt>{guide.label}</dt><dd>{guide.use} {guide.recommendation} {guide.escalation}</dd></div>)}</dl>
     <p>Other providers and local models can fill these classes after passing the role's acceptance checks. A model benchmark does not establish tool access, task quality or account availability. No automatic escalation, provider switch or paid fallback is performed.</p>
     <p>Compatible API, Hermes and webhook turns have a 120-second deadline. Deep reasoning may exceed it; use the native source for longer work. Compatible API output defaults to 4,096 tokens, configurable up to 16,384. A timeout is uncertain and must be inspected before retrying.</p>

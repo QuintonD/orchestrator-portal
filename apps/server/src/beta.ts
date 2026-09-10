@@ -7,6 +7,8 @@ import { audit } from "./db.js";
 import { launchDecision, presentationText } from "./demo-scenario.js";
 import type { Vault } from "./crypto.js";
 import { defaultMandatesV1 } from "./defaults-v1.js";
+import { reasoningEffortSchema, type ReasoningEffort } from "@orchestrator/contracts";
+import { validateReasoning } from "./reasoning.js";
 
 interface Store {
   read<T>(id: string): T | undefined;
@@ -27,12 +29,13 @@ export function registerBeta(app: FastifyInstance, db: DatabaseSync, vault: Vaul
   const resolve = (source: Connection | undefined, template: AssistantTemplate) => resolveAssistantTemplate(template, source?.kind ?? "workspace", JSON.parse(source?.capabilities_json ?? "[]"));
   const guidance = (template: AssistantTemplate) => ({ modelClass: template.modelClass, modelGuidanceVersion, requiredInputs: template.requiredInputs, escalateWhen: template.escalateWhen });
 
-  function makeProfile(template: AssistantTemplate, connectorId: string, confirmed = false, provider: "local" | "subscription" = "local"): AssistantProfile {
+  function makeProfile(template: AssistantTemplate, connectorId: string, confirmed = false, provider: "local" | "subscription" = "local", reasoningEffort?: ReasoningEffort): AssistantProfile {
     const existing = list<AssistantProfile>("assistant").find((p) => p.connectorId === connectorId && p.templateId === template.id);
     if (existing) return existing;
     const profile: AssistantProfile = { id: crypto.randomUUID(), templateId: template.id, templateVersion: template.version, mode: template.mode, icon: template.icon, ...guidance(template),
       name: template.name, purpose: template.purpose, criteria: template.criteria, connectorId, scope: connectorId === "workspace" ? [] : [connectorId],
       autoReview: template.trigger === "source-change", cadence: "manual", providerPolicy: provider, spendingLimit: 0,
+      ...(template.mode === "runtime" && reasoningEffort ? { reasoningEffort } : {}),
       runtimePolicyConfirmed: template.mode !== "runtime" || confirmed, state: "ready", lastRunAt: null, nextExpectedAt: null, createdAt: now() };
     save(profile.id, "assistant", profile);
     return profile;
@@ -153,18 +156,19 @@ export function registerBeta(app: FastifyInstance, db: DatabaseSync, vault: Vaul
       }) }));
   });
   app.post("/api/team/install", opts, async (request, reply) => {
-    const body = z.object({ connectorId: z.string().min(1), templateIds: z.array(z.string()).min(1).max(25), runtimePolicyConfirmed: z.boolean().default(false), providerPolicy: z.enum(["local", "subscription"]).default("local"), startFirstBrief: z.boolean().default(false) }).strict().parse(request.body);
+    const body = z.object({ connectorId: z.string().min(1), templateIds: z.array(z.string()).min(1).max(25), runtimePolicyConfirmed: z.boolean().default(false), providerPolicy: z.enum(["local", "subscription"]).default("local"), startFirstBrief: z.boolean().default(false), reasoningEffort: reasoningEffortSchema.optional() }).strict().parse(request.body);
     const source = body.connectorId === "workspace" ? undefined : connectionFor(body.connectorId) ?? fail("Connection not found", 404);
     const selected = [...new Set(body.templateIds)].map((id) => {
       const template = assistantTemplates.find((t) => t.id === id) ?? fail("Unknown template", 400);
       return resolve(source, template) ?? fail("This template is retired or is not supported by the connection.", 400);
     });
     if (selected.some((t) => t.mode === "runtime") && !body.runtimePolicyConfirmed) fail("Confirm the configured runtime boundaries before installing its team.", 400);
+    validateReasoning(source?.kind ?? "workspace", selected.some((t) => t.mode === "runtime") ? "runtime" : selected[0]?.mode, body.reasoningEffort);
     if (source?.kind === "openai-compatible" && body.providerPolicy !== vault.open<{ accessMode: string }>(source.config_encrypted).accessMode) fail("The assistant provider must match the connection's access mode.", 400);
     const existing = list<AssistantProfile>("assistant");
     const newCount = selected.filter((t) => !existing.some((p) => p.connectorId === body.connectorId && p.templateId === t.id)).length;
     if (existing.length + newCount > 60) fail("This workspace supports up to 60 assistant profiles.");
-    const installed = selected.map((t) => makeProfile(t, body.connectorId, body.runtimePolicyConfirmed, body.providerPolicy));
+    const installed = selected.map((t) => makeProfile(t, body.connectorId, body.runtimePolicyConfirmed, body.providerPolicy, body.reasoningEffort));
     const results: Array<{ assistantId: string; reportId?: string; error?: string }> = [];
     for (const profile of installed) if (!existing.some((p) => p.id === profile.id)) {
       try {

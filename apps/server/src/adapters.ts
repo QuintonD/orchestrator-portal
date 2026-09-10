@@ -1,6 +1,7 @@
 import { demoAssessment, presentationText } from "./demo-scenario.js";
 import { compatibleApi } from "./compatible-api.js";
 import { boundedText } from "./source-http.js";
+import { openClawReasoningArgs, hermesReasoningOptions } from "./reasoning.js";
 export { boundedText } from "./source-http.js";
 import type { AssistantProfile, DecisionPacket } from "@orchestrator/contracts";
 import { execFile } from "node:child_process";
@@ -135,7 +136,7 @@ const openclaw: RuntimeAdapter = {
   },
   async sendMessage(context, body, sessionKey): Promise<SendResult> {
     const agentId = stringValue(context.config.agentId) ?? "main";
-    const args = ["agent", "--agent", agentId, "--message", body, "--json"];
+    const args = ["agent", "--agent", agentId, "--message", body, "--json", ...openClawReasoningArgs(context.reasoningEffort)];
     const configuredSession = sessionKey ?? stringValue(context.config.sessionKey);
     if (configuredSession) args.push("--session-key", configuredSession);
     const output = await runOpenClaw(args, 610_000);
@@ -261,7 +262,7 @@ const hermes: RuntimeAdapter = {
     const response = await fetch(`${base}/v1/chat/completions`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(120000),
       headers: { "content-type": "application/json", ...(context.config.token ? { authorization: `Bearer ${context.config.token}` } : {}) },
-      body: JSON.stringify({ model: stringValue(context.config.model) ?? "hermes-agent", stream: false, messages: [...(context.history ?? []), { role: "user", content: body }] }),
+      body: JSON.stringify({ model: stringValue(context.config.model) ?? "hermes-agent", stream: false, ...hermesReasoningOptions(context.reasoningEffort), messages: [...(context.history ?? []), { role: "user", content: body }] }),
     });
     if (!response.ok) throw new Error(`Hermes returned HTTP ${response.status}`);
     const result = JSON.parse(await boundedText(response));

@@ -1,4 +1,4 @@
-import type { Capability, PortalEventInput, ReceiptState } from "@orchestrator/contracts";
+import type { Capability, PortalEventInput, ReceiptState, ReasoningEffort } from "@orchestrator/contracts";
 
 export interface AdapterManifest {
   id: string;
@@ -12,6 +12,7 @@ export interface AdapterContext {
   config: Record<string, unknown>;
   signal?: AbortSignal;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface SendResult {
