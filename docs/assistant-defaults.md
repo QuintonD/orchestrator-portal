@@ -137,12 +137,46 @@ Grok Bot exposes the same 15 roles as editable task starters.
 
 Model and effort recommendations do not alter provider configuration. All roles
 on one connection share its configured route. Add separate connections or native
-agents for different models. The compatible adapter does not send a
-`reasoning_effort` override; configure effort in the source. Its default output
-limit is 4,096 tokens, configurable from 256 to 16,384. Hermes, compatible and
+agents for different models. Choose **Reasoning level** in an assistant's conversation
+or Team profile, or while adding a custom assistant or prepared team. The setting
+is saved per assistant and applies to future portal turns, including reports and
+councils. Saving does not dispatch, resume paused work, or edit native schedules.
+Existing profiles default to **Source controlled**, which sends no override.
+Installing a role again preserves its existing preference.
+
+| Source | Explicit reasoning preference |
+| --- | --- |
+| Compatible Chat Completions API | Top-level `reasoning_effort` with `max_completion_tokens` |
+| Hermes API | Request-scoped `model_options.reasoning_effort` |
+| OpenClaw CLI | `agent --thinking`; portal `none` maps to native `off` |
+| Generic webhook / prepared handoff | Configure reasoning in the receiving source |
+| Local guide / demo | No model reasoning control |
+
+The selector offers none, minimal, low, medium, high, xhigh and max. These are
+request values, not discovered model capabilities. Sources may reject or ignore
+unsupported values, and some models always reason even when asked not to.
+Start with medium for everyday tasks, low for quick tasks, and high for complex
+work when supported by the chosen model; consult the role's model recommendation.
+OpenClaw retains the last requested level in that assistant's native session.
+Choosing Source controlled stops sending an override but does not clear that
+native setting: use `/think default` in the same source session to reset it.
+
+The compatible adapter's default output limit is 4,096 tokens, configurable from
+256 to 16,384. With explicit effort, that budget includes reasoning tokens; an
+answer may be truncated or absent if reasoning consumes it. Without an override,
+the adapter preserves the legacy `max_tokens` request format. Hermes, compatible and
 webhook turns have a 120-second deadline; OpenClaw's CLI deadline is 610 seconds.
 Long reasoning tasks may need the source's native workflow. No automatic retry,
 model escalation or paid fallback is introduced. Timeouts remain uncertain.
+
+Wire contracts checked on 2026-09-10 against the
+[OpenAI Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
+[Hermes API server documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server),
+[OpenClaw agent CLI](https://docs.openclaw.ai/cli/agent), and
+[OpenClaw thinking controls](https://docs.openclaw.ai/tools/thinking).
+The installed OpenClaw 2026.9.1 implementation also confirms session persistence.
+Tests use synthetic sources and a CLI fixture; they do not establish model quality
+or prove that a live provider honors every level.
 
 Version 2 installs copy the new mandate and guidance metadata. On startup, only
 exact fingerprints of untouched shipped v1 purpose/criteria pairs are upgraded.

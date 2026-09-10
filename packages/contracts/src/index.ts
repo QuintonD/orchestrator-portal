@@ -1,6 +1,8 @@
 import { z } from "zod";
 export * from "./assistant-catalog.js";
 export * from "./model-guidance.js";
+export * from "./assistant-reasoning.js";
+import { reasoningEffortSchema } from "./assistant-reasoning.js";
 import type { ModelClass } from "./model-guidance.js";
 import type { AssistantMode, ReportPresentation } from "./assistant-catalog.js";
 
@@ -171,6 +173,7 @@ export const assistantProfileSchema = z.object({
   scope: z.array(z.string().min(1)).max(20).default([]),
   criteria: z.string().trim().min(5).max(1000),
   runtimePolicyConfirmed: z.boolean(),
+  reasoningEffort: reasoningEffortSchema.optional(),
 }).strict();
 export type AssistantProfileInput = z.infer<typeof assistantProfileSchema>;
 export type AssistantProfile = AssistantProfileInput & {

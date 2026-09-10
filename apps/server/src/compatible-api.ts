@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AdapterContext, RuntimeAdapter } from "@orchestrator/adapter-sdk";
 import { boundedText } from "./source-http.js";
+import { validateReasoning } from "./reasoning.js";
 
 const safeString = (maximum: number) => z.string().trim().min(1).max(maximum).regex(/^[^\x00-\x1f\x7f]+$/);
 const configSchema = z.object({
@@ -77,7 +78,11 @@ export const compatibleApi: RuntimeAdapter = {
     const config = validateCompatibleApiConfig(context.config);
     const messages = messagesSchema.safeParse([...(context.history ?? []).slice(-20), { role: "user", content: body }]);
     if (!messages.success) throw new ConnectionError("Conversation history is invalid.");
-    const payload = JSON.stringify({ model: config.model, stream: false, max_tokens: config.maxOutputTokens, messages: messages.data });
+    const effort = validateReasoning("openai-compatible", "runtime", context.reasoningEffort);
+    // Reasoning models require the completion budget, which also counts hidden reasoning.
+    // Keep the existing wire format for connections with no explicit override.
+    const options = effort === "default" ? { max_tokens: config.maxOutputTokens } : { reasoning_effort: effort, max_completion_tokens: config.maxOutputTokens };
+    const payload = JSON.stringify({ model: config.model, stream: false, ...options, messages: messages.data });
     if (Buffer.byteLength(payload, "utf8") > 256 * 1024) throw new ConnectionError("Conversation exceeds the 256 KiB request limit. Start a shorter conversation.");
     const parsed = completionSchema.safeParse(await request(context, "chat/completions", payload));
     if (!parsed.success) return { state: "unknown" };

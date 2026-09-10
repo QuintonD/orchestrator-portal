@@ -72,5 +72,10 @@ Prepared teams, extra knowledge sources and recurring source schedules can be
 added after the first useful result.
 
 The [default assistant library](assistant-defaults.md) now includes role-specific
-inputs, acceptance checks and model-class recommendations. Model selection and
-reasoning effort remain configured in the connected source.
+inputs, acceptance checks and model-class recommendations. Model selection stays
+in the connected source. Set **Reasoning level** while adding an assistant or team,
+or change it directly in the assistant's conversation or Team profile. Compatible
+APIs, Hermes and OpenClaw receive the chosen effort on future portal requests.
+Other integrations explain where to configure it in the source. The initial
+**Source controlled** setting preserves existing behavior; saving never starts work.
+See the library guide for model support, token budgets and OpenClaw session behavior.

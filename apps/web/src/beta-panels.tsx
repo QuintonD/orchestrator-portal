@@ -4,6 +4,8 @@ import type { AssistantProfile, AssistantTemplate, DecisionPacket, Report, Repor
 import { Dialog } from "./alpha-pages.js";
 import { AssistantSigil } from "./presence.js";
 import { api, relativeTime } from "./lib.js";
+import { AssistantReasoning, ReasoningField } from "./assistant-reasoning.js";
+import type { ReasoningEffort } from "@orchestrator/contracts";
 import { modelClasses } from "@orchestrator/contracts";
 import { ModelGuide, ModelRecommendation } from "./model-guide.js";
 
@@ -12,7 +14,7 @@ type Group = { id: string; name: string; kind: string; status: string; providerP
 const errorText = (e: unknown) => e instanceof Error ? e.message : "Could not complete the request";
 export function ProfileSummary({ profile, sourceName }: { profile: AssistantProfile; sourceName: string }) {
   const local = profile.mode === "workspace" || profile.mode === "index";
-  return <><p className="readable">{profile.purpose}</p><dl className="detail-list"><div><dt>Connection</dt><dd>{sourceName}</dd></div><div><dt>How it works</dt><dd>{local ? "Local guide. Reads portal records without a model call." : profile.mode === "handoff" ? "Prepares a task to take into the source. Direct dispatch is unavailable." : "A dedicated conversation in the configured runtime."}</dd></div><div><dt>Next update</dt><dd>{profile.autoReview ? "When local records change while the gateway runs" : profile.cadence === "manual" ? "On request" : `${profile.cadence} expected; source schedule must be activated separately`}</dd></div><div><dt>Last result</dt><dd>{profile.lastRunAt ? relativeTime(profile.lastRunAt) : "Not requested yet"}</dd></div><div><dt>Useful result</dt><dd>{profile.criteria}</dd></div>{!local && profile.mode !== "handoff" && <div><dt>Boundaries</dt><dd>{profile.providerPolicy} provider. Tools, source access and isolation are configured in the runtime.</dd></div>}</dl><p className="form-note"><strong>Model recommendation</strong> · <ModelRecommendation modelClass={profile.modelClass} /></p>{!local && <p className="form-note">The source keeps its configured model. This recommendation does not change it.</p>}{profile.requiredInputs && <p className="form-note"><strong>Bring</strong> · {profile.requiredInputs.join("; ")}</p>}{!local && <ModelGuide />}</>;
+  return <><p className="readable">{profile.purpose}</p><dl className="detail-list"><div><dt>Connection</dt><dd>{sourceName}</dd></div><div><dt>How it works</dt><dd>{local ? "Local guide. Reads portal records without a model call." : profile.mode === "handoff" ? "Prepares a task to take into the source. Direct dispatch is unavailable." : "A dedicated conversation in the configured runtime."}</dd></div><div><dt>Next update</dt><dd>{profile.autoReview ? "When local records change while the gateway runs" : profile.cadence === "manual" ? "On request" : `${profile.cadence} expected; source schedule must be activated separately`}</dd></div><div><dt>Last result</dt><dd>{profile.lastRunAt ? relativeTime(profile.lastRunAt) : "Not requested yet"}</dd></div><div><dt>Useful result</dt><dd>{profile.criteria}</dd></div>{!local && profile.mode !== "handoff" && <div><dt>Boundaries</dt><dd>{profile.providerPolicy} provider. Tools, source access and isolation are configured in the runtime.</dd></div>}</dl><p className="form-note"><strong>Model recommendation</strong> · <ModelRecommendation modelClass={profile.modelClass} /></p>{!local && <p className="form-note">The source keeps its configured model. This recommendation does not change it.</p>}{profile.requiredInputs && <p className="form-note"><strong>Bring</strong> · {profile.requiredInputs.join("; ")}</p>}{!local && <ModelGuide />}<AssistantReasoning assistantId={profile.id} disabled={profile.state === "running"} /></>;
 }
 export function ProfileEditor({ profile, close, saved, notify }: { profile: AssistantProfile; close(): void; saved(): void; notify: Notify }) {
   const [name, setName] = useState(profile.name);
@@ -33,19 +35,20 @@ export function TeamCatalog({ close, saved, notify, initialSource, firstAssistan
   const [provider, setProvider] = useState("subscription");
   const [busy, setBusy] = useState(false);
   const [firstBrief, setFirstBrief] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("default");
   const [failure, setFailure] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   async function load() { try { setGroups(await api("/api/team/catalog")); setFailure(""); } catch (e) { setFailure(errorText(e)); } }
   useEffect(() => { void load(); }, []);
   const group = groups.find((g) => g.id === source);
-  useEffect(() => { setIds(group?.templates.filter((t) => !t.installedId).slice(0, 1).map((t) => t.id) ?? []); setConfirmed(group?.kind === "demo"); setFirstBrief(false); setQuery(""); setCategory("All"); }, [group]);
+  useEffect(() => { setIds(group?.templates.filter((t) => !t.installedId).slice(0, 1).map((t) => t.id) ?? []); setConfirmed(group?.kind === "demo"); setFirstBrief(false); setReasoningEffort("default"); setQuery(""); setCategory("All"); }, [group]);
   const runtime = group?.templates.some((t) => ids.includes(t.id) && t.mode === "runtime");
   const visible = group?.templates.filter((t) => (category === "All" || category === t.category) && `${t.name} ${t.role} ${t.summary}`.toLowerCase().includes(query.toLowerCase())) ?? [];
   async function install() {
     if (!group) return; setBusy(true);
     try {
-      const result = await api<{ created: number; results: Array<{ error?: string }> }>("/api/team/install", { method: "POST", body: JSON.stringify({ connectorId: group.id, templateIds: ids, runtimePolicyConfirmed: confirmed, providerPolicy: group.providerPolicy ?? provider, startFirstBrief: firstBrief }) });
+      const result = await api<{ created: number; results: Array<{ error?: string }> }>("/api/team/install", { method: "POST", body: JSON.stringify({ connectorId: group.id, templateIds: ids, runtimePolicyConfirmed: confirmed, providerPolicy: group.providerPolicy ?? provider, startFirstBrief: firstBrief, ...(runtime ? { reasoningEffort } : {}) }) });
       const failures = result.results.filter((r) => r.error);
       notify(failures.length ? `Team saved; ${failures.length} first results need a source check. Open the profiles to inspect them.` : `${result.created} team members added. ${!runtime || firstBrief ? "Results are recorded. Open Reports to inspect their outcome." : "Their roles are ready. Share a task and its inputs to begin."}`, failures.length ? "neutral" : "success"); saved();
     } catch (e) { setFailure(errorText(e)); } finally { setBusy(false); }
@@ -70,6 +73,7 @@ export function TeamCatalog({ close, saved, notify, initialSource, firstAssistan
     </article>)}</div>
     {!visible.length && <p>No roles match. Clear the search or choose another category.</p>}
     {runtime && <div className="runtime-boundaries">
+      <ReasoningField kind={group?.kind ?? ""} value={reasoningEffort} disabled={busy} onChange={setReasoningEffort} />
       <p className="form-note">Every role on this connection uses its configured model and source permissions. Model recommendations do not change them. Supply the listed inputs in your first conversation.</p>
       <label className="check-label"><input type="checkbox" disabled={busy} checked={firstBrief} onChange={(e) => setFirstBrief(e.target.checked)} /><span>Prepare the first brief for each new assistant now. One source turn per selected role. Without task inputs, the assistant can only ask for context.</span></label>
       <label>Configured provider<select disabled={busy || !!group?.providerPolicy} value={group?.providerPolicy ?? provider} onChange={(e) => setProvider(e.target.value)}><option value="subscription">Existing subscription</option><option value="local">Local model</option></select></label>

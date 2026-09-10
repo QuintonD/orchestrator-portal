@@ -432,6 +432,16 @@ p.notice { display: block; }
 @media (max-width: 480px) { .catalog-filters { grid-template-columns: minmax(0, 1fr); } }
 .template-mandate { margin: 6px 0; color: var(--ink-soft); font-size: 12px; }
 .runtime-boundaries { border-top: 1px solid var(--line); }
+.assistant-reasoning { padding: 12px 18px; border-top: 1px solid var(--line); }
+.reasoning-field { min-width: 0; }
+.reasoning-field label { display: grid; gap: 6px; font-size: 13px; color: var(--ink-soft); }
+.reasoning-field select { width: 100%; min-width: 0; min-height: 42px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 15px; }
+.reasoning-help { font-size: 12px; color: var(--ink-soft); }
+.reasoning-help summary { cursor: pointer; }
+.reasoning-help p { line-height: 1.5; }
+.conversation-card > .assistant-reasoning { flex-shrink: 0; max-height: 220px; overflow-y: auto; }
+.conversation-card .reasoning-field label { grid-template-columns: auto minmax(0, 260px); align-items: center; justify-content: space-between; }
+.conversation-card .reasoning-help { margin-top: 6px; }
 .prepared-brief { border-left: 1px solid var(--line-strong); padding-left: 18px; }
 .prepared-brief h3 { font-size: 20px; font-weight: 450; margin: 6px 0; }
 .prepared-brief p { color: var(--ink-soft); font-size: 14px; }
@@ -748,6 +758,12 @@ p.notice { display: block; }
 .assistant-main { display: flex; flex-direction: column; min-height: 0; }
 .assistant-main > .page-header, .conversation-day, .composer { flex-shrink: 0; }
 .conversation-card { flex: 1; min-height: 0; height: auto; }
+/* Keep the composer reachable when a keyboard or landscape window reduces height. */
+@media (max-height: 600px) {
+  .page-stage:has(.assistant-layout.role-conversation) { height: auto; min-height: calc(100dvh - var(--topbar)); padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .role-conversation .conversation-card { flex: none; min-height: 440px; }
+  .role-conversation .message-list { min-height: 120px; max-height: 240px; }
+}
 
 /* ---------- Settings ---------- */
 .settings-layout { display: block; max-width: 760px; }
