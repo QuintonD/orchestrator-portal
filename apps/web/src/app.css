@@ -419,6 +419,17 @@ p.notice { display: block; }
 .template-card strong span { color: var(--ink-soft); font-size: 12px; margin-left: 8px; font-weight: 400; }
 .template-card p { margin: 6px 0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
 .template-card small { color: var(--ink-soft); }
+.catalog-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin-top: 20px; }
+.catalog-filters label { display: grid; gap: 6px; min-width: 0; font-size: 13px; }
+.catalog-filters input, .catalog-filters select { width: 100%; min-width: 0; padding: 10px; }
+.model-guide { margin: 16px 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.model-guide summary, .template-card label { cursor: pointer; }
+.model-guide dl > div { margin: 12px 0; }
+.model-guide dt { font-weight: 600; }
+.model-guide dd { margin: 2px 0; color: var(--ink-soft); }
+.model-guide table { width: 100%; border-collapse: collapse; }
+.model-guide th, .model-guide td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+@media (max-width: 480px) { .catalog-filters { grid-template-columns: minmax(0, 1fr); } }
 .template-mandate { margin: 6px 0; color: var(--ink-soft); font-size: 12px; }
 .runtime-boundaries { border-top: 1px solid var(--line); }
 .prepared-brief { border-left: 1px solid var(--line-strong); padding-left: 18px; }

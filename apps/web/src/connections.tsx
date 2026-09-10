@@ -5,6 +5,7 @@ import { api, relativeTime } from "./lib.js";
 import { Card, PageHeader, Skeleton, StatusPill } from "./components.js";
 import { Dialog } from "./alpha-pages.js";
 import { GrokPanel } from "./grok.js";
+import { ModelGuide } from "./model-guide.js";
 
 type Notify = (message: string, tone?: "neutral" | "success" | "error") => void;
 type CatalogItem = { id: string; displayName: string; capabilities: string[] };
@@ -143,6 +144,7 @@ export function AddConnection({ catalog, close, changed, initialKind, navigate, 
     </div> : <form className="alpha-form" onSubmit={submit}>
       <label>Source<select aria-label="Source" value={kind} onChange={(e) => { setKind(e.target.value); setFieldA(""); setFieldB(""); setModel(""); setAccessMode("subscription"); setMaxOutputTokens(4096); setConsent(false); setError(""); }}>{catalog.map((item) => <option key={item.id} value={item.id}>{labels[item.id] ?? item.displayName}</option>)}</select></label>
       <p className="source-instructions">{descriptions[kind]}</p>
+      {compatible && <ModelGuide />}
       <label>Connection name <small>optional</small><input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={labels[kind]} /></label>
       {local ? <><label>{kind === "obsidian-vault" ? "Vault folder" : "Document folder"}<input value={fieldA} onChange={(e) => setFieldA(e.target.value)} placeholder="C:\Notes or /home/me/notes" required /></label><p className="form-note">Use the full folder path. In Windows Explorer, choose Copy as path; on macOS use Copy as Pathname in Finder. This is a folder on your gateway computer, even when you use your phone.</p></>
         : kind === "notion" ? <><p className="form-note"><a href="https://www.notion.so/profile/integrations" target="_blank" rel="noreferrer">Open Notion connections</a>. Enable Read content only. In each page's menu, add your connection.</p><label>Page links or IDs<textarea value={fieldA} onChange={(e) => setFieldA(e.target.value)} rows={3} placeholder="One page link per line" required /></label><p className="form-note">Only these pages are indexed. Add child pages separately if you want to include them.</p><label>Notion connection secret<input type="password" autoComplete="off" value={fieldB} onChange={(e) => setFieldB(e.target.value)} required placeholder="Stored in your local vault" /></label></>

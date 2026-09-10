@@ -10,6 +10,7 @@ The application remains alpha. Alpha 4 adds subscription/local model connections
 
 - [Desktop setup](desktop.md): downloads, launchers, upgrades, and diagnostics.
 - [First flow setup](onboarding.md): automatic local defaults, guided connections, and your first useful task in the current source build.
+- [Assistant defaults and model classes](assistant-defaults.md): every preset reviewed, integration coverage, current benchmark evidence and a synthetic quality evaluation set.
 - [Android setup](android.md): connect a phone to your computer's gateway.
 - [Deployment and backup](deployment.md): local hosting, Docker, and private remote access.
 - [Knowledge sources](knowledge.md): local folders, Obsidian, and Notion.

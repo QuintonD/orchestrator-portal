@@ -2,6 +2,10 @@
 
 # Prepared teams and local briefs - alpha 3
 
+This page records the alpha 3 workflows. The current source build expands and
+revises the catalog; see [the review of all presets and model classes](assistant-defaults.md).
+Its team picker starts with one role and leaves external first briefs off.
+
 The filename is retained for existing links. Earlier development documents called this work beta; the application remains alpha. See [release history](releases.md).
 
 This alpha prepares useful work before asking the operator to configure a role or

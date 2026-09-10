@@ -1,5 +1,7 @@
 import { z } from "zod";
 export * from "./assistant-catalog.js";
+export * from "./model-guidance.js";
+import type { ModelClass } from "./model-guidance.js";
 import type { AssistantMode, ReportPresentation } from "./assistant-catalog.js";
 
 export const healthSchema = z.object({
@@ -175,6 +177,7 @@ export type AssistantProfile = AssistantProfileInput & {
   id: string; state: "ready" | "paused" | "running" | "unknown";
   lastRunAt: string | null; nextExpectedAt: string | null; createdAt: string;
   templateId?: string; templateVersion?: number; mode?: AssistantMode; icon?: number; autoReview?: boolean;
+  modelClass?: ModelClass; modelGuidanceVersion?: string; requiredInputs?: string[]; escalateWhen?: string;
 };
 
 /** Read-only avatar projection. No mandates, messages, report bodies or credentials. */
