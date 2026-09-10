@@ -11,6 +11,9 @@ profiles send no override. See [source behavior and limits](assistant-defaults.m
 - `npm run test:e2e`: 123 passed; three desktop-only cases intentionally skip on mobile.
 - `npm run release:check`: alpha 6 identities agree.
 - `npm run desktop:test`: four packaging/path isolation tests passed.
+- `node scripts/desktop/package.mjs win32-x64` and `npm run desktop:smoke`:
+  fresh Windows archive and 13 packaged runtime checks passed, including native
+  startup without system Node/npm/Git, authentication, graceful stop and persistence.
 - `npm run android:build`: fresh debug APK assembly, native unit tests and lint passed.
 
 The new server fixtures cover all effort values, documented HTTP payload paths,
@@ -23,6 +26,10 @@ Browser checks cover setup, immediate conversation editing, keyboard focus,
 failed reads and writes, a committed write whose response is lost, draft retention,
 reload, source-controlled reset, and 740×360 layouts with a reachable Send button.
 No background model request occurs when preferences are read or saved.
+
+The first hosted run exposed a Windows-only assumption in the CLI test fixture.
+The fixture now uses the explicit JS entry on Windows and an executable on PATH
+on POSIX, matching the adapter's existing platform behavior.
 
 ## Direct QA and review
 

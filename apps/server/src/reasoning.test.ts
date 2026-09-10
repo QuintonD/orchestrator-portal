@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -54,6 +54,13 @@ describe("reasoning source contracts", () => {
     const entry = path.join(await directory(), "openclaw-fixture.mjs");
     await writeFile(entry, 'console.log(JSON.stringify({payloads:[{text:JSON.stringify(process.argv.slice(2))}]}));');
     vi.stubEnv("ORCHESTRATOR_OPENCLAW_ENTRY", entry);
+    if (process.platform !== "win32") {
+      // POSIX launches the executable on PATH; the explicit JS entry is Windows-only.
+      const executable = path.join(path.dirname(entry), "openclaw");
+      await writeFile(executable, '#!/usr/bin/env node\nconsole.log(JSON.stringify({payloads:[{text:JSON.stringify(process.argv.slice(2))}]}));\n');
+      await chmod(executable, 0o755);
+      vi.stubEnv("PATH", `${path.dirname(entry)}${path.delimiter}${process.env.PATH ?? ""}`);
+    }
     const adapter = runtimeAdapters.get("openclaw-cli")!;
     for (const effort of [undefined, "default", "none", "high"] as const) {
       const result = await adapter.sendMessage!({ connectorId: "fixture", config: { agentId: "chosen-agent" }, ...(effort ? { reasoningEffort: effort } : {}) }, "Synthetic question", "portal-fixture");
