@@ -127,6 +127,10 @@ try {
     await page.getByLabel("Your name").fill("Android tester");
     await page.getByLabel("Passphrase", { exact: true }).fill("synthetic-android-test-only");
     await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Make this workspace yours" })).toBeVisible();
+    await noOverflow();
+    await shot("02-private-setup");
+    await page.getByRole("button", { name: "Continue later" }).click();
     await expect(page.getByRole("heading", { name: "Portal", exact: true })).toBeVisible();
     await noOverflow();
     await shot("02-private-portal");

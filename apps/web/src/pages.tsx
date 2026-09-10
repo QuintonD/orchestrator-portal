@@ -151,7 +151,7 @@ export function OverviewPage({ notify, navigate, onAttentionCount }: NotifyProps
         <div className="system-focus__copy"><p className="eyebrow">{refreshing ? "Checking sources" : data.connectors.length ? "System pulse" : "Start here"}</p>
           <h2>{!data.connectors.length ? "Connect a source to begin." : stale.length ? "A source needs a check." : data.attention.length ? `${data.attentionCount} things need you.` : "Nothing needs you right now."}</h2>
           <p>{!data.connectors.length ? "Connect what you already use. Its work comes into focus here." : stale.length ? "Refresh the picture before relying on it." : "Your next decision, with the work around it."}</p>
-          {!data.connectors.length && <button className="button button--primary" onClick={() => navigate("/connections")}>Find my sources <ArrowRight size={16} /></button>}
+          {!data.connectors.length && <button className="button button--primary" onClick={() => navigate("/setup")}>Set up my flow <ArrowRight size={16} /></button>}
           {stale.length > 0 && <button className="button button--secondary" disabled={refreshing} onClick={refreshSources}><RefreshCw size={15} className={refreshing ? "spin" : ""} />{refreshing ? "Checking…" : "Refresh sources"}</button>}
         </div>
       </section>

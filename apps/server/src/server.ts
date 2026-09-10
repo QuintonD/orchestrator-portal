@@ -55,6 +55,7 @@ function mapConnector(row: Record<string, unknown>): Connector {
     lastSyncAt: row.last_sync_at ? String(row.last_sync_at) : null,
     latencyMs: typeof row.latency_ms === "number" ? row.latency_ms : null,
     error: row.error ? String(row.error) : null,
+    ...(typeof row.indexed_documents === "number" ? { indexedDocuments: row.indexed_documents } : {}),
   };
 }
 
@@ -254,7 +255,9 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   });
 
   app.get("/api/connectors", { preHandler: authenticated }, async () => ({
-    connectors: db.prepare("SELECT * FROM connectors ORDER BY name").all().map((row) => mapConnector(row as Record<string, unknown>)),
+    connectors: db.prepare(`SELECT connectors.*, COALESCE(documents.total, 0) AS indexed_documents FROM connectors
+      LEFT JOIN (SELECT connector_id, COUNT(*) AS total FROM knowledge_documents GROUP BY connector_id) documents ON documents.connector_id = connectors.id
+      ORDER BY connectors.name`).all().map((row) => mapConnector(row as Record<string, unknown>)),
     catalog: publicAdapterCatalog().concat([
       { id: "markdown-directory", displayName: "Local documents", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] },
       { id: "obsidian-vault", displayName: "Obsidian vault", version: "1.0.0", capabilities: ["knowledge.search", "knowledge.read", "health.read"] },

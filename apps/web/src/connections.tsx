@@ -93,7 +93,7 @@ export function ConnectionsPage({ notify, navigate }: { notify: Notify; navigate
   </>;
 }
 
-function AddConnection({ catalog, close, changed, initialKind, navigate }: { catalog: CatalogItem[]; close(): void; changed(): Promise<void>; initialKind: string; navigate(path: string): void }) {
+export function AddConnection({ catalog, close, changed, initialKind, navigate, onSaved, onReady }: { catalog: CatalogItem[]; close(): void; changed(): Promise<void>; initialKind: string; navigate(path: string): void; onSaved?(connector: Connector): void; onReady?(connector: Connector): void }) {
   const [kind, setKind] = useState(initialKind);
   const [name, setName] = useState("");
   const [fieldA, setFieldA] = useState("");
@@ -129,17 +129,17 @@ function AddConnection({ catalog, close, changed, initialKind, navigate }: { cat
       : { endpoint: fieldA, token: fieldB || undefined };
     try {
       const connector = await api<Connector>("/api/connectors", { method: "POST", body: JSON.stringify({ name: name.trim() || labels[kind], kind, config }) });
-      setCreated(connector); setFieldB(""); await check(connector);
+      setCreated(connector); onSaved?.(connector); setFieldB(""); await check(connector);
     } catch (e) { setError(failure(e)); setBusy(false); }
   }
-  return <Dialog title="Add connection" close={close}>
+  return <Dialog title="Add connection" close={() => { if (!busy) close(); }}>
     {created ? <div className="connection-result" aria-live="polite">
       <div className="connection-result__icon">{busy ? <LoaderCircle className="spin" size={26} /> : checked && !error ? <Check size={26} /> : <RefreshCw size={26} />}</div>
       <h3>{busy ? "Checking your source…" : checked ? error ? "Your source is ready with limited coverage" : "Your source is ready" : "Connection saved; one more step"}</h3>
       <p>{created.name}{count !== null ? ` · ${count} documents indexed` : ""}</p>
       {count === 0 && !error && <p>No supported documents were found. Check that you selected the right folder or pages, then refresh this connection.</p>}
       {error && <><p className="notice" role="status">{error}</p><p>{checked ? "The readable documents are available in Knowledge. Some content is outside this connection's supported scope or could not be included; refreshing may give the same coverage." : "Your connection is saved. Check the source's installation or access, then retry. To change its address or secret, close this dialog, remove the connection and add it again."}</p></>}
-      {!busy && <div className="dialog-actions">{error && !checked && <button className="button button--secondary" onClick={() => check(created)}>Retry check</button>}<button className="button button--secondary" onClick={close}>Done</button>{checked && !error && <button className="button button--primary" onClick={() => { close(); navigate(`/agents?source=${encodeURIComponent(created.id)}`); }}>Prepare this team<ArrowRight size={16} /></button>}</div>}
+      {!busy && <div className="dialog-actions">{error && !checked && <button className="button button--secondary" onClick={() => check(created)}>Retry check</button>}<button className="button button--secondary" onClick={close}>Done</button>{checked && !error && <button className="button button--primary" onClick={() => { close(); if (onReady) onReady(created); else navigate(`/agents?source=${encodeURIComponent(created.id)}`); }}>{onReady ? "Continue setup" : "Prepare this team"}<ArrowRight size={16} /></button>}</div>}
     </div> : <form className="alpha-form" onSubmit={submit}>
       <label>Source<select aria-label="Source" value={kind} onChange={(e) => { setKind(e.target.value); setFieldA(""); setFieldB(""); setModel(""); setAccessMode("subscription"); setMaxOutputTokens(4096); setConsent(false); setError(""); }}>{catalog.map((item) => <option key={item.id} value={item.id}>{labels[item.id] ?? item.displayName}</option>)}</select></label>
       <p className="source-instructions">{descriptions[kind]}</p>

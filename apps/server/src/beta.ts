@@ -129,6 +129,7 @@ export function registerBeta(app: FastifyInstance, db: DatabaseSync, vault: Vaul
   app.get("/api/team/catalog", opts, async () => {
     const connections = db.prepare("SELECT * FROM connectors ORDER BY name").all() as unknown as Connection[];
     return [{ id: "workspace", name: "This workspace", kind: "workspace", status: "connected" }, ...connections].map((source) => ({ id: source.id, name: source.name, kind: source.kind, status: source.status,
+      ...(source.kind === "openai-compatible" ? { providerPolicy: vault.open<{ accessMode: "local" | "subscription" }>((source as Connection).config_encrypted).accessMode } : {}),
       templates: assistantTemplates.filter((t) => applicable(source.id === "workspace" ? undefined : source as Connection, t)).map((t) => ({ ...t, installedId: list<AssistantProfile>("assistant").find((p) => p.connectorId === source.id && p.templateId === t.id)?.id ?? null })) }));
   });
   app.post("/api/team/install", opts, async (request, reply) => {
@@ -137,6 +138,7 @@ export function registerBeta(app: FastifyInstance, db: DatabaseSync, vault: Vaul
     const selected = [...new Set(body.templateIds)].map((id) => assistantTemplates.find((t) => t.id === id) ?? fail("Unknown template", 400));
     if (selected.some((t) => !applicable(source, t))) fail("This template is not supported by the connection.", 400);
     if (selected.some((t) => t.mode === "runtime") && !body.runtimePolicyConfirmed) fail("Confirm the configured runtime boundaries before installing its team.", 400);
+    if (source?.kind === "openai-compatible" && body.providerPolicy !== vault.open<{ accessMode: string }>(source.config_encrypted).accessMode) fail("The assistant provider must match the connection's access mode.", 400);
     const existing = list<AssistantProfile>("assistant");
     const newCount = selected.filter((t) => !existing.some((p) => p.connectorId === body.connectorId && p.templateId === t.id)).length;
     if (existing.length + newCount > 60) fail("This workspace supports up to 60 assistant profiles.");

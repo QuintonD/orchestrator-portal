@@ -35,5 +35,7 @@ node tests/design-capture.mjs
 
 The script starts a synthetic gateway on loopback port 4417, captures twelve
 routes in both themes at phone and desktop sizes, checks horizontal overflow and
-page errors, and writes `test-results/design-review/`. Playwright e2e also
-refreshes `docs/assets/overview-light.png` and `docs/assets/assistant-dark.png`.
+page errors, and writes `test-results/design-review/`. Playwright e2e saves its
+screenshots in each test's output directory under `test-results/web/`. Routine
+QA does not overwrite tracked documentation images; copy reviewed captures into
+`docs/assets/` explicitly when updating the documentation.

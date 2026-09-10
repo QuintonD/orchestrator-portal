@@ -44,6 +44,7 @@ export const connectorSchema = z.object({
   lastSyncAt: z.string().nullable(),
   latencyMs: z.number().nullable(),
   error: z.string().nullable(),
+  indexedDocuments: z.number().int().nonnegative().optional(),
 });
 export type Connector = z.infer<typeof connectorSchema>;
 
