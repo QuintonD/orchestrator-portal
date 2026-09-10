@@ -17,6 +17,25 @@ const post = (app: FastifyInstance, url: string, payload?: unknown) => app.injec
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(apps.splice(0).map((app) => app.close())); await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 describe("beta defaults, evidence and continuity", () => {
+  it.each(["local", "subscription"] as const)("reuses the %s connection policy without exposing its credentials", async (accessMode) => {
+    const { app } = await setup();
+    const response = await post(app, "/api/connectors", { name: "Setup source", kind: "openai-compatible", config: { endpoint: "http://127.0.0.1:8317/v1", token: "synthetic-onboarding-key", model: "fixture-model", accessMode, policyConfirmed: true } });
+    expect(response.statusCode).toBe(201);
+    const connectorId = response.json().id;
+    const catalog = await app.inject("/api/team/catalog");
+    const group = catalog.json().find((item: { id: string }) => item.id === connectorId);
+    expect(group.providerPolicy).toBe(accessMode);
+    expect(catalog.body).not.toContain("synthetic-onboarding-key");
+    expect(catalog.body).not.toContain("8317");
+    const before = (await app.inject("/api/assistants")).json().assistants.length;
+    const invalid = await post(app, "/api/team/install", { connectorId, templateIds: [group.templates[0].id], providerPolicy: accessMode === "local" ? "subscription" : "local", runtimePolicyConfirmed: true });
+    expect(invalid.statusCode).toBe(400);
+    expect((await app.inject("/api/assistants")).json().assistants).toHaveLength(before);
+    const installed = await post(app, "/api/team/install", { connectorId, templateIds: [group.templates[0].id], providerPolicy: accessMode, runtimePolicyConfirmed: true });
+    expect(installed.statusCode).toBe(201);
+    expect(installed.json().assistants[0].providerPolicy).toBe(accessMode);
+    expect(installed.json().results).toHaveLength(0);
+  });
   it("can install all personal and general runtime defaults in one selection", async () => {
     const { app } = await setup(); const selected = assistantTemplates.filter((t) => t.kinds.includes("demo")).map((t) => t.id);
     expect(selected.length).toBeGreaterThan(5);

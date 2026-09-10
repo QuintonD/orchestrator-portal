@@ -23,7 +23,7 @@ test("desktop visual surface has no overflow", async ({ page }, testInfo) => {
   await expect(page.getByRole("region", { name: "Next decision" })).toBeVisible();
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: window.innerWidth }));
   expect(dimensions.width).toBeLessThanOrEqual(dimensions.viewport);
-  await page.screenshot({ path: "docs/assets/overview-light.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("overview-light.png"), fullPage: true });
 });
 
 test("secondary surfaces and dark appearance render", async ({ page }, testInfo) => {
@@ -33,7 +33,7 @@ test("secondary surfaces and dark appearance render", async ({ page }, testInfo)
   await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
   await expect(page.getByText(/Sample workspace:/)).toBeVisible({ timeout: 10_000 });
   await expect.poll(() => page.locator('.ecosystem-dock [data-node]:not([data-node="centre"]) .rig-ring').evaluateAll(nodes => nodes.length > 0 && nodes.every(node => Number(node.getAttribute("r")) > 2))).toBe(true);
-  await page.screenshot({ path: "docs/assets/assistant-dark.png" });
+  await page.screenshot({ path: testInfo.outputPath("assistant-dark.png") });
   await page.goto("/connections");
   await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible();
   await page.screenshot({ path: "test-results/visual-connections-dark.png", fullPage: true });

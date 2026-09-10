@@ -53,6 +53,26 @@ function mockNotion(responses: unknown[] = [pageResponse, blockList()]) {
   return fetchMock;
 }
 
+describe("setup knowledge coverage", () => {
+  it("reports actual indexed counts for partial and failed checks", async () => {
+    const { app, source, headers, create } = await fixture();
+    await writeFile(path.join(source, "binary.md"), Buffer.from("unsupported\0content"));
+    const id = (await create("markdown-directory", { path: source })).json().id;
+    const listed = async () => (await app.inject({ url: "/api/connectors", headers })).json().connectors.find((item: { id: string }) => item.id === id);
+    expect((await listed()).indexedDocuments).toBe(0);
+    expect((await app.inject({ method: "POST", url: `/api/connectors/${id}/sync`, headers })).statusCode).toBe(200);
+    expect(await listed()).toMatchObject({ status: "degraded", indexedDocuments: 1 });
+    await rm(path.join(source, "note.md"));
+    await app.inject({ method: "POST", url: `/api/connectors/${id}/sync`, headers });
+    expect(await listed()).toMatchObject({ status: "degraded", indexedDocuments: 0 });
+    const missingId = (await create("markdown-directory", { path: path.join(source, "missing") })).json().id;
+    expect((await app.inject({ method: "POST", url: `/api/connectors/${missingId}/sync`, headers })).statusCode).toBe(502);
+    const missing = (await app.inject({ url: "/api/connectors", headers })).json().connectors.find((item: { id: string }) => item.id === missingId);
+    expect(missing).toMatchObject({ status: "degraded", indexedDocuments: 0 });
+    expect(missing.lastSyncAt).not.toBeNull();
+  });
+});
+
 describe("compatible model connection lifecycle", () => {
   const config = { endpoint: "http://127.0.0.1:8317/v1", model: "fixture-model", token: "synthetic-proxy-key", accessMode: "subscription", policyConfirmed: true };
   const answer = { choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Synthetic answer" } }] };

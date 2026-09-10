@@ -14,7 +14,7 @@ test("reference field respects motion controls in both themes and leaves the com
     await page.waitForTimeout(100);
     expect(await field.locator("svg").getAttribute("data-time")).toBe(time);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `docs/design/reference-presence/${testInfo.project.name}-${theme}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`reference-presence-${theme}.png`) });
   }
 });
 

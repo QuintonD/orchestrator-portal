@@ -38,6 +38,7 @@ export const routes = [
   { path: "/brain", label: "Knowledge", icon: BrainCircuit },
   { path: "/insights", label: "Insights", icon: ChartNoAxesCombined },
   { path: "/connections", label: "Connections", icon: Cable },
+  { path: "/setup", label: "Get started", icon: Check },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ] as const;
 

@@ -6,6 +6,7 @@ import { PresenceField } from "./presence.js";
 import { EcosystemProvider } from "./ecosystem-presence.js";
 import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
 import { ConnectionsPage } from "./connections.js";
+import { SetupPage } from "./setup.js";
 import { PersonalPage } from "./personal-page.js";
 import { AgentsPage, ReportsPage, CouncilsPage, ActivityPage, AccessPanel } from "./alpha-pages.js";
 
@@ -55,10 +56,14 @@ export function App() {
 
   if (authError) return <div className="boot-screen"><Mark /><p>The portal gateway is unavailable.</p><button className="button button--secondary" onClick={() => { setAuthError(false); api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuthError(true)); }}>Retry connection</button></div>;
   if (!auth) return <div className="boot-screen"><Mark /><PresenceField state="thinking" /></div>;
-  if (!auth.authenticated) return <AuthScreen status={auth} onAuthenticated={() => api<AuthStatus>("/api/auth/status").then(setAuth)} />;
+  if (!auth.authenticated) return <AuthScreen status={auth} onAuthenticated={() => {
+    if (auth.setupRequired) navigate("/setup");
+    return api<AuthStatus>("/api/auth/status").then(setAuth).catch(() => setAuthError(true));
+  }} />;
 
   const pageProps = { notify };
-  const page = route === "/assistant" ? <AssistantPage {...pageProps} />
+  const page = route === "/setup" ? <SetupPage {...pageProps} navigate={navigate} />
+    : route === "/assistant" ? <AssistantPage {...pageProps} />
     : route === "/personal" ? <PersonalPage {...pageProps} />
     : route === "/agents" ? <AgentsPage {...pageProps} navigate={navigate} />
     : route === "/reports" ? <ReportsPage {...pageProps} />
@@ -83,7 +88,7 @@ export function App() {
   );
 }
 
-function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthenticated(): void }) {
+function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthenticated(): void | Promise<void> }) {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -95,7 +100,7 @@ function AuthScreen({ status, onAuthenticated }: { status: AuthStatus; onAuthent
     setBusy(true); setError("");
     try {
       await api(setup ? "/api/auth/setup" : "/api/auth/login", { method: "POST", body: JSON.stringify(setup ? { displayName, password } : { password }) });
-      onAuthenticated();
+      await onAuthenticated();
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "Could not sign in");
     } finally { setBusy(false); }

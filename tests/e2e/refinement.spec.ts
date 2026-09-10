@@ -43,10 +43,11 @@ test("empty workspace offers setup without empty metrics", async ({ page }) => {
     await route.fulfill({ json: { ...data, connectors: [], attention: [], feed: [], projects: [], recurring: [], latestMetric: null } });
   });
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Find my sources" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Set up my flow" })).toBeVisible();
   await expect(page.locator(".pulse-strip, .dashboard-grid .card, .portal-command")).toHaveCount(0);
-  await page.getByRole("button", { name: "Find my sources" }).click();
-  await expect(page.getByRole("region", { name: "Local discovery" })).toBeVisible();
+  await page.getByRole("button", { name: "Set up my flow" }).click();
+  await expect(page.getByRole("heading", { name: "Make this workspace yours" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Connect your source" })).toBeVisible();
 });
 
 test("dark and reduced motion retain readable states at narrow width", async ({ page }) => {
