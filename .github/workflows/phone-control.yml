@@ -1,0 +1,132 @@
+name: Phone Control
+
+on:
+  pull_request:
+    paths:
+      - 'components/phone-control/**'
+      - 'apps/phone-android/**'
+      - 'apps/server/src/phone-control*'
+      - 'apps/server/src/runtime-environment*'
+      - 'apps/web/src/phone-control*'
+      - 'tests/e2e/phone-control.spec.ts'
+      - 'tests/phone-control/**'
+      - 'package.json'
+      - 'scripts/phone-android-build.mjs'
+      - 'scripts/phone-control-license-check.mjs'
+      - '.github/workflows/phone-control.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'components/phone-control/**'
+      - 'apps/phone-android/**'
+      - 'apps/server/src/phone-control*'
+      - 'apps/server/src/runtime-environment*'
+      - 'apps/web/src/phone-control*'
+      - 'tests/e2e/phone-control.spec.ts'
+      - 'tests/phone-control/**'
+      - 'package.json'
+      - 'scripts/phone-android-build.mjs'
+      - 'scripts/phone-control-license-check.mjs'
+      - '.github/workflows/phone-control.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm run phone:test:isolation
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: phone-control-isolation-qa
+          path: test-results/phone-control/isolation/verification.json
+  broker:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - run: npm test
+        working-directory: components/phone-control
+      - run: node --test tests/phone-control/*.test.mjs
+      - run: npm run phone:test:evaluation
+      - run: node --check tests/phone-control/agent-session.mjs
+      - run: python -m unittest discover -s apps/phone-android/scripts -p 'test_*.py'
+      - run: npm run test:package
+        working-directory: components/phone-control
+      - run: node scripts/phone-control-license-check.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: phone-control-package-qa-${{ matrix.os }}
+          path: test-results/phone-control/package-qa/
+
+  companion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api: '34', image: '34', name: '34' }
+          - { api: '36', image: '36', name: '36' }
+          - { api: '36', image: '36.1', name: '361' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/phone-android-build.mjs
+      - name: Release build-daemon memory before emulator QA
+        run: ./gradlew --stop
+        working-directory: apps/phone-android
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2.34.0
+        with:
+          api-level: ${{ matrix.api }}
+          system-image-api-level: ${{ matrix.image }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          avd-name: orchestrator-phone-control-ci-${{ matrix.name }}
+          emulator-build: 15507667
+          emulator-options: -no-window -gpu swangle -feature -Vulkan -cores 2 -memory 2048 -skin 720x1600 -noaudio -no-boot-anim -no-snapshot
+          script: |
+            PHONE_QA_SERIAL=emulator-5554 npm run phone:test:native
+            PHONE_QA_SERIAL=emulator-5554 npm run phone:test:integration
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: phone-control-companion-qa-api-${{ matrix.image }}
+          path: |
+            apps/phone-android/app/build/outputs/apk/debug/*.apk
+            apps/phone-android/app/build/reports/lint-results-debug.html
+            apps/phone-android/app/build/reports/tests/
+            test-results/phone-control/**/results.json
+            test-results/phone-control/**/fixture.png

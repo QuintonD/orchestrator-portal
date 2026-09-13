@@ -1,8 +1,8 @@
 {
   "name": "orchestrator-portal",
-  "version": "0.1.0-alpha.6",
+  "version": "0.1.0-alpha.7",
   "orchestratorRelease": {
-    "previousVersion": "0.1.0-alpha.5"
+    "previousVersion": "0.1.0-alpha.6"
   },
   "private": true,
   "description": "A local-first command centre for personal AI assistants.",
@@ -20,6 +20,14 @@
     "desktop:test": "node --test scripts/desktop/paths.test.mjs scripts/desktop/staging.test.mjs",
     "desktop:smoke": "node scripts/desktop/smoke.mjs",
     "android:build": "node scripts/android-build.mjs",
+    "phone:android:build": "node scripts/phone-android-build.mjs",
+    "phone:test": "npm test --prefix components/phone-control",
+    "phone:test:native": "node tests/phone-control/native.mjs",
+    "phone:test:integration": "node tests/phone-control/integration.mjs",
+    "phone:test:agents": "node tests/phone-control/agent-session.mjs",
+    "phone:test:document": "node tests/phone-control/document.mjs",
+    "phone:test:evaluation": "node --test tests/phone-control/evaluation/*.test.mjs",
+    "phone:license:check": "node scripts/phone-control-license-check.mjs",
     "test:android": "node tests/android/qa.mjs",
     "test:android:release": "node tests/android/release.mjs",
     "build": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run build -w @orchestrator/web && npm run build -w @orchestrator/server",
@@ -32,10 +40,14 @@
     "typecheck": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run typecheck -w @orchestrator/server && npm run typecheck -w @orchestrator/web",
     "demo": "npm run build && node scripts/demo.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "test:upgrade": "node tests/release-upgrade.mjs"
+    "release:test": "node --test scripts/release-*.test.mjs tests/release-upgrade-records.test.mjs tests/android/release-evidence.test.mjs",
+    "test:upgrade": "node tests/release-upgrade.mjs",
+    "phone:test:isolation": "node --test components/phone-control/test/isolation-container.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "concurrently": "10.0.5",
     "cross-env": "10.1.0",
     "typescript": "7.0.2"

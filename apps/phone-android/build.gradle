@@ -1,0 +1,3 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Required origin notice: see ATTRIBUTION.md.
+plugins { id 'com.android.application' version '8.10.1' apply false }

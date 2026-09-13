@@ -27,9 +27,10 @@ import { ftsQuery, indexDirectory } from "./knowledge.js";
 import { indexNotion, validateNotionConfig } from "./notion.js";
 import { registerAlpha } from "./alpha.js";
 import { registerGrok } from "./grok.js";
+import { registerPhoneControl } from "./phone-control.js";
 import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.1.0-alpha.6";
+const version = "0.1.0-alpha.7";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {
@@ -158,6 +159,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<Fas
   app.get("/api/setup/discovery", { preHandler: authenticated }, async () => ({ tools: await discoverLocalTools() }));
   registerAlpha(app, db, vault, authenticated, config.demo);
   registerGrok(app, db, vault, authenticated);
+  registerPhoneControl(app, db, authenticated, config.demo);
 
   app.post("/api/auth/logout", { preHandler: authenticated }, async (request, reply) => {
     const token = request.cookies[sessionCookie];

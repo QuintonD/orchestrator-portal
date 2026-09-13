@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Required origin notice: see ATTRIBUTION.md.
+.gradle/
+**/build/
+local.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+__pycache__/
+*.pyc

@@ -63,6 +63,7 @@ export function ConnectionsPage({ notify, navigate }: { notify: Notify; navigate
   }
   return <>
     <PageHeader title="Connections" detail="Your assistants and knowledge, in one place." actions={<button className="button button--primary" disabled={!data} onClick={() => { setInitialKind("markdown-directory"); setAdding(true); }}><Plus size={16} /> Add connection</button>} />
+    <Card title="Android phone control" action={<button className="button button--secondary" onClick={() => navigate("/phone-control")}>Open phone control <ArrowRight size={16} /></button>}><p>Pair the separate Android companion to observe allowed apps and request actions with consent on the phone.</p></Card>
     <section className="discovery-panel" aria-label="Local discovery" aria-live="polite">
       <div className="section-heading"><h2>{discoveryError ? "Discovery unavailable" : !discovery ? "Looking for local tools…" : "Found on your gateway"}</h2><button className="text-button" onClick={discover} disabled={!discovery && !discoveryError}><RefreshCw size={14} />Scan again</button></div>
       <p>{discoveryError ? "Retry the scan, or add a source below." : "Checks installed tool locations. No files or credentials are read."}</p>

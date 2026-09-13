@@ -1,0 +1,5 @@
+# Release archives and embedded legal notices must have identical source bytes
+# on the Windows owner build and the Linux/Windows packaging workers.
+components/phone-control/** text=auto eol=lf
+apps/phone-android/** text=auto eol=lf
+apps/phone-android/gradlew.bat text eol=crlf

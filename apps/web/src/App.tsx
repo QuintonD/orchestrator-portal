@@ -6,6 +6,7 @@ import { PresenceField } from "./presence.js";
 import { EcosystemProvider } from "./ecosystem-presence.js";
 import { AssistantPage, AttentionPage, BrainPage, InsightsPage, OverviewPage, SettingsPage, WorkPage } from "./pages.js";
 import { ConnectionsPage } from "./connections.js";
+import { PhoneControlPage } from "./phone-control.js";
 import { SetupPage } from "./setup.js";
 import { PersonalPage } from "./personal-page.js";
 import { AgentsPage, ReportsPage, CouncilsPage, ActivityPage, AccessPanel } from "./alpha-pages.js";
@@ -74,6 +75,7 @@ export function App() {
         : route === "/brain" ? <BrainPage {...pageProps} />
           : route === "/insights" ? <InsightsPage {...pageProps} />
             : route === "/connections" ? <ConnectionsPage {...pageProps} navigate={navigate} />
+              : route === "/phone-control" ? <PhoneControlPage {...pageProps} />
               : route === "/settings" ? <><SettingsPage {...pageProps} auth={auth} onSignedOut={() => setAuth({ ...auth, authenticated: false, user: null })} /><AccessPanel {...pageProps} /></>
                 : <OverviewPage {...pageProps} displayName={auth.user?.displayName ?? "Operator"} navigate={navigate} onAttentionCount={setAttentionCount} />;
 

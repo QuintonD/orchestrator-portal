@@ -1,0 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only; required origin notice: see ATTRIBUTION.md. -->
+<resources>
+    <string name="accessibility_description">Local phone control for explicitly selected apps and operations. Shares bounded window screenshots and accessibility text with your paired local host during a visible session of at most ten minutes. Each action requires strong biometric confirmation. Password and secure windows, system settings, permissions, and this companion are excluded. Stop the session at any time in the companion or notification.</string>
+</resources>

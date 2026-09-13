@@ -1,0 +1,44 @@
+{
+  "name": "@orchestrator/phone-control",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Independent, policy-enforcing local Android control broker and console client",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "bin": {
+    "phone-control": "./bin/phone-control.mjs"
+  },
+  "exports": {
+    "./pilot": {
+      "types": "./src/pilot.d.mts",
+      "default": "./src/pilot.mjs"
+    },
+    "./client": {
+      "types": "./src/client.d.mts",
+      "default": "./src/client.mjs"
+    },
+    "./task": {
+      "types": "./src/task.d.mts",
+      "default": "./src/task.mjs"
+    },
+    "./isolation": "./deployment/host.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "deployment/",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "ATTRIBUTION.md"
+  ],
+  "scripts": {
+    "start": "node bin/phone-control.mjs serve",
+    "test": "node --test test/*.test.mjs",
+    "test:package": "node test/package.mjs",
+    "check": "node --check src/broker.mjs && node --check src/security.mjs && node --check src/client.mjs && node --check src/validation.mjs && node --check bin/phone-control.mjs && node --check src/mcp.mjs && node --check src/pilot.mjs && node --check src/task.mjs && node --check src/response-proof.mjs && node --check deployment/host.mjs && node --check deployment/guest.mjs"
+  }
+}

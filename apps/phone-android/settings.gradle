@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Required origin notice: see ATTRIBUTION.md.
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = 'OrchestratorPhoneControl'
+include ':app'
+include ':fixture'

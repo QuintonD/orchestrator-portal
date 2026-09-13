@@ -2,7 +2,7 @@
 
 [Project home](../README.md) | [Get help](../SUPPORT.md) | [Contribute](../CONTRIBUTING.md)
 
-The application remains alpha. Alpha 4 adds subscription/local model connections to the desktop gateway and Android client. Earlier beta labels were development naming errors, not a maturity promotion. See [releases and upgrades](releases.md). Use documentation at a release tag for that exact build.
+The application remains alpha. Alpha 7 adds optional Android phone control with scoped sessions, authenticated responses and an isolated source-code environment. Earlier beta labels were development naming errors, not a maturity promotion. See [releases and upgrades](releases.md). Use documentation at a release tag for that exact build.
 
 ## Install and use
 
@@ -26,6 +26,13 @@ The application remains alpha. Alpha 4 adds subscription/local model connections
 - [Adapter guide](adapters.md): runtime and knowledge integration contracts.
 - [Assistant platforms](assistant-platforms.md): subscription/CLIProxyAPI setup, integration coverage and T3 Code quality benchmark.
 - [Security model](security.md): authentication, encryption, and trust boundaries.
+- [Android phone control](android-phone-control.md): standalone companion/broker, integration and scope boundaries; see the [readiness record](android-phone-control-readiness.md) for actual validation.
+- [Phone Control source SDK](phone-control-source-sdk.md): pinned broker responses, bounded executor leases, recovery and source-owned task checkpoints; dispatch remains unverified.
+- [Isolated Phone Control deployment](phone-control-isolation.md): tested local container and scoped relay for offline source code, with no host mounts, devices or provider egress.
+- [Signed companion upgrade QA](phone-control-upgrade-qa.md): preserved settings and installation identity, revoked active authority, and exact release evidence requirements.
+- [Release SBOM](release-sbom.md): dependency inventory, schema and source validation, artifact hashes and completeness limits.
+- Phone Control investigations: [capture reliability](phone-control-capture-investigation.md), [security review](phone-control-security-review.md), [frontier evaluation](phone-control-frontier-evaluation.md), [real document QA](phone-control-document-qa.md), [Home lifecycle QA](phone-control-home-lifecycle-qa.md), and [biometric consent lifecycle](phone-control-consent-lifecycle.md).
+- [Critical comparison with Astra computer use](phone-control-astra-critical-review.md): original gap assessment, appended implementation follow-up and a controlled comparison plan; no parity claim.
 - [Security policy](../SECURITY.md): supported versions and private vulnerability reporting.
 - [Shared vocabulary](../CONTEXT.md): product terms and authority boundaries.
 - [Product direction](product-direction.md): proposed scope and acceptance criteria.

@@ -40,4 +40,13 @@ Add a `Signed-off-by` line to certify the [Developer Certificate of Origin](http
 git commit -s -m "feat: add provider adapter"
 ```
 
-By contributing, you agree that your contribution is licensed under Apache-2.0.
+Original contributions in `components/phone-control/` and `apps/phone-android/`
+use AGPL-3.0-only with the attribution-preservation term in their `ATTRIBUTION.md`.
+The same terms apply to `scripts/phone-control-upgrade-build.mjs` and the Phone
+Control owner tooling, tests and evaluation fixtures under `tests/phone-control/`
+that carry an `SPDX-License-Identifier: AGPL-3.0-only` header; those headers point
+to the component's attribution file. Other contributions retain Apache-2.0,
+including the portal integration and build/license-check scripts without that
+AGPL designation. Read the applicable licence and
+[licensing scope](docs/phone-control-licensing.md) before contributing. DCO sign-off
+applies to both; it does not transfer copyright.

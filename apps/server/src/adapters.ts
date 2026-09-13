@@ -2,6 +2,7 @@ import { demoAssessment, presentationText } from "./demo-scenario.js";
 import { compatibleApi } from "./compatible-api.js";
 import { boundedText } from "./source-http.js";
 import { openClawReasoningArgs, hermesReasoningOptions } from "./reasoning.js";
+import { runtimeEnvironment } from "./runtime-environment.js";
 export { boundedText } from "./source-http.js";
 import type { AssistantProfile, DecisionPacket } from "@orchestrator/contracts";
 import { execFile } from "node:child_process";
@@ -64,7 +65,7 @@ export async function runOpenClaw(args: string[], timeout = 30_000): Promise<unk
     timeout,
     maxBuffer: 4 * 1024 * 1024,
     windowsHide: true,
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...runtimeEnvironment(), NO_COLOR: "1" },
   });
   return parseJsonOutput(stdout);
 }
@@ -286,14 +287,14 @@ const gbrain: RuntimeAdapter = {
   manifest: { id: "gbrain-cli", displayName: "gbrain knowledge", version: "1.0.0", capabilities: ["knowledge.search", "health.read"] },
   async sync() {
     const started = performance.now();
-    await execFileAsync(process.platform === "win32" ? "gbrain.exe" : "gbrain", ["--version"], { timeout: 10000, maxBuffer: 65536, windowsHide: true });
+    await execFileAsync(process.platform === "win32" ? "gbrain.exe" : "gbrain", ["--version"], { timeout: 10000, maxBuffer: 65536, windowsHide: true, env: runtimeEnvironment() });
     return { status: "connected", latencyMs: Math.round(performance.now() - started), events: [] };
   },
 };
 
 export async function searchGbrain(query: string) {
   if (query.trimStart().startsWith("-")) throw new Error("Search must start with a word, not a CLI option");
-  const { stdout } = await execFileAsync(process.platform === "win32" ? "gbrain.exe" : "gbrain", ["search", query, "--json"], { timeout: 20000, maxBuffer: 1024 * 1024, windowsHide: true });
+  const { stdout } = await execFileAsync(process.platform === "win32" ? "gbrain.exe" : "gbrain", ["search", query, "--json"], { timeout: 20000, maxBuffer: 1024 * 1024, windowsHide: true, env: runtimeEnvironment() });
   const output = parseJsonOutput(stdout);
   const rows = Array.isArray(output) ? output : (output as { results?: unknown[] } | null)?.results;
   if (!Array.isArray(rows)) throw new Error("Unsupported gbrain search response");
