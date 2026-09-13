@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { cleanupSteps } from "./runner-cleanup.mjs";
-import { requireServiceState, waitForNativeServiceRemoval } from "./native-force-stop.mjs";
+import { requireServiceState, waitForNativeServiceRemoval, nativeRemovalFailureFacts } from "./native-force-stop.mjs";
 
 const source = readFileSync(new URL("./native.mjs", import.meta.url), "utf8");
 const cleanupBlock = source.match(/  cleanup = await cleanupSteps\(\[[\s\S]*?\n  \]\);/)[0];
@@ -33,7 +33,7 @@ async function executeCleanup({ action = () => {}, query = (count) => reply(coun
     ${verdict}
     return { cleanup, passed, nativeServiceEnabledBeforeStop, nativeForceStopSucceeded, nativeStopRemoval };
   })()`, {
-    assert, pkg, component, child, cleanupSteps, requireServiceState, functionalPassed,
+    assert, pkg, component, child, cleanupSteps, requireServiceState, nativeRemovalFailureFacts, functionalPassed,
     waitForNativeServiceRemoval: (options) => waitForNativeServiceRemoval({ ...options, now: () => clock, sleep: async (ms) => { clock += ms; } }),
     readNativeSetting: (timeout) => { attempted.push(["read enabled services"]); assert.ok(timeout > 0 && timeout <= 2000); return query(++reads); },
     cleanupAdb: (...args) => { attempted.push(args); return action(args); },
@@ -94,9 +94,26 @@ test("removal query failures and deadline preserve failure while files and child
     assert.deepEqual(result.cleanup.map((item) => item.passed), [true, true, false, true, true]);
     assert.deepEqual(result.attempted.slice(-2), expected.slice(-2));
     assert.equal(result.passed, false);
-    assert.equal(result.nativeStopRemoval, null);
+    assert.equal(result.nativeStopRemoval.observed, false);
+    assert.equal(result.nativeStopRemoval.reason, mode === "timeout" ? "deadline" : "query_failed");
+    assert.equal(result.nativeStopRemoval.samples, mode === "timeout" ? 50 : 1);
+    assert.equal(result.nativeStopRemoval.lastQuery.status, mode === "timeout" ? 0 : 1);
     if (mode === "timeout") assert.equal(result.cleanup[2].code, "ETIMEDOUT");
   }
+});
+
+test("actual native cleanup records bounded read-timeout evidence while preserving failure and remaining cleanup", async () => {
+  const secret = "private query output";
+  const result = await executeCleanup({ query: (count) => count === 1 ? reply(`${component}\n`)
+    : { ...reply(""), status: null, signal: "SIGTERM", error: Object.assign(new Error(secret), { code: "ETIMEDOUT", path: secret }) } });
+  assert.deepEqual(result.cleanup.map((item) => item.passed), [true, true, false, true, true]);
+  assert.equal(result.passed, false);
+  assert.equal(result.nativeStopRemoval.observed, false);
+  assert.equal(result.nativeStopRemoval.samples, 1);
+  assert.equal(result.nativeStopRemoval.lastQuery.errorCode, "ETIMEDOUT");
+  assert.equal(result.nativeStopRemoval.lastQuery.parseValid, false);
+  assert.deepEqual(result.attempted.slice(-2), expected.slice(-2));
+  assert.ok(!JSON.stringify(result).includes(secret));
 });
 
 test("successful cleanup cannot erase an earlier native functional failure", async () => {
@@ -122,4 +139,23 @@ test("native commands retain exact owned serial, bounded read output and process
   assert.deepEqual(Array.from(calls[1][1]), ["-s", "emulator-5574", "shell", "settings", "get", "secure", "enabled_accessibility_services"]);
   assert.equal(calls[1][2].timeout, 173);
   assert.equal(calls[1][2].maxBuffer, 4096);
+});
+
+test("native startup prepares permissions and power before instrumentation without starting an accessibility bind", () => {
+  const start = source.indexOf('  stage = "prepare fixture permissions";');
+  const end = source.indexOf('  child.stdout.on("data"', start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  runInNewContext(source.slice(start, end), {
+    pkg, component, root: "synthetic-workspace", serial: "emulator-5574", stage: "", child: null,
+    adb: (...args) => calls.push(["adb", ...args]),
+    spawn: (command, args) => { calls.push([command, ...args]); return {}; },
+  });
+  assert.deepEqual(calls, [
+    ["adb", "shell", "pm", "grant", pkg, "android.permission.POST_NOTIFICATIONS"],
+    ["adb", "shell", "svc", "power", "stayon", "true"],
+    ["adb", "shell", "input", "keyevent", "224"],
+    ["adb", "shell", "wm", "dismiss-keyguard"],
+    ["adb", "-s", "emulator-5574", "shell", "am", "instrument", "-w", "-r", `${pkg}.test/io.github.quintond.orchestrator.phonecontrol.SmokeTest`],
+  ]);
 });

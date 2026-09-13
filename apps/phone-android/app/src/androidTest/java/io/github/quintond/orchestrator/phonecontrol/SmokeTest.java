@@ -217,7 +217,10 @@ public final class SmokeTest extends Instrumentation {
             result.putString("stream", "PASS: " + assertions + " native assertions; no token or observation content exported.\n");
             finish(android.app.Activity.RESULT_OK, result);
         } catch (Throwable failed) {
-            if (failed instanceof AccessibilitySetup.SetupFailure setupFailure) stage = setupFailure.stage;
+            if (failed instanceof AccessibilitySetup.SetupFailure setupFailure) {
+                stage = setupFailure.stage;
+                result.putString("phone_qa_setup_failure", setupFailure.facts());
+            }
             if (PhoneService.instance != null) PhoneService.instance.stopSession("Native fixture QA failed");
             // Fixed source-owned labels distinguish startup failures without exporting
             // exception text, active-app names, credentials or observation content.

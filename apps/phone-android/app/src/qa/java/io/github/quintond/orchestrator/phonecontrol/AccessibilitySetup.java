@@ -27,37 +27,88 @@ final class AccessibilitySetup {
     }
     interface Shell { Reply execute(String command, long timeoutMs) throws Exception; }
     interface Sleeper { void sleep(long milliseconds) throws InterruptedException; }
+    enum Point { DISABLE_WRITE, CACHED_READ, CACHED_PARSE, DISABLE_ACK_WAIT, ENABLE_WRITE, CONNECT_WAIT }
+    enum Kind { TIMEOUT, INVALID, IO, INTERRUPTED, OTHER }
+    enum ShellPhase { OPEN, WRITE, DRAIN }
+    record Snapshot(boolean enabled, boolean binding, boolean crashed, boolean connected) {}
+    static final class CommandFailure extends java.io.IOException {
+        final Kind kind;
+        final ShellPhase phase;
+        CommandFailure(Kind kind, ShellPhase phase) {
+            super("Disposable test shell did not complete"); this.kind = kind; this.phase = phase;
+        }
+    }
+    private static final class BudgetExpired extends IllegalStateException {}
     static final class SetupFailure extends Exception {
         final String stage;
-        SetupFailure(String stage) { super("Disposable accessibility setup did not complete"); this.stage = stage; }
+        final Point point;
+        final Kind kind;
+        final ShellPhase shellPhase;
+        final long elapsedMs;
+        final int samples;
+        final Snapshot lastState;
+        SetupFailure(String stage, Point point, Exception failure, long elapsedMs, int samples, Snapshot lastState) {
+            super("Disposable accessibility setup did not complete");
+            this.stage = stage; this.point = point;
+            this.kind = failure instanceof CommandFailure command ? command.kind
+                    : failure instanceof BudgetExpired ? Kind.TIMEOUT
+                    : failure instanceof InterruptedException ? Kind.INTERRUPTED
+                    : failure instanceof IllegalStateException || failure instanceof IllegalArgumentException ? Kind.INVALID
+                    : failure instanceof java.io.IOException ? Kind.IO : Kind.OTHER;
+            this.shellPhase = failure instanceof CommandFailure command ? command.phase : null;
+            this.elapsedMs = Math.max(0, Math.min(180_000, elapsedMs));
+            this.samples = Math.max(0, Math.min(200, samples)); this.lastState = lastState;
+        }
+        String facts() {
+            String state = lastState == null ? "null" : "{\"enabled\":" + lastState.enabled
+                    + ",\"binding\":" + lastState.binding + ",\"crashed\":" + lastState.crashed
+                    + ",\"connected\":" + lastState.connected + "}";
+            return "{\"schemaVersion\":1,\"point\":\"" + point.name().toLowerCase(java.util.Locale.ROOT)
+                    + "\",\"kind\":\"" + kind.name().toLowerCase(java.util.Locale.ROOT)
+                    + "\",\"elapsedMs\":" + elapsedMs + ",\"samples\":" + samples
+                    + ",\"lastState\":" + state + ",\"shellPhase\":"
+                    + (shellPhase == null ? "null" : "\"" + shellPhase.name().toLowerCase(java.util.Locale.ROOT) + "\"") + "}";
+        }
     }
 
     static void prepare(String component, Shell shell, BooleanSupplier connected,
             LongSupplier clock, Sleeper sleeper) throws SetupFailure {
         String stage = "accessibility_disable";
-        final long deadline = clock.getAsLong() + 20_000;
+        Point point = Point.DISABLE_WRITE;
+        Snapshot lastState = null;
+        int samples = 0;
+        final long started = clock.getAsLong(), deadline = started + 20_000;
         try {
             canonical(component);
             require(commandBody(shell.execute("settings put secure enabled_accessibility_services null",
                     commandBudget(clock, deadline))).isEmpty());
             while (true) {
-                State state = cachedState(shell.execute("dumpsys -t 2 accessibility",
-                        commandBudget(clock, deadline)), component);
+                long budget = commandBudget(clock, deadline);
+                point = Point.CACHED_READ;
+                Reply reply = shell.execute("dumpsys -t 2 accessibility", budget);
+                point = Point.CACHED_PARSE;
+                State state = cachedState(reply, component);
                 remaining(clock, deadline);
-                if (state.disabled() && !connected.getAsBoolean()) break;
+                boolean localConnected = connected.getAsBoolean();
+                lastState = new Snapshot(state.enabled, state.binding, state.crashed, localConnected);
+                samples = Math.min(200, samples + 1);
+                point = Point.DISABLE_ACK_WAIT;
+                if (state.disabled() && !localConnected) break;
                 sleeper.sleep(Math.min(100, remaining(clock, deadline)));
             }
             stage = "accessibility_enable";
+            point = Point.ENABLE_WRITE;
             require(commandBody(shell.execute("settings put secure enabled_accessibility_services " + component,
                     commandBudget(clock, deadline))).isEmpty());
             require(commandBody(shell.execute("settings put secure accessibility_enabled 1",
                     commandBudget(clock, deadline))).isEmpty());
             stage = "accessibility_connect";
+            point = Point.CONNECT_WAIT;
             while (!connected.getAsBoolean()) sleeper.sleep(Math.min(100, remaining(clock, deadline)));
             remaining(clock, deadline);
         } catch (Exception failure) {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new SetupFailure(stage);
+            throw new SetupFailure(stage, point, failure, clock.getAsLong() - started, samples, lastState);
         }
     }
 
@@ -66,7 +117,7 @@ final class AccessibilitySetup {
     }
     private static long remaining(LongSupplier clock, long deadline) {
         long value = deadline - clock.getAsLong();
-        require(value > 0);
+        if (value <= 0) throw new BudgetExpired();
         return value;
     }
 

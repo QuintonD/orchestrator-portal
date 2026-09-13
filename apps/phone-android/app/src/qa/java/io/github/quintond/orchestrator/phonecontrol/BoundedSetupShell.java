@@ -13,6 +13,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Owns only the three pipes returned for one test shell; deadline includes opening them. */
 final class BoundedSetupShell implements AccessibilitySetup.Shell, AutoCloseable {
@@ -53,6 +56,7 @@ final class BoundedSetupShell implements AccessibilitySetup.Shell, AutoCloseable
         if (timeoutMs <= 0 || timeoutMs > 2000) throw new IOException("Invalid test shell deadline");
         final String script = AccessibilitySetup.script(command);
         final Command state = new Command();
+        final AtomicReference<AccessibilitySetup.ShellPhase> phase = new AtomicReference<>(AccessibilitySetup.ShellPhase.OPEN);
         active = state;
         Future<AccessibilitySetup.Reply> task = workers.submit(() -> {
             Future<String> stdout = null, stderr = null;
@@ -61,8 +65,10 @@ final class BoundedSetupShell implements AccessibilitySetup.Shell, AutoCloseable
                 state.opened(channel);
                 stdout = workers.submit(() -> read(channel.stdout, AccessibilitySetup.MAX_BYTES));
                 stderr = workers.submit(() -> read(channel.stderr, 4096));
+                phase.set(AccessibilitySetup.ShellPhase.WRITE);
                 channel.stdin.write(script.getBytes(StandardCharsets.UTF_8));
                 channel.stdin.close();
+                phase.set(AccessibilitySetup.ShellPhase.DRAIN);
                 return new AccessibilitySetup.Reply(stdout.get(), stderr.get());
             } finally {
                 state.close();
@@ -73,7 +79,14 @@ final class BoundedSetupShell implements AccessibilitySetup.Shell, AutoCloseable
         try { return task.get(timeoutMs, TimeUnit.MILLISECONDS); }
         catch (Exception failure) {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IOException("Disposable test shell did not complete");
+            Throwable cause = failure;
+            for (int depth = 0; depth < 2 && cause instanceof ExecutionException && cause.getCause() != null; depth++) cause = cause.getCause();
+            AccessibilitySetup.Kind kind = failure instanceof TimeoutException ? AccessibilitySetup.Kind.TIMEOUT
+                    : failure instanceof InterruptedException ? AccessibilitySetup.Kind.INTERRUPTED
+                    : cause instanceof AccessibilitySetup.CommandFailure commandFailure ? commandFailure.kind
+                    : cause instanceof java.nio.charset.CharacterCodingException ? AccessibilitySetup.Kind.INVALID
+                    : cause instanceof IOException ? AccessibilitySetup.Kind.IO : AccessibilitySetup.Kind.OTHER;
+            throw new AccessibilitySetup.CommandFailure(kind, phase.get());
         } finally {
             state.close(); task.cancel(true); active = null;
         }
@@ -84,7 +97,7 @@ final class BoundedSetupShell implements AccessibilitySetup.Shell, AutoCloseable
             byte[] buffer = new byte[4096];
             int count;
             while ((count = input.read(buffer)) != -1) {
-                if (bytes.size() + count > maximum) throw new IOException("Test shell output exceeded its bound");
+                if (bytes.size() + count > maximum) throw new AccessibilitySetup.CommandFailure(AccessibilitySetup.Kind.INVALID, AccessibilitySetup.ShellPhase.DRAIN);
                 bytes.write(buffer, 0, count);
             }
             return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)

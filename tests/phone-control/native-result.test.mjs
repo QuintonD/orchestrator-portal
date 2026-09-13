@@ -116,3 +116,39 @@ test("initializer failures preserve only the fixed nested pattern class and boun
   assert.equal(repeated.passed, false);
   assert.equal(repeated.diagnostics.failureCauses.length, 4);
 });
+
+test("setup diagnostics admit only fixed points, kinds, bounded timing and complete boolean snapshots", () => {
+  const base = { schemaVersion: 1, point: "disable_ack_wait", kind: "timeout", elapsedMs: 20000, samples: 200, lastState: { enabled: false, binding: false, crashed: true, connected: false }, shellPhase: null };
+  const parse = (facts) => parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_setup_failure=${JSON.stringify(facts)}\n${success}`, 0);
+  for (const point of ["disable_write", "cached_read", "cached_parse", "disable_ack_wait", "enable_write", "connect_wait"]) {
+    const facts = { ...base, point };
+    const result = parse(facts);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.setupFailures, [facts]);
+  }
+  for (const kind of ["timeout", "invalid", "io", "interrupted", "other"]) for (const shellPhase of [null, "open", "write", "drain"]) {
+    const facts = { ...base, kind, shellPhase, samples: 0, lastState: null, elapsedMs: 0 };
+    assert.deepEqual(parse(facts).diagnostics.setupFailures, [facts]);
+  }
+  assert.deepEqual(parse({ ...base, elapsedMs: 180000 }).diagnostics.setupFailures, [{ ...base, elapsedMs: 180000 }]);
+});
+
+test("malformed, ambiguous, oversized or private setup facts never escape redaction or hide failure", () => {
+  const secret = "synthetic-private-dump-or-error";
+  const base = { schemaVersion: 1, point: "cached_parse", kind: "invalid", elapsedMs: 200, samples: 0, lastState: null, shellPhase: null };
+  const invalid = [null, [], {}, { ...base, schemaVersion: 2 }, { ...base, point: secret }, { ...base, kind: secret }, { ...base, shellPhase: secret },
+    { ...base, elapsedMs: -1 }, { ...base, elapsedMs: 180001 }, { ...base, elapsedMs: 0.5 }, { ...base, elapsedMs: "200" },
+    { ...base, samples: -1 }, { ...base, samples: 201 }, { ...base, samples: 1 }, { ...base, [secret]: true },
+    { ...base, samples: 1, lastState: { enabled: false, binding: false, crashed: false, connected: secret } },
+    { ...base, samples: 1, lastState: { enabled: false, binding: false, crashed: false } },
+    { ...base, lastState: { enabled: false, binding: false, crashed: false, connected: false } }];
+  const raw = [...invalid.map((value) => JSON.stringify(value)), `${JSON.stringify(base).slice(0, -1)},"samples":0}`, JSON.stringify({ ...base, point: secret.repeat(100) }), "not-json"];
+  for (const value of raw) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_setup_failure=${value}\n${success}`, 0);
+    assert.equal(result.passed, false);
+    assert.equal(result.diagnostics.setupFailures, undefined);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+  const repeated = parseNativeResult(`${`INSTRUMENTATION_RESULT: phone_qa_setup_failure=${JSON.stringify(base)}\n`.repeat(100)}${success}`, 0);
+  assert.equal(repeated.passed, false); assert.equal(repeated.diagnostics.setupFailures.length, 4);
+});

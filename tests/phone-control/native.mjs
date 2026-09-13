@@ -9,7 +9,7 @@ import { once } from "node:events";
 import { cleanupSteps, safeFailure, stopChild, within } from "./runner-cleanup.mjs";
 import { parseNativeResult } from "./native-result.mjs";
 import { parseInstallEvidence } from "./install-evidence.mjs";
-import { requireServiceState, waitForNativeServiceRemoval } from "./native-force-stop.mjs";
+import { requireServiceState, waitForNativeServiceRemoval, nativeRemovalFailureFacts } from "./native-force-stop.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const serial = process.env.PHONE_QA_SERIAL ?? "emulator-5570";
@@ -49,9 +49,8 @@ try {
   }
   stage = "verify emulator credential storage is unlocked";
   assert.match(adb("shell", "run-as", pkg, "id"), /^uid=/, "Unlock the enrolled disposable emulator before instrumentation");
-  stage = "enable disposable emulator fixture session";
-  adb("shell", "settings", "put", "secure", "enabled_accessibility_services", component);
-  adb("shell", "settings", "put", "secure", "accessibility_enabled", "1");
+  stage = "prepare fixture permissions";
+  // SmokeTest owns the disable acknowledgement and enable sequence after instrumentation starts.
   adb("shell", "pm", "grant", pkg, "android.permission.POST_NOTIFICATIONS");
   adb("shell", "svc", "power", "stayon", "true");
   adb("shell", "input", "keyevent", "224");
@@ -76,7 +75,10 @@ try {
     { name: "stop native session", action: () => { cleanupAdb("shell", "am", "force-stop", pkg); nativeForceStopSucceeded = true; } },
     // PACKAGE_RESTARTED removes this enabled service under the accessibility lock.
     // Observe that transition before the next probe re-enables it; unrelated apps need no barrier.
-    { name: "observe native accessibility removal", action: async () => { nativeStopRemoval = await waitForNativeServiceRemoval({ component, enabledBeforeStop: nativeServiceEnabledBeforeStop, stopSucceeded: nativeForceStopSucceeded, query: readNativeSetting }); } },
+    { name: "observe native accessibility removal", action: async () => {
+      try { nativeStopRemoval = await waitForNativeServiceRemoval({ component, enabledBeforeStop: nativeServiceEnabledBeforeStop, stopSucceeded: nativeForceStopSucceeded, query: readNativeSetting }); }
+      catch (error) { nativeStopRemoval = nativeRemovalFailureFacts(error); throw error; }
+    } },
     { name: "remove native private probe files", action: () => cleanupAdb("shell", "run-as", pkg, "rm", "-f", "files/phone-qa-token", "files/phone-qa-stop") },
     { name: "terminate owned instrumentation client", action: () => stopChild(child), timeout: 7000 },
   ]);

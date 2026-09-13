@@ -6,6 +6,7 @@ export function parseNativeResult(output, exitCode) {
   const assertionFailures = [];
   const failureStages = [];
   const failureCauses = [];
+  const setupFailures = [];
   const safeStages = new Set(["configuration", "accessibility_automation", "accessibility_setup", "accessibility_disable", "accessibility_enable", "accessibility_connect", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]);
   const safeClasses = new Set(["AssertionError", "SetupFailure", "ExceptionInInitializerError", "PatternSyntaxException", "IllegalStateException", "JSONException", "ApiException", "IOException", "SocketTimeoutException", "InterruptedException", "NullPointerException", "IllegalArgumentException", "RuntimeException", "SecurityException", "Exception", "Error"]);
   const safeCodes = ["screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error", "screenshot_unavailable", "sensitive_window", "observation_blocked", "observation_expired", "consent_unavailable", "invalid_request", "forbidden"];
@@ -40,6 +41,30 @@ export function parseNativeResult(output, exitCode) {
         failureCauses.push({ errorClass: "PatternSyntaxException", patternIndex: Number(pattern[1]) });
       }
     }
+    const setup = /^INSTRUMENTATION_RESULT: phone_qa_setup_failure=(.*)$/.exec(line);
+    if (setup) {
+      failureKinds.add("reported_setup_failure");
+      if (setup[1].length <= 1024 && setupFailures.length < 4) {
+        try {
+          const facts = JSON.parse(setup[1]);
+          const exactKeys = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value)
+            && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+          const state = facts?.lastState;
+          if (exactKeys(facts, ["schemaVersion", "point", "kind", "elapsedMs", "samples", "lastState", "shellPhase"])
+            && JSON.stringify(facts) === setup[1]
+            && facts.schemaVersion === 1
+            && ["disable_write", "cached_read", "cached_parse", "disable_ack_wait", "enable_write", "connect_wait"].includes(facts.point)
+            && ["timeout", "invalid", "io", "interrupted", "other"].includes(facts.kind)
+            && (facts.shellPhase === null || ["open", "write", "drain"].includes(facts.shellPhase))
+            && Number.isSafeInteger(facts.elapsedMs) && facts.elapsedMs >= 0 && facts.elapsedMs <= 180_000
+            && Number.isSafeInteger(facts.samples) && facts.samples >= 0 && facts.samples <= 200
+            && (facts.samples === 0 ? state === null : exactKeys(state, ["enabled", "binding", "crashed", "connected"])
+              && Object.values(state).every((value) => typeof value === "boolean"))) {
+            setupFailures.push(facts);
+          }
+        } catch { /* Invalid diagnostics remain failures without exporting their contents. */ }
+      }
+    }
     const stream = /^INSTRUMENTATION_RESULT: stream=(.*)$/.exec(line);
     if (stream) resultStream = !terminalSeen;
     else if (/^INSTRUMENTATION_/.test(line)) resultStream = false;
@@ -70,6 +95,7 @@ export function parseNativeResult(output, exitCode) {
       assertionFailures: assertionFailures.slice(0, 32),
       failureStages,
       ...(failureCauses.length ? { failureCauses } : {}),
+      ...(setupFailures.length ? { setupFailures } : {}),
       failureKinds: [...failureKinds],
     },
   };

@@ -393,6 +393,33 @@ fixture screenshot was inspected in
 device pass does not establish that settings coalescing caused the earlier CI
 failure. Fresh hosted checks remain a separate gate.
 
+Candidate `f5d1915a` passed general CI, CodeQL and all six desktop targets on
+their first attempts. Android 14 and QPR2 passed complete native and integration
+QA. Android 15 failed during the cached-disable setup with no completed native
+assertions; its system-server PID remained stable and no crash was recorded.
+The retained result does not distinguish its last cached state from a shell
+failure or local connection delay.
+
+The native host no longer enables accessibility immediately before
+instrumentation restarts the app process. Instrumentation owns the existing
+disable acknowledgement and single enable. Fixed, bounded failure facts now
+distinguish setup point, elapsed time, shell phase and the last observed state
+without exporting shell replies. JVM QA passed 60 tests and the host suite
+passed 64 tests. Local Android 15 then passed 47 native assertions, but its
+cleanup query failed after successful force-stop; this remains a failed run in
+`test-results/phone-control/native-1789312017721/`. A later read confirmed the
+setting absent. Independent integration passed eight checks, all 30 observations
+and authenticated paired-host Stop, with complete cleanup and an inspected
+fixture screenshot in
+`test-results/phone-control/integration-1789312179419/`. The original cleanup
+query's transport details were not recorded, so its subcause remains unproven.
+Host-only diagnostics now preserve bounded process/query facts on failure;
+timeouts, retries and pass criteria are unchanged. All 69 host tests passed.
+The explicitly linked full native check in
+`test-results/phone-control/native-1789312397409/` passed 47 assertions and all
+five cleanup steps. It did not reproduce the earlier query failure and does not
+retroactively make that first run successful.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

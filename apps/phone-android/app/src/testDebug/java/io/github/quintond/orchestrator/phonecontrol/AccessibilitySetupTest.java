@@ -118,7 +118,13 @@ public class AccessibilitySetupTest {
                     return command.startsWith("dumpsys") ? framed(dump(oldInstance ? "" : "{" + TARGET + "}")) : framed("");
                 }, () -> oldInstance, () -> clock[0], ms -> clock[0] += ms);
                 fail("Missing manager acknowledgement");
-            } catch (AccessibilitySetup.SetupFailure expected) { assertEquals("accessibility_disable", expected.stage); }
+            } catch (AccessibilitySetup.SetupFailure expected) {
+                assertEquals("accessibility_disable", expected.stage);
+                assertEquals(AccessibilitySetup.Point.DISABLE_ACK_WAIT, expected.point);
+                assertEquals(AccessibilitySetup.Kind.TIMEOUT, expected.kind);
+                assertEquals(20_000, expected.elapsedMs); assertEquals(200, expected.samples);
+                assertEquals(new AccessibilitySetup.Snapshot(!oldInstance, false, false, oldInstance), expected.lastState);
+            }
             assertEquals(0, enables[0]); assertEquals(20_000, clock[0]);
         }
     }
@@ -132,7 +138,13 @@ public class AccessibilitySetupTest {
                 return command.startsWith("dumpsys") ? framed(dump("")) : framed("");
             }, () -> false, () -> clock[0], ms -> clock[0] += ms);
             fail("Missing connection");
-        } catch (AccessibilitySetup.SetupFailure expected) { assertEquals("accessibility_connect", expected.stage); }
+        } catch (AccessibilitySetup.SetupFailure expected) {
+            assertEquals("accessibility_connect", expected.stage);
+            assertEquals(AccessibilitySetup.Point.CONNECT_WAIT, expected.point);
+            assertEquals(AccessibilitySetup.Kind.TIMEOUT, expected.kind);
+            assertEquals(20_000, expected.elapsedMs); assertEquals(1, expected.samples);
+            assertEquals(new AccessibilitySetup.Snapshot(false, false, false, false), expected.lastState);
+        }
         assertEquals(20_000, clock[0]);
         for (String stage : List.of("accessibility_disable", "accessibility_enable")) {
             try {
@@ -141,7 +153,57 @@ public class AccessibilitySetupTest {
                     return command.startsWith("dumpsys") ? framed(dump("")) : framed("");
                 }, () -> false, () -> 0, ms -> {});
                 fail("Query failure");
-            } catch (AccessibilitySetup.SetupFailure expected) { assertEquals(stage, expected.stage); assertFalse(expected.toString().contains("private")); }
+            } catch (AccessibilitySetup.SetupFailure expected) {
+                assertEquals(stage, expected.stage); assertFalse(expected.toString().contains("private"));
+                assertEquals(stage.equals("accessibility_disable") ? AccessibilitySetup.Point.DISABLE_WRITE : AccessibilitySetup.Point.ENABLE_WRITE, expected.point);
+                assertEquals(AccessibilitySetup.Kind.IO, expected.kind); assertFalse(expected.facts().contains("private"));
+            }
         }
+    }
+
+    @Test public void commandAndParserFailurePointsDoNotExportReplies() {
+        for (boolean parsing : List.of(false, true)) {
+            try {
+                AccessibilitySetup.prepare(TARGET, (command, timeout) -> {
+                    if (command.startsWith("dumpsys")) {
+                        if (parsing) return framed("private malformed dump");
+                        throw new AccessibilitySetup.CommandFailure(AccessibilitySetup.Kind.TIMEOUT, AccessibilitySetup.ShellPhase.OPEN);
+                    }
+                    return framed("");
+                }, () -> false, () -> 0, ms -> {});
+                fail("Missing complete dump");
+            } catch (AccessibilitySetup.SetupFailure expected) {
+                assertEquals(parsing ? AccessibilitySetup.Point.CACHED_PARSE : AccessibilitySetup.Point.CACHED_READ, expected.point);
+                assertEquals(parsing ? AccessibilitySetup.Kind.INVALID : AccessibilitySetup.Kind.TIMEOUT, expected.kind);
+                assertEquals(parsing ? null : AccessibilitySetup.ShellPhase.OPEN, expected.shellPhase);
+                assertNull(expected.lastState); assertEquals(0, expected.samples);
+                assertFalse(expected.facts().contains("private"));
+            }
+        }
+    }
+
+    @Test public void malformedLaterReadRetainsOnlyTheLastCompleteBooleanTuple() {
+        int[] dumps = {0}; long[] clock = {0};
+        try {
+            AccessibilitySetup.prepare(TARGET, (command, timeout) -> {
+                if (!command.startsWith("dumpsys")) return framed("");
+                return ++dumps[0] == 1 ? framed(dump("{" + TARGET + "}")) : framed("private partial reply");
+            }, () -> true, () -> clock[0], ms -> clock[0] += ms);
+            fail("Partial reply");
+        } catch (AccessibilitySetup.SetupFailure expected) {
+            assertEquals(AccessibilitySetup.Point.CACHED_PARSE, expected.point);
+            assertEquals(AccessibilitySetup.Kind.INVALID, expected.kind);
+            assertEquals(100, expected.elapsedMs); assertEquals(1, expected.samples);
+            assertEquals(new AccessibilitySetup.Snapshot(true, false, false, true), expected.lastState);
+            assertEquals("{\"schemaVersion\":1,\"point\":\"cached_parse\",\"kind\":\"invalid\",\"elapsedMs\":100,\"samples\":1,\"lastState\":{\"enabled\":true,\"binding\":false,\"crashed\":false,\"connected\":true},\"shellPhase\":null}", expected.facts());
+        }
+    }
+
+    @Test public void diagnosticTimeAndCountAreCappedAndNeverCarryExceptionText() {
+        AccessibilitySetup.SetupFailure failure = new AccessibilitySetup.SetupFailure("accessibility_disable", AccessibilitySetup.Point.CACHED_READ,
+                new Exception("private exception text"), Long.MAX_VALUE, Integer.MAX_VALUE, new AccessibilitySetup.Snapshot(false, true, true, false));
+        assertEquals(180_000, failure.elapsedMs); assertEquals(200, failure.samples);
+        assertEquals(AccessibilitySetup.Kind.OTHER, failure.kind);
+        assertFalse(failure.facts().contains("private")); assertFalse(failure.facts().contains(TARGET));
     }
 }

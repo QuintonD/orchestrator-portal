@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enabledServiceState, requireServiceState, waitForNativeServiceRemoval } from "./native-force-stop.mjs";
+import { enabledServiceState, requireServiceState, waitForNativeServiceRemoval, serviceQueryFacts, nativeRemovalFailureFacts } from "./native-force-stop.mjs";
 
 const component = "io.github.quintond.orchestrator.phonecontrol.debug/io.github.quintond.orchestrator.phonecontrol.PhoneService";
 const other = "example.other/example.other.Service";
@@ -84,4 +84,67 @@ test("malformed observations and query errors stop immediately without read retr
   }
   const fixture = clockedQuery([]);
   await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => { throw Object.assign(new Error("query failed"), { code: "ETIMEDOUT" }); } }), { code: "ETIMEDOUT" });
+});
+
+test("query facts distinguish process failure from syntactically valid absence without retaining output", () => {
+  const secret = "private settings or process path";
+  const facts = serviceQueryFacts({ ...reply("null\n"), status: null, signal: "SIGTERM", error: Object.assign(new Error(secret), { code: "ETIMEDOUT", path: secret }) }, component);
+  assert.deepEqual(facts, { status: null, signal: "SIGTERM", signalPresent: true, errorPresent: true, errorCode: "ETIMEDOUT", stderrEmpty: true,
+    stdoutBytes: 5, commandSucceeded: false, parseValid: true, enabled: false });
+  const unknown = serviceQueryFacts({ stdout: secret.repeat(1000), stderr: secret, status: 1e99, signal: secret, error: { code: secret } }, component);
+  assert.equal(unknown.status, null); assert.equal(unknown.signal, null); assert.equal(unknown.signalPresent, true);
+  assert.equal(unknown.errorCode, null); assert.equal(unknown.errorPresent, true); assert.equal(unknown.stderrEmpty, false);
+  assert.equal(unknown.stdoutBytes, 4097); assert.equal(unknown.parseValid, false); assert.equal(unknown.enabled, null);
+  assert.ok(!JSON.stringify([facts, unknown]).includes(secret));
+  assert.equal(serviceQueryFacts(reply(""), component).stdoutBytes, 0);
+  assert.equal(serviceQueryFacts({}, component).stdoutBytes, null);
+  assert.equal(serviceQueryFacts({}, component).stderrEmpty, null);
+  assert.equal(serviceQueryFacts({ ...reply("null\n"), status: "0" }, component).status, null);
+});
+
+test("failed read and invalid reply retain exact bounded attempt facts and still stop immediately", async () => {
+  for (const mode of ["timeout", "invalid_reply"]) {
+    const fixture = clockedQuery([]); let attempts = 0;
+    await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => {
+      attempts++; fixture.advance(2000);
+      return mode === "timeout" ? { ...reply(""), status: null, signal: "SIGTERM", error: { code: "ETIMEDOUT" } } : reply("");
+    } }), (error) => {
+      assert.equal(error.code, "ERR_ASSERTION");
+      const facts = nativeRemovalFailureFacts(error);
+      assert.equal(facts.observed, false); assert.equal(facts.elapsedMs, 2000); assert.equal(facts.samples, 1);
+      assert.equal(facts.reason, mode === "timeout" ? "query_failed" : "invalid_reply");
+      assert.equal(facts.lastQuery.errorCode, mode === "timeout" ? "ETIMEDOUT" : null);
+      assert.equal(facts.lastQuery.commandSucceeded, mode !== "timeout");
+      assert.equal(facts.lastQuery.parseValid, false);
+      return true;
+    });
+    assert.equal(attempts, 1);
+  }
+});
+
+test("thrown query diagnostics cannot inject evidence and preserve the original error identity", async () => {
+  const secret = "private process details";
+  const original = Object.assign(new Error(secret), { code: "EACCES", removalFacts: { secret } });
+  assert.equal(nativeRemovalFailureFacts(original), null);
+  const fixture = clockedQuery([]);
+  await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => { throw original; } }), (error) => {
+    assert.equal(error, original);
+    const facts = nativeRemovalFailureFacts(error);
+    assert.equal(facts.reason, "query_threw"); assert.equal(facts.samples, 1);
+    assert.equal(facts.lastQuery.errorCode, "EACCES"); assert.equal(facts.lastQuery.errorPresent, true);
+    assert.ok(!JSON.stringify(facts).includes(secret)); return true;
+  });
+  assert.equal(nativeRemovalFailureFacts({ removalFacts: { secret } }), null);
+});
+
+test("aggregate timeout retains last query facts without turning late absence into completion", async () => {
+  const fixture = clockedQuery([]);
+  await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => { fixture.advance(10000); return reply("null\n"); } }), (error) => {
+    assert.equal(error.code, "ETIMEDOUT");
+    const facts = nativeRemovalFailureFacts(error);
+    assert.equal(facts.reason, "deadline"); assert.equal(facts.observed, false);
+    assert.equal(facts.elapsedMs, 10000); assert.equal(facts.samples, 1);
+    assert.equal(facts.lastQuery.enabled, false); assert.equal(facts.lastQuery.commandSucceeded, true);
+    return true;
+  });
 });
