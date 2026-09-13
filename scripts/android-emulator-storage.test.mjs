@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { statfs } from 'node:fs/promises';
 import { hostStorageFacts, guestStorageFacts } from './android-emulator-storage.mjs';
 
-const header = 'Filesystem     1K-blocks    Used Available Use% Mounted on';
-const report = `${header}\n/dev/block/dm-46 1048576 262144 655360 29% /data\n`;
+// Actual authorized API 34 stat output; df instead labeled /data/user/0.
+const report = '4096:1520536:1234781\n';
 
 test('host statfs number and bigint fields produce only exact bounded byte counts', () => {
   const expected = { totalBytes: 40960000, availableBytes: 8192000 };
@@ -33,30 +33,31 @@ test('host helper accepts actual Node statfs in both supported numeric modes', a
   }
 });
 
-test('guest report returns byte facts, including full disks, and accepts adb line endings', () => {
-  const expected = { totalBytes: 1073741824, availableBytes: 671088640 };
-  for (const value of [report, report.trimEnd(), report.replaceAll('\n', '\r\n'), report.replaceAll('\n', '\r\r\n'), report.replaceAll(' ', '\t')]) assert.deepEqual(guestStorageFacts(value), expected);
-  assert.deepEqual(guestStorageFacts(`${header}\n/dev/block/vdc 1024 1024 0 100% /data\n`), { totalBytes: 1048576, availableBytes: 0 });
+test('actual guest stat returns byte facts and accepts only supported adb line endings', () => {
+  const expected = { totalBytes: 6228115456, availableBytes: 5057662976 };
+  for (const value of [report, report.trimEnd(), report.replaceAll('\n', '\r\n'), report.replaceAll('\n', '\r\r\n')]) assert.deepEqual(guestStorageFacts(value), expected);
+  assert.deepEqual(guestStorageFacts('4096:262144:0\n'), { totalBytes: 1073741824, availableBytes: 0 });
+  assert.deepEqual(Object.keys(guestStorageFacts(report)), ['totalBytes', 'availableBytes']);
 });
 
-test('guest report rejects missing, ambiguous, wrapped, injected or wrong-mount output', () => {
+test('guest stat rejects missing, extra, multiline, injected or legacy df output', () => {
   const privateText = 'synthetic-private-path-or-message';
-  for (const value of [null, {}, '', 'x'.repeat(4097), report + report, '\n' + report, report + '\n', report.replace('\n', '\n\n'), report + privateText,
-    report.replace('1K-blocks', '1024-blocks'), report.replace('Mounted on', 'Mounted'), report.replace('/data\n', '/data/private\n'), report.replace('/data\n', '/data ' + privateText + '\n'),
-    report.replace('/dev/block/dm-46', privateText), report.replace('/dev/block/dm-46 ', '/dev/block/dm-46\n'), report.replace('1048576', '1048576\r'), report.replace('1048576', '1048576\u0000')]) {
+  for (const value of [null, {}, 1, Buffer.from(report), '', 'x'.repeat(129), report + report, '\n' + report, report + '\n', report + privateText,
+    privateText + report, report.trimEnd() + ':' + privateText, ' ' + report, report.replace(':', ': '), report.replace(':', '\t'), report.replace('\n', ' \n'),
+    report.replace('\n', '\r'), report.replace('\n', '\r\r\r\n'), report.replace('\n', '\u2028'), report.replace('\n', '\u2029'), report.replace(':', '\r:'), report.replace(':', '\u0000:'),
+    'Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/block/dm-40 6082144 1000584 4939348 17% /data/user/0\n']) {
     assert.equal(guestStorageFacts(value), null);
   }
-  const facts = guestStorageFacts(report.replace('/dev/block/dm-46', '/dev/block/' + privateText));
-  assert.deepEqual(facts, { totalBytes: 1073741824, availableBytes: 671088640 });
-  assert.equal(JSON.stringify(facts).includes(privateText), false);
-  assert.equal(facts.passed, undefined);
 });
 
-test('guest numeric overflow, coercion and impossible counts are unavailable', () => {
-  for (const value of ['-1', '1.5', '1e6', '+1048576', '01048576', 'NaN', 'Infinity', '9007199254740992', '8796093022208']) assert.equal(guestStorageFacts(report.replace('1048576', value)), null);
-  for (const value of ['-1%', '101%', '00%', '1.5%', 'one%']) assert.equal(guestStorageFacts(report.replace('29%', value)), null);
-  assert.equal(guestStorageFacts(report.replace('655360', '1048577')), null);
-  assert.equal(guestStorageFacts(report.replace('262144', '1048576')), null);
-  assert.equal(guestStorageFacts(`${header}\n/dev/block/vdc 0 0 0 0% /data\n`), null);
-  assert.deepEqual(guestStorageFacts(`${header}\n/dev/block/vdc 8796093022207 0 8796093022207 0% /data\n`), { totalBytes: 9007199254739968, availableBytes: 9007199254739968 });
+test('guest stat numeric overflow, coercion and impossible counts are unavailable', () => {
+  for (let index = 0; index < 3; index++) {
+    for (const value of ['-1', '-0', '1.5', '1e6', '+1', '01', 'NaN', 'Infinity', '9007199254740992', '10000000000000000']) {
+      const fields = ['4096', '1520536', '1234781']; fields[index] = value;
+      assert.equal(guestStorageFacts(fields.join(':')), null);
+    }
+  }
+  for (const value of ['0:1:0', '1:0:0', '1:1:2', '1024:8796093022208:0']) assert.equal(guestStorageFacts(value), null);
+  assert.deepEqual(guestStorageFacts('1:9007199254740991:9007199254740991'), { totalBytes: Number.MAX_SAFE_INTEGER, availableBytes: Number.MAX_SAFE_INTEGER });
+  assert.deepEqual(guestStorageFacts('1024:8796093022207:8796093022207'), { totalBytes: 9007199254739968, availableBytes: 9007199254739968 });
 });

@@ -71,3 +71,34 @@ test('threadtime Android crash prefixes and BuildId suffix preserve code locatio
   assert.deepEqual(value.nativeFrames, ['libc.so:abort+180', 'libart.so']);
   assert.equal(JSON.stringify(value).includes('abcdef'), false);
 });
+
+test('exact QPR2 mapper aborts distinguish metadata, YUV and DMA capability failures', () => {
+  const value = bootCrashLocations(`F DEBUG: Abort message: 'Assertion failed: m.magic != CbExternalMetadata::kMagicValue'
+09-13 11:09:12.123  918  931 F DEBUG   : Abort message: 'Assertion failed: !rcEnc->hasYUVCache()'
+Abort message: 'Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma'
+F DEBUG: Abort message: 'Assertion failed: !rcEnc->hasYUVCache()'`);
+  assert.deepEqual(value.categories, ['goldfish_mapper_metadata_magic_mismatch', 'goldfish_mapper_yuv_cache_unavailable', 'goldfish_mapper_readback_dma_unavailable']);
+  assert.deepEqual(value.nativeFrames, []);
+  assert.equal(JSON.stringify(value).includes('rcEnc'), false);
+  assert.equal(JSON.stringify(value).includes('Assertion failed'), false);
+});
+
+test('mapper categories reject quoted mentions, arbitrary messages and altered assertions', () => {
+  const known = "Abort message: 'Assertion failed: !rcEnc->hasYUVCache()'";
+  const value = bootCrashLocations(`E AndroidRuntime: java.lang.RuntimeException: ${known}
+F DEBUG: user supplied message ${known}
+F DEBUG: ${known} private-account-value
+F DEBUG: Abort message: 'Assertion failed: !rcEnc->hasYUVCache() private-account-value'
+F DEBUG: Abort message: 'Assertion failed: rcEnc->hasYUVCache()'
+F DEBUG: Abort message: 'Assertion failed: !rcEnc->hasYUVCache('
+F DEBUG: Abort message: 'Assertion failed: bufferFd < 0'
+F DEBUG: Assertion failed: !rcEnc->hasYUVCache()
+F private-tag: ${known}
+F DEBUG: Abort message: 'private-account-value'
+F DEBUG: #00 pc 000123 /vendor/lib64/hw/mapper.ranchu.so
+F DEBUG: #01 pc 000234 /system/lib64/libui.so (android::GraphicBufferMapper::lock+148)`);
+  assert.deepEqual(value.categories, []);
+  assert.deepEqual(value.nativeFrames, ['mapper.ranchu.so', 'libui.so:android::GraphicBufferMapper::lock+148']);
+  assert.equal(JSON.stringify(value).includes('private'), false);
+  assert.equal(JSON.stringify(value).includes('hasYUVCache'), false);
+});

@@ -1,5 +1,15 @@
 // Pre-test Android boot failures only: retain code locations, never exception
 // messages, arbitrary log text, addresses, registers or application content.
+// Exact QPR2 lock-path conditions, not an inference from nearby native frames:
+// https://android.googlesource.com/device/generic/goldfish/+/f3487b53aafe47000f08501243f5924526f1809a/hals/gralloc/mapper.cpp
+// LOG_ALWAYS_FATAL_IF stringifies its condition; liblog supplies this fixed prefix:
+// https://android.googlesource.com/platform/system/logging/+/58dac317ea08b8f275ebd01ce864acab2de30b93/liblog/logger_write.cpp
+const mapperAbortCategories = new Map([
+  ["Abort message: 'Assertion failed: m.magic != CbExternalMetadata::kMagicValue'", 'goldfish_mapper_metadata_magic_mismatch'],
+  ["Abort message: 'Assertion failed: !rcEnc->hasYUVCache()'", 'goldfish_mapper_yuv_cache_unavailable'],
+  ["Abort message: 'Assertion failed: !rcEnc->featureInfo()->hasReadColorBufferDma'", 'goldfish_mapper_readback_dma_unavailable'],
+]);
+
 export function bootCrashLocations(text) {
   const locations = { processes: [], signals: [], exceptions: [], javaFrames: [], nativeFrames: [], categories: [] };
   const add = (key, value, limit = 16) => { if (!locations[key].includes(value) && locations[key].length < limit) locations[key].push(value); };
@@ -10,6 +20,8 @@ export function bootCrashLocations(text) {
     // Strip recognized logcat prefixes, then match complete code-location
     // payloads. A location mentioned inside an exception message is not a frame.
     const payload = line.replace(/^(?:\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3}\s+\d+\s+\d+\s+)?[VDIWEF]\s+(?:AndroidRuntime|DEBUG|libc|crash_dump64|crash_dump32|system_server|Zygote|zygote64|Watchdog)\s*:\s?/u, '').trim();
+    const mapperAbort = mapperAbortCategories.get(payload);
+    if (mapperAbort) add('categories', mapperAbort);
     const process = payload.match(/^Process: ([a-z0-9._]+), PID: \d+$/u)?.[1]
       ?? payload.match(/^pid: \d+, tid: \d+, name: [A-Za-z0-9_ :.-]+ >>> ([a-z0-9._]+) <<<$/u)?.[1];
     if (processes.has(process)) add('processes', process);

@@ -290,6 +290,34 @@ The final local diagnostic checks passed 51 Linux tests and 46 phone harness
 tests. Independent review covered failed tests with ready Android, unavailable
 state, exact tool-version selection, installation failure and output redaction.
 
+Candidate `d06a23cb` passed general CI, all six desktop targets and CodeQL.
+Android 15 passed the complete companion suite. Android 14 passed native QA,
+then its service's `onDestroy` ended the integration session after 12 seconds
+while the system-server PID remained unchanged. The diagnostic label
+`accessibility_disabled` records that lifecycle callback; it does not establish
+that a person changed the setting. QPR2 failed before tests during initial
+configuration, with mapper/composition-sampling crash locations and exit 224.
+All owned emulator shutdowns were confirmed. These failures remain retained.
+
+Actual API 34 inspection found that `df /data` reports `/data/user/0`, explaining
+why guest facts were missing even in passing jobs. The fixed numeric `stat`
+query measured 6,228,115,456 filesystem bytes and 5,057,662,976 available bytes
+on the existing local AVD, without changing its configuration or installing
+APKs. It does not retroactively establish capacity in the previous CI run.
+The next Linux candidate uses one explicit `swangle`/Vulkan-disabled profile,
+with the corrected tool and storage configuration, and exact mapper assertion
+categories. All 53 local Linux launcher/diagnostic checks passed; fresh hosted
+native and integration acceptance remains mandatory.
+
+The native harness also drains Android's queued force-stop broadcasts before
+the next probe can re-enable accessibility. Framework source shows that a late
+`PACKAGE_RESTARTED` handler can remove that newly enabled service. Five tests
+verify the actual cleanup sequence, preserve command failures and require later
+cleanup attempts. The barrier command passed on API 34, but local lifecycle
+probes failed before establishing a session, so the CI service-destruction cause
+remains unproven. All 51 phone harness tests passed. Production lifecycle Stop,
+session authority and action-retry rules are unchanged.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

@@ -46,11 +46,9 @@ export function avdConfiguration(text) {
 }
 export function graphicsProfile(image) {
   assert.ok(['34', '35', '36', '36.1'].includes(image), 'Unsupported emulator image');
-  // QPR2 uses the profile already exercised by local native and upgrade QA.
-  // Keep this explicit: success does not isolate ANGLE from Vulkan causation.
-  return image === '36.1'
-    ? { mode: 'swiftshader', vulkan: 'default', arguments: ['-gpu', 'swiftshader'] }
-    : { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] };
+  // Use one explicit Linux software-rendering profile. Windows QA has a separate
+  // profile; neither passing configuration identifies a prior crash's cause.
+  return { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] };
 }
 export function verifyCommandLineTools(properties) {
   if (typeof properties !== 'string' || properties.length > 16384) throw new CiError('command_line_tools_version_mismatch');
@@ -207,7 +205,7 @@ export async function main(args = process.argv.slice(2)) {
   const storageSnapshot = async () => {
     const [host, guest] = await Promise.all([
       hostStorage(),
-      optionalCleanupQuery(() => device(['shell', 'df', '-k', '/data'], { timeout: 5000, allowFailure: true, cancellable: false })),
+      optionalCleanupQuery(() => device(['shell', 'stat', '-f', '-c', '%S:%b:%a', '/data'], { timeout: 5000, allowFailure: true, cancellable: false })),
     ]);
     return { host, guest: guest.ok ? guestStorageFacts(guest.stdout) : null };
   };
@@ -255,11 +253,16 @@ export async function main(args = process.argv.slice(2)) {
         const name = (await device(['emu', 'avd', 'name'])).stdout.split('\n')[0].trim(); if (name !== options.name) throw new CiError('unexpected_emulator_identity');
       },
       configure: async () => {
-        evidence.stage = 'configure_ready_android'; await save();
+        evidence.stage = 'configure_ready_android'; evidence.configureStep = 'unlock_display'; await save();
         await device(['shell', 'input', 'keyevent', '82']);
-        for (const field of ['window_animation_scale', 'transition_animation_scale', 'animator_duration_scale']) await device(['shell', 'settings', 'put', 'global', field, '0.0']);
+        for (const field of ['window_animation_scale', 'transition_animation_scale', 'animator_duration_scale']) {
+          evidence.configureStep = field; await save();
+          await device(['shell', 'settings', 'put', 'global', field, '0.0']);
+        }
+        evidence.configureStep = 'wait_unlocked'; await save();
         await waitForReady({ probe, image: options.image, deadline, unlocked: true, onSample: sample, sleep: (ms) => delay(ms, undefined, { signal: abort.signal }) });
-        evidence.storage.beforeTests = await storageSnapshot(); await save();
+        evidence.configureStep = 'observe_storage'; await save();
+        evidence.storage.beforeTests = await storageSnapshot(); evidence.configureStep = 'complete'; await save();
       },
       test: async (name) => {
         evidence.stage = name; await save();

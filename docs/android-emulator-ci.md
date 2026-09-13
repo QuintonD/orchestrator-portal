@@ -144,10 +144,10 @@ diagnose the OS failure without changing readiness deadlines or app guards.
 The next candidate passed the complete API 34 and 35 suites, including delayed
 process/ADB retirement. QPR2 still restarted before tests. Its boot trace
 included framework SQLite and Bluetooth failures plus graphics mapper lock
-frames; these locations do not establish a single cause. QPR2 now selects the
-`swiftshader` graphics mode with the default Vulkan setting, matching the
-profile used by local QPR2 native and upgrade QA. Other images retain `swangle`
-with Vulkan disabled. Both modes are described in the
+frames; these locations do not establish a single cause. That QPR2 candidate
+selected `swiftshader` with the default Vulkan setting, matching local QPR2
+native and upgrade QA. Other images retained `swangle` with Vulkan disabled.
+Both modes are described in the
 [official graphics documentation](https://developer.android.com/studio/run/emulator-acceleration).
 This is a controlled profile change involving two settings, not evidence that
 QPR2 universally requires Vulkan or that ANGLE caused the earlier crashes.
@@ -185,3 +185,38 @@ successful installs and stops after the first failed attempt. Both successful
 process exit and the exact installation success protocol are required before
 instrumentation. Missing, overflowing or contradictory output fails without
 exporting APK paths, error messages or retrying installation.
+
+The explicit-tools/storage candidate passed API 35, but QPR2 still failed during
+initial configuration with mapper lock and composition-sampling crash locations.
+The Linux runner now uses `swangle` with Vulkan disabled on all selected images,
+the profile that passed API 34 and 35. Earlier QPR2 runs with this profile used
+the old 800 MiB/tool-12 configuration, so they do not establish failure of this
+corrected combination. Local Windows QA retains its independently exercised
+profile. Three exact source-derived mapper assertion categories help distinguish
+the next boot failure without exporting abort messages; existing traces cannot
+identify those missing assertions retroactively. Configuration records the
+current fixed step name while preserving the original command failure.
+
+An actual API 34 storage probe explained the unavailable guest facts: `df /data`
+reports its bind mount as `/data/user/0`, which the strict parser rejected.
+The fixed `/data` query now uses `stat -f -c %S:%b:%a`, a single numeric record
+for filesystem block size, total blocks and available blocks. The actual probe
+and bounded parser checks validate those byte counts without exporting paths or
+expanding a mount-name allowlist.
+
+The [Android 14 activity manager](https://android.googlesource.com/platform/frameworks/base/+/android14-release/services/core/java/com/android/server/am/ActivityManagerService.java)
+exposes a separate sequencing risk: `am force-stop` queues a
+`PACKAGE_RESTARTED` broadcast, whose accessibility package monitor can later
+remove the component from the current enabled-services set. The native harness
+now waits for the broadcast barrier, including broadcast-loop and application-
+thread flushes, immediately after force-stop and before the following test.
+It uses the existing ten-second cleanup command bound; failure still fails QA
+and cannot skip private-file or child-process cleanup. Five tests exercise the
+actual cleanup block's ordering and failure paths. Android 14, 15 and QPR2 source
+all expose this command and flags; the command also returned successfully in
+171 ms on the owned API 34 emulator. Local lifecycle probes did not reproduce
+the CI failure: one exited before READY, and a follow-up could not verify its
+instrumentation prerequisite. The latter's failed cleanup lacked command-level
+facts, so it cannot identify a barrier failure or timeout. This is a correction
+to a source-established sequencing gap, not a proven diagnosis of the earlier
+service destruction. Full hosted native/integration acceptance remains required.

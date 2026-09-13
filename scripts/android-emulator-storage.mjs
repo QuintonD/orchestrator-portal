@@ -17,15 +17,12 @@ export function hostStorageFacts(value) {
   catch { return null; }
 }
 
-/** Parse exactly one Android toybox `df -k /data` report; unknown formats stay null. */
+/** Parse one Android `stat -f -c %S:%b:%a /data` record, without mount names. */
 export function guestStorageFacts(value) {
-  if (typeof value !== 'string' || value.length > 4096) return null;
-  // adb on Windows may use CRCRLF. Standalone CR and additional lines are invalid.
-  const lines = value.replace(/\r\r?\n/gu, '\n').replace(/\n$/u, '').split('\n');
-  if (lines.length !== 2 || !/^Filesystem[ \t]+1K-blocks[ \t]+Used[ \t]+Available[ \t]+Use%[ \t]+Mounted[ \t]+on[ \t]*$/u.test(lines[0])) return null;
-  const row = /^\/dev\/block\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+[ \t]+(0|[1-9]\d{0,15})[ \t]+(0|[1-9]\d{0,15})[ \t]+(0|[1-9]\d{0,15})[ \t]+(0|[1-9]\d?|100)%[ \t]+\/data[ \t]*$/u.exec(lines[1]);
-  if (!row) return null;
-  const total = BigInt(row[1]); const used = BigInt(row[2]); const available = BigInt(row[3]);
-  if (used + available > total) return null;
-  return bytes(1024n, total, available);
+  if (typeof value !== 'string' || value.length > 128) return null;
+  // Remove at most one line ending; Android's Windows transport can use CRCRLF.
+  const record = value.replace(/\r\r?\n$|\n$/u, '');
+  if (/[\r\n]/u.test(record)) return null;
+  const fields = /^(0|[1-9]\d{0,15}):(0|[1-9]\d{0,15}):(0|[1-9]\d{0,15})$/u.exec(record);
+  return fields && fields[0] === record ? bytes(BigInt(fields[1]), BigInt(fields[2]), BigInt(fields[3])) : null;
 }

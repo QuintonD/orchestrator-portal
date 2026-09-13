@@ -68,6 +68,8 @@ try {
   // Device instrumentation can outlive adb. Attempt every cleanup even when one fails.
   cleanup = await cleanupSteps([
     { name: "stop native session", action: () => cleanupAdb("shell", "am", "force-stop", pkg) },
+    // force-stop queues PACKAGE_RESTARTED; drain it before the next probe re-enables accessibility.
+    { name: "finish native force-stop broadcasts", action: () => cleanupAdb("shell", "am", "wait-for-broadcast-barrier", "--flush-broadcast-loopers", "--flush-application-threads") },
     { name: "remove native private probe files", action: () => cleanupAdb("shell", "run-as", pkg, "rm", "-f", "files/phone-qa-token", "files/phone-qa-stop") },
     { name: "terminate owned instrumentation client", action: () => stopChild(child), timeout: 7000 },
   ]);
