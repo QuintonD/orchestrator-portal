@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
+import { bootCrashLocations } from './android-emulator-diagnostics.mjs';
 
 // Official archive/checksum: https://developer.android.com/studio/emulator_archive
 export const emulatorPin = Object.freeze({ build: '15507667', version: '36.6.11.0', bytes: 331232577, sha256: '1eade4cf2df6ea8eeead4902c635897ba12aaa32aac4389eaae0fdb498a5b830', url: 'https://dl.google.com/android/repository/emulator-linux_x64-15507667.zip' });
@@ -58,6 +59,23 @@ export async function waitForReady({ probe, image, deadline, now = Date.now, sle
   }
   throw new CiError('android_services_readiness_timeout');
 }
+export async function waitForEmulatorRetirement({ probe, deadline, now = Date.now, sleep = delay, onSample = () => {} }) {
+  let diagnosticsFailed = false;
+  let result = { confirmed: false, processExited: false, spawnFailed: false, adbReadable: false, registered: null, queryFailed: false, diagnosticsFailed };
+  while (now() < deadline) {
+    let value; try { value = await probe() ?? {}; } catch { value = { queryFailed: true }; }
+    const facts = { processExited: value.processExited === true, spawnFailed: value.spawnFailed === true, adbReadable: value.adbReadable === true, registered: typeof value.registered === 'boolean' ? value.registered : null };
+    result = { confirmed: (facts.processExited || facts.spawnFailed) && facts.adbReadable && facts.registered === false && value.queryFailed !== true, ...facts, queryFailed: value.queryFailed === true, diagnosticsFailed };
+    try { await onSample(result); } catch { diagnosticsFailed = true; result.diagnosticsFailed = true; }
+    if (result.confirmed) return result;
+    await sleep(1000);
+  }
+  return result;
+}
+export async function optionalCleanupQuery(query) {
+  try { const result = await query(); return { ok: result.ok === true, stdout: typeof result.stdout === 'string' ? result.stdout : '', exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null, timedOut: result.timedOut === true, queryFailed: false }; }
+  catch { return { ok: false, stdout: '', exitCode: null, timedOut: false, queryFailed: true }; }
+}
 export function diagnosticsSummary(text) {
   return Object.fromEntries([
     ['missingInputService', /Can't find service: input/gu], ['missingSettingsService', /Can't find service: settings/gu],
@@ -65,6 +83,10 @@ export function diagnosticsSummary(text) {
     ['outOfMemory', /OutOfMemoryError/gu], ['nativeFatalSignal', /Fatal signal (?:6|11)\b/gu],
     ['systemServerWatchdog', /WATCHDOG KILLING SYSTEM PROCESS/gu], ['emulatorFatal', /\bFATAL\b/gu],
   ].map(([name, pattern]) => [name, [...String(text).matchAll(pattern)].length]));
+}
+export function preTestBootCrashLocations(evidence, text) {
+  if (!Array.isArray(evidence.tests) || evidence.tests.length !== 0 || !['wait_android_services', 'configure_ready_android'].includes(evidence.stage)) return undefined;
+  return { scope: 'pre_test_android_boot', ...bootCrashLocations(text) };
 }
 export async function downloadPinnedArchive(pin, archive, { signal, onResponse = () => {} } = {}) {
   const response = await fetch(pin.url, { redirect: 'error', signal });
@@ -201,20 +223,44 @@ export async function main(args = process.argv.slice(2)) {
         if (!androidStable) throw new CiError('android_restarted_after_test');
       },
       diagnose: async () => {
-        const crash = emulator ? await device(['logcat', '-d', '-b', 'crash', '-t', '300'], { timeout: 10000, allowFailure: true, cancellable: false }) : { stdout: '', stderr: '' };
+        const crash = emulator ? await device(['logcat', '-d', '-b', 'crash', '-t', '400'], { timeout: 10000, allowFailure: true, cancellable: false }) : { stdout: '', stderr: '' };
         evidence.diagnostics = diagnosticsSummary(emulatorText + '\n' + crash.stdout + '\n' + crash.stderr);
+        evidence.diagnostics.bootCrashLocations = preTestBootCrashLocations(evidence, crash.stdout);
         evidence.diagnostics.lastSnapshot = lastSnapshot ?? null; await save();
       },
       stop: async () => {
         if (!emulator) { evidence.cleanup = { confirmed: true, emulatorStarted: false }; return; }
-        const identity = await device(['emu', 'avd', 'name'], { timeout: 5000, allowFailure: true, cancellable: false });
-        if (identity.ok && identity.stdout.split('\n')[0].trim() === options.name) await device(['emu', 'kill'], { timeout: 5000, allowFailure: true, cancellable: false });
-        for (let attempt = 0; attempt < 20 && !emulatorExited && !emulatorFailed; attempt++) await delay(1000);
-        if (!emulatorExited && !emulatorFailed) { emulator.kill('SIGTERM'); await delay(3000); }
-        if (!emulatorExited && !emulatorFailed) { emulator.kill('SIGKILL'); await delay(1000); }
-        const devices = await command(adb, ['devices'], { timeout: 5000, allowFailure: true, cancellable: false });
-        evidence.cleanup = { confirmed: (emulatorExited || emulatorFailed) && devices.ok && !/^emulator-5554\s/mu.test(devices.stdout), emulatorStarted: true, dataRetained: true };
+        const started = Date.now(); const samples = []; let cleanupEvidenceFailed = false;
+        const cleanupDevice = (argv) => optionalCleanupQuery(() => device(argv, { timeout: 5000, allowFailure: true, cancellable: false }));
+        const identity = await cleanupDevice(['emu', 'avd', 'name']);
+        const identityVerified = identity.ok && identity.stdout.split('\n')[0].trim() === options.name;
+        evidence.cleanup = { confirmed: false, emulatorStarted: true, dataRetained: true, identityVerified, identityQueryFailed: identity.queryFailed, killRequested: identityVerified, samples };
+        if (identityVerified) { const killed = await cleanupDevice(['emu', 'kill']); evidence.cleanup.killCommand = { ok: killed.ok, exitCode: killed.exitCode, timedOut: killed.timedOut, queryFailed: killed.queryFailed }; }
+        const processGone = () => emulatorExited || (emulatorFailed && !emulator.pid);
+        const retire = async (duration) => {
+          const result = await waitForEmulatorRetirement({
+            deadline: Date.now() + duration,
+            probe: async () => {
+              const devices = await optionalCleanupQuery(() => command(adb, ['devices'], { timeout: 5000, allowFailure: true, cancellable: false }));
+              const adbReadable = devices.ok && /^List of devices attached(?:\r?\n|$)/u.test(devices.stdout);
+              return { processExited: emulatorExited, spawnFailed: emulatorFailed && !emulator.pid, adbReadable, registered: adbReadable ? /^emulator-5554\s/mu.test(devices.stdout) : null, queryFailed: devices.queryFailed };
+            },
+            onSample: async (value) => { samples.push({ ...value, elapsedMs: Date.now() - started }); if (samples.length > 64) samples.shift(); evidence.cleanup = { ...evidence.cleanup, ...value }; await save(); },
+          });
+          cleanupEvidenceFailed ||= result.diagnosticsFailed;
+          return result;
+        };
+        // Process exit and ADB retirement are independent observations. A stale
+        // registration or failed ADB query cannot confirm that cleanup finished.
+        let retired = await retire(20000);
+        if (!retired.confirmed) {
+          if (!processGone()) { emulator.kill('SIGTERM'); await delay(3000); }
+          if (!processGone()) emulator.kill('SIGKILL');
+          retired = await retire(10000);
+        }
+        evidence.cleanup = { ...evidence.cleanup, ...retired, diagnosticsFailed: cleanupEvidenceFailed };
         if (!evidence.cleanup.confirmed) throw new CiError('owned_emulator_stop_unconfirmed');
+        if (cleanupEvidenceFailed) throw new CiError('cleanup_evidence_write_failed');
       },
     }, options.tests, { signal: abort.signal });
     evidence.status = 'passed';

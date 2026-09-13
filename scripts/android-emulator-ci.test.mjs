@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForReady } from './android-emulator-ci.mjs';
+import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, hasDevices, optionalCleanupQuery, parseOptions, preTestBootCrashLocations, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForEmulatorRetirement, waitForReady } from './android-emulator-ci.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -8,6 +8,8 @@ import { mkdtemp, readFile, rm, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 
 const environment = { GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '12345', GITHUB_RUN_ATTEMPT: '2', RUNNER_TEMP: '/runner/temp', ANDROID_HOME: '/android/sdk' };
 const args = ['--image', '36.1', '--test', 'tests/phone-control/native.mjs', '--test', 'tests/phone-control/integration.mjs'];
@@ -50,6 +52,50 @@ test('readiness times out and never substitutes retries of tests for missing And
   await assert.rejects(waitForReady({ probe: async () => { probes++; return { ...ready(), services: {} }; }, image: '36.1', deadline: 6000, now: () => clock, sleep: async (ms) => { clock += ms; } }), /android_services_readiness_timeout/u);
   assert.equal(probes, 3);
 });
+test('cleanup waits for stale ADB registration to retire after the owned process exits', async () => {
+  let clock = 0; const seen = []; const registrations = [true, true, false];
+  const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: true, adbReadable: true, registered: registrations.shift() }), deadline: 10000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: (sample) => seen.push(sample.confirmed) });
+  assert.deepEqual(seen, [false, false, true]); assert.equal(clock, 2000); assert.equal(result.confirmed, true); assert.equal(result.processExited, true); assert.equal(result.registered, false);
+});
+test('cleanup cannot substitute disappearance from ADB for owned process exit', async () => {
+  let clock = 0; const seen = []; const exits = [false, false, true];
+  const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: exits.shift(), adbReadable: true, registered: false }), deadline: 10000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: (sample) => seen.push(sample.confirmed) });
+  assert.deepEqual(seen, [false, false, true]); assert.equal(clock, 2000); assert.equal(result.confirmed, true);
+});
+test('cleanup remains unconfirmed at its deadline for a live process, stale ADB entry or unreadable ADB', async () => {
+  for (const facts of [{ processExited: false, adbReadable: true, registered: false }, { processExited: true, adbReadable: true, registered: true }, { processExited: true, adbReadable: false, registered: null }, { spawnFailed: true, adbReadable: false, registered: false }, { processExited: true, adbReadable: true, registered: false, queryFailed: true }]) {
+    let clock = 0; let probes = 0;
+    const result = await waitForEmulatorRetirement({ probe: async () => { probes++; return facts; }, deadline: 3000, now: () => clock, sleep: async (ms) => { clock += ms; } });
+    assert.equal(result.confirmed, false); assert.equal(probes, 3); assert.equal(clock, 3000);
+  }
+});
+test('cleanup records only typed component facts and does not treat missing observations as absence', async () => {
+  let clock = 0;
+  const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: 'true', adbReadable: true, registered: undefined, private: 'token value' }), deadline: 1000, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  assert.deepEqual(result, { confirmed: false, processExited: false, spawnFailed: false, adbReadable: true, registered: null, queryFailed: false, diagnosticsFailed: false });
+  assert.equal(JSON.stringify(result).includes('token'), false);
+});
+test('failed cleanup evidence writes do not stop retirement observation and remain recorded as failures', async () => {
+  let clock = 0; let probes = 0;
+  const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: ++probes >= 3, adbReadable: true, registered: false }), deadline: 5000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: async () => { throw new Error('disk full'); } });
+  assert.equal(probes, 3); assert.equal(result.confirmed, true); assert.equal(result.diagnosticsFailed, true); assert.equal(clock, 2000);
+});
+test('a rejected retirement probe is unreadable and observation continues until both facts are verified', async () => {
+  let clock = 0; let probes = 0; const seen = [];
+  const result = await waitForEmulatorRetirement({ probe: async () => { if (++probes === 1) throw new Error('private tool failure'); return { processExited: true, adbReadable: true, registered: false }; }, deadline: 5000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: (sample) => seen.push(sample) });
+  assert.equal(probes, 2); assert.equal(result.confirmed, true); assert.equal(seen[0].confirmed, false); assert.equal(seen[0].adbReadable, false); assert.equal(seen[0].registered, null); assert.equal(seen[0].queryFailed, true); assert.equal(JSON.stringify(seen).includes('private'), false);
+});
+test('persistent rejected retirement probes stay unconfirmed through the bounded wait', async () => {
+  let clock = 0; let probes = 0;
+  const result = await waitForEmulatorRetirement({ probe: async () => { probes++; throw new Error('spawn unavailable'); }, deadline: 3000, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  assert.equal(probes, 3); assert.equal(result.confirmed, false); assert.equal(result.queryFailed, true); assert.equal(result.registered, null);
+});
+test('optional cleanup ADB query rejection is typed and cannot throw before owned-process fallback', async () => {
+  const result = await optionalCleanupQuery(async () => { throw new Error('private spawn or cancellation details'); });
+  assert.deepEqual(result, { ok: false, stdout: '', exitCode: null, timedOut: false, queryFailed: true });
+  const timeout = await optionalCleanupQuery(async () => ({ ok: false, stdout: '', stderr: 'private', exitCode: null, timedOut: true }));
+  assert.equal(timeout.ok, false); assert.equal(timeout.timedOut, true); assert.equal(JSON.stringify(timeout).includes('private'), false);
+});
 test('lifecycle preserves startup failure, skips input/tests, and still diagnoses and stops', async () => {
   const calls = [];
   await assert.rejects(runLifecycle({ start: async () => calls.push('start'), ready: async () => { calls.push('ready'); throw new Error('services unavailable'); }, configure: async () => calls.push('input'), test: async () => calls.push('test'), diagnose: async () => calls.push('diagnose'), stop: async () => calls.push('stop') }, ['native']), /services unavailable/u);
@@ -73,6 +119,16 @@ test('diagnostics retain only fixed counters and discard arbitrary log text and 
   assert.equal(summary.fatalException, 1); assert.equal(summary.missingInputService, 1); assert.equal(summary.outOfMemory, 1); assert.equal(summary.nativeFatalSignal, 1);
   assert.equal(JSON.stringify(summary).includes('private'), false);
   assert.ok(Object.values(summary).every(Number.isInteger));
+});
+test('boot crash locations are allowed only before tests during Android readiness or initial configuration', () => {
+  const text = 'java.lang.IllegalStateException: private message\n';
+  for (const stage of ['wait_android_services', 'configure_ready_android']) {
+    const result = preTestBootCrashLocations({ stage, tests: [] }, text);
+    assert.equal(result.scope, 'pre_test_android_boot'); assert.deepEqual(result.exceptions, ['java.lang.IllegalStateException']); assert.equal(JSON.stringify(result).includes('private'), false);
+    assert.equal(preTestBootCrashLocations({ stage, tests: [{ passed: false }] }, text), undefined);
+  }
+  for (const stage of ['preflight', 'extract_pinned_emulator', 'tests/phone-control/native.mjs', 'tests/phone-control/integration.mjs', undefined]) assert.equal(preTestBootCrashLocations({ stage, tests: [] }, text), undefined);
+  assert.equal(preTestBootCrashLocations({ stage: 'wait_android_services', tests: null }, text), undefined);
 });
 const archiveFixture = Buffer.from('synthetic pinned emulator ZIP fixture\n'.repeat(100));
 async function archiveServer(t, handler) {
@@ -144,6 +200,17 @@ async function requireProcessesGone(result) {
   assert.deepEqual(pids.filter(exists), [], 'The owned parent and child must both be gone');
 }
 const linux = { skip: process.platform !== 'linux' ? 'Linux process-group regression; skipped on this platform' : false };
+test('Linux retirement observes an actual owned process exit before waiting out delayed device registration', linux, async (t) => {
+  const child = spawn(process.execPath, ['-e', "console.log('ready');setInterval(()=>{},1000)"], { stdio: ['ignore', 'pipe', 'ignore'] });
+  let exited = false; let exitedAt; child.on('exit', () => { exited = true; exitedAt = Date.now(); }); t.after(() => child.kill('SIGKILL'));
+  await once(child.stdout, 'data'); const started = Date.now(); const seen = [];
+  const timer = setTimeout(() => child.kill('SIGTERM'), 100); t.after(() => clearTimeout(timer));
+  const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: exited, adbReadable: true, registered: !exited || Date.now() - exitedAt < 150 }), deadline: started + 5000, sleep: () => delay(10), onSample: (sample) => seen.push(sample) });
+  assert.equal(result.confirmed, true); assert.equal(exited, true);
+  assert.ok(seen.some((sample) => !sample.processExited && sample.registered));
+  assert.ok(seen.some((sample) => sample.processExited && sample.registered && !sample.confirmed));
+  assert.ok(Date.now() - exitedAt >= 150);
+});
 test('Linux subprocess timeout stops both the owned parent and its live child and remains failed', linux, async () => {
   const code = `const {spawn}=require('node:child_process'); console.log('parent-ready:'+process.pid); const child=spawn(process.execPath,['-e',"console.log('child-ready:'+process.pid);setInterval(()=>{},1000)"],{stdio:['ignore','pipe','ignore']}); child.stdout.pipe(process.stdout); setInterval(()=>{},1000);`;
   const result = await executeCiCommand(process.execPath, ['-e', code], { timeout: 1500, processGroup: true, allowFailure: true });

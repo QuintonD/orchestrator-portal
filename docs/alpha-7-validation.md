@@ -233,6 +233,30 @@ These checks do not establish native LAN HTTP support or WebView acceptance.
 The subsequent hosted full browser run on `301fc530` passed 163 cases, with the
 three existing desktop-only mobile exclusions retained.
 
+The next complete candidate (`3fefa6f3`) passed general CI, all six desktop
+targets and CodeQL. Android 15 passed 47 native assertions, all eight integration
+checks and all 30 independent observations, but the launcher failed its immediate
+shutdown confirmation. Android 14 passed the same native assertions, then its
+third integration observation returned `session_expired`; the remaining reads
+failed closed. Its entire integration and cleanup lasted under 35 seconds, so
+the 180-second probe and 600-second sessions do not explain that termination.
+Android 16 QPR2 reached initial services readiness but repeatedly restarted
+`system_server` and never unlocked: 54 observed PIDs across 266 samples, with no
+application tests run. Its fractional SDK was correctly reported as `36.1`.
+These failures remain retained under `ci-launcher-34750588755-attempt1`.
+
+Shutdown now observes both process exit and removal of the ADB registration
+within bounded waits; missing or failed ADB reads cannot confirm cleanup.
+Diagnostics-write and ADB-query failures cannot prevent the owned-process stop
+attempt, and still leave the job failed when evidence or retirement is missing.
+Test-only host-probe diagnostics record fixed lifecycle reasons, elapsed time and
+power/keyguard facts to investigate the Android 14 termination. All 37 harness
+parser tests passed, including seven new cases, and the instrumentation APK
+compiled. Boot failure diagnostics retain bounded framework code locations only
+before application tests start. Independent review caught and corrected native
+prose and message-embedded locations being misclassified as frames. No session
+duration, capture retry, production guard or readiness deadline was relaxed.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

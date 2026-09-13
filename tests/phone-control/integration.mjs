@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { cleanupSteps, isRunning, safeFailure, stopChild, within } from "./runner-cleanup.mjs";
 import { assertMcpDenial } from "./mcp-result.mjs";
+import { parseHostProbeEvidence, parsePowerEvidence } from "./host-probe-evidence.mjs";
 import { buildImage, IsolatedSource } from "../../components/phone-control/deployment/host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -32,6 +33,11 @@ const observationSamples = [];
 const screenshotSamples = [];
 const observationAttempts = [];
 const nativeMemory = [];
+const powerSamples = [];
+const phaseTimings = [];
+const harnessStarted = performance.now();
+const probeTiming = { startedMs: null, readyMs: null, exitedMs: null };
+let nativeOutput = "";
 const processes = [];
 const diagnosticCodes = new Set(["screenshot_unavailable", "observation_blocked", "stale_observation", "scope_forbidden", "device_outcome_unknown", "outcome_unknown", "forbidden", "unknown_action_state", "busy", "deadline_expired", "native_response_invalid", "native_unavailable", "persistence_unavailable"]);
 for (const code of ["screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error"]) diagnosticCodes.add(code);
@@ -52,7 +58,11 @@ let ownsForward = false;
 let stage = "start instrumentation";
 let owner;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-function record(name) { results.push({ name, passed: true }); console.log(`PASS ${name}`); }
+function record(name) { results.push({ name, passed: true }); phaseTimings.push({ name, elapsedMs: Math.round(performance.now() - harnessStarted) }); console.log(`PASS ${name}`); }
+function samplePower(phase) {
+  try { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), ...parsePowerEvidence(execFileSync("adb", ["-s", serial, "shell", "dumpsys", "power"], { encoding: "utf8", windowsHide: true, timeout: 3000, stdio: ["ignore", "pipe", "pipe"] })) }); }
+  catch { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), wakefulness: null, powered: null }); }
+}
 async function eventually(check, milliseconds = 20000) {
   const end = Date.now() + milliseconds;
   while (Date.now() < end) { if (await check()) return; await sleep(150); }
@@ -129,11 +139,14 @@ function mcpProcess(tokenFile) {
 
 try {
   const isolatedImage = isolatedMode ? buildImage().image : undefined;
+  probeTiming.startedMs = Math.round(performance.now() - harnessStarted);
   instrument = start("adb", ["-s", serial, "shell", "am", "instrument", "-w", "-e", "hostProbe", "true", runner]);
-  let nativeOutput = "";
+  instrument.once("exit", () => { probeTiming.exitedMs = Math.round(performance.now() - harnessStarted); });
   instrument.stdout.on("data", (chunk) => { if (nativeOutput.length + chunk.length > 1024 * 1024) { instrument.kill(); return; } nativeOutput += chunk; });
   instrument.stderr.resume();
   await eventually(() => nativeOutput.includes("PHONE_HOST_PROBE_READY"), 45000);
+  probeTiming.readyMs = Math.round(performance.now() - harnessStarted);
+  samplePower("probe_ready");
   stage = "initialize standalone broker";
   await run(["init", "--dir", privateDir, "--port", "4421"]);
   const brokerPublicKey = readFileSync(join(privateDir, "broker-public.pem"), "utf8");
@@ -234,6 +247,7 @@ try {
     if (total) nativeMemory.push({ phase, totalPssKiB: Number(total[1]) });
   }
   sampleNativeMemory("before observations");
+  samplePower("before_observations");
   for (let index = 0; index < 30; index++) {
     const includeScreenshot = index >= 20;
     await sleep(400);
@@ -245,10 +259,10 @@ try {
     if (["queued", "awaiting_callback", "encoding"].includes(sample.error?.details?.captureStage)) safeDetails.captureStage = sample.error.details.captureStage;
     const captureElapsed = sample.error?.details?.captureElapsedMs;
     if (Number.isInteger(captureElapsed) && captureElapsed >= 0 && captureElapsed <= 60000) safeDetails.captureElapsedMs = captureElapsed;
-    observationAttempts.push({ includeScreenshot, wallMs: elapsed, observed: sample.status === "observed", ...(sample.status === "observed" ? {} : { errorCode, ...safeDetails }) });
+    observationAttempts.push({ includeScreenshot, wallMs: elapsed, elapsedMs: Math.round(started - harnessStarted), observed: sample.status === "observed", ...(sample.status === "observed" ? {} : { errorCode, ...safeDetails }) });
     // These are independent reads, not retries. Keep failures visible and fail the gate
     // after collecting the complete sample; no mutation is repeated or inferred successful.
-    if (sample.status !== "observed") continue;
+    if (sample.status !== "observed") { if (!powerSamples.some(sample => sample.phase === "first_failed_observation")) samplePower("first_failed_observation"); continue; }
     assert.equal(count(sample.result), (initial + 2) % 1000);
     if (includeScreenshot) {
       assert.equal(sample.result.screenshot?.mimeType, "image/png");
@@ -257,6 +271,7 @@ try {
     } else { assert.equal(sample.result.screenshot, undefined); observationSamples.push(elapsed); }
   }
   sampleNativeMemory("after observations");
+  samplePower("after_observations");
   const failedReads = observationAttempts.filter((attempt) => !attempt.observed);
   if (failedReads.length) {
     // Keep the run failed while allowing independent portal/revocation/Stop checks
@@ -333,6 +348,7 @@ try {
   console.error(`FAIL ${stage} (${failure.error}; ${failure.code})`);
   process.exitCode = 1;
 } finally {
+  if (instrument) samplePower("before_cleanup");
   if (previousBrokerToken === undefined) delete process.env.ORCHESTRATOR_PHONE_BROKER_TOKEN; else process.env.ORCHESTRATOR_PHONE_BROKER_TOKEN = previousBrokerToken;
   if (previousPublicKey === undefined) delete process.env.PHONE_CONTROL_BROKER_PUBLIC_KEY; else process.env.PHONE_CONTROL_BROKER_PUBLIC_KEY = previousPublicKey;
   if (previousPortalPublicKey === undefined) delete process.env.ORCHESTRATOR_PHONE_BROKER_PUBLIC_KEY; else process.env.ORCHESTRATOR_PHONE_BROKER_PUBLIC_KEY = previousPortalPublicKey;
@@ -362,7 +378,7 @@ try {
   try { writeFileSync(join(output, "results.json"), JSON.stringify({
     serial, apiLevel, platform, fixture, passed: results.every((item) => item.passed) && cleanup.every((item) => item.passed), results, cleanup, cliObservationWallMs: timings,
     httpObservation: { attempts: observationAttempts, treeOnly: { samplesMs: observationSamples, p50Ms: percentile(0.5), p95Ms: percentile(0.95) }, screenshots: { samplesMs: screenshotSamples, p50Ms: screenshotPercentile(0.5), p95Ms: screenshotPercentile(0.95) }, failedAttempts: observationAttempts.filter((attempt) => !attempt.observed).length, definition: "Successful owner HTTP transport plus broker and native observation, separated by pixel opt-in; failed attempts retained separately; excludes model reasoning and inter-sample delay" },
-    nativeMemory, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
+    nativeMemory, powerSamples, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
     stopWallMs: stopWallMs ?? null,
     limits: ["Emulator and signed synthetic fixture only", "Two identities and CLI/MCP task equivalence; no model reasoning or parity test", "No real user accounts or external effects", "Hardware biometric and Astra model parity not established"],
   }, null, 2)); } catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }

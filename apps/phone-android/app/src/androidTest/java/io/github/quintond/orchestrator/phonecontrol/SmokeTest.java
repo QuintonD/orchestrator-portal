@@ -105,15 +105,28 @@ public final class SmokeTest extends Instrumentation {
                 java.io.File tokenFile = new java.io.File(getTargetContext().getFilesDir(), "phone-qa-token");
                 java.io.File stopFile = new java.io.File(getTargetContext().getFilesDir(), "phone-qa-stop");
                 java.nio.file.Files.deleteIfExists(stopFile.toPath());
+                int leaseSeconds = liveAgents ? 360 : 180;
+                long probeStarted = android.os.SystemClock.elapsedRealtime();
+                String endReason = "probe_error";
                 try {
                     java.nio.file.Files.write(tokenFile.toPath(), token.getBytes(StandardCharsets.US_ASCII));
-                    int leaseSeconds = liveAgents ? 360 : 180;
-                    long deadline = android.os.SystemClock.elapsedRealtime() + leaseSeconds * 1000L;
+                    probeStarted = android.os.SystemClock.elapsedRealtime();
+                    long deadline = probeStarted + leaseSeconds * 1000L;
                     Bundle ready = new Bundle(); ready.putString("stream", "PHONE_HOST_PROBE_READY (private test token; " + leaseSeconds + " second maximum)\n"); sendStatus(1, ready);
                     while (android.os.SystemClock.elapsedRealtime() < deadline && !stopFile.exists() && service.pairingToken() != null) Thread.sleep(200);
+                    endReason = android.os.SystemClock.elapsedRealtime() >= deadline ? "probe_deadline" : stopFile.exists() ? "host_stop_file" : probeEndReason(service.status());
                 } finally {
-                    service.stopSession("Host probe complete");
-                    java.nio.file.Files.deleteIfExists(tokenFile.toPath()); java.nio.file.Files.deleteIfExists(stopFile.toPath());
+                    try {
+                        // Fixed test-only facts: never export status text, tokens or UI data.
+                        result.putString("phone_qa_probe_end_reason", endReason);
+                        result.putLong("phone_qa_probe_elapsed_ms", android.os.SystemClock.elapsedRealtime() - probeStarted);
+                        result.putInt("phone_qa_probe_lease_seconds", leaseSeconds);
+                        result.putBoolean("phone_qa_probe_interactive", getTargetContext().getSystemService(android.os.PowerManager.class).isInteractive());
+                        result.putBoolean("phone_qa_probe_keyguard_locked", getTargetContext().getSystemService(android.app.KeyguardManager.class).isKeyguardLocked());
+                    } finally {
+                        service.stopSession("Host probe complete");
+                        java.nio.file.Files.deleteIfExists(tokenFile.toPath()); java.nio.file.Files.deleteIfExists(stopFile.toPath());
+                    }
                 }
                 result.putString("stream", "PASS: host probe stopped and private test credential removed.\n");
                 finish(android.app.Activity.RESULT_OK, result);
@@ -202,6 +215,20 @@ public final class SmokeTest extends Instrumentation {
             result.putString("stream", "FAIL after " + assertions + " assertions: " + failed.getClass().getSimpleName() + ": " + failed.getMessage() + "\n");
             finish(android.app.Activity.RESULT_CANCELED, result);
         } finally { token = null; }
+    }
+    private static String probeEndReason(String status) {
+        return switch (status) {
+            case "Device screen turned off" -> "screen_off";
+            case "Accessibility interrupted" -> "accessibility_interrupted";
+            case "Accessibility disconnected" -> "accessibility_disconnected";
+            case "Accessibility disabled" -> "accessibility_disabled";
+            case "Session expired" -> "session_deadline";
+            case "Listener unavailable" -> "listener_unavailable";
+            case "Stopped by paired host" -> "paired_host_stop";
+            case "Stopped on phone" -> "owner_stop";
+            case "Policy changed on phone" -> "policy_changed";
+            default -> "other_session_end";
+        };
     }
     void require(boolean condition, String name) { if (!condition) throw new AssertionError(name); assertions++; }
     private void shell(String command) throws Exception {

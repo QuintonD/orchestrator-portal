@@ -87,6 +87,12 @@ failure still collects diagnostics before stopping its verified owned AVD. If
 ADB cannot identify it, cleanup can signal only the process started by this
 runner. Failure to confirm cleanup fails the job. Temporary data remains for the
 disposable runner's teardown; the script contains no recursive deletion.
+Cleanup independently requires the owned process to exit and a successful ADB
+device listing with its serial absent. It polls both facts for up to 20 seconds,
+then signals a remaining owned process and allows a further 10 seconds for
+retirement, with individually bounded ADB calls. It records typed component
+facts, including unreadable ADB or a lingering registration. A failed evidence
+write cannot interrupt those cleanup attempts and still fails the job afterward.
 Each test runs in its own Linux process group. Timeout, cancellation or completion
 terminates only that owned group, including leftover broker or fixture-server
 children; the following test is never a retry of a failed one.
@@ -108,3 +114,21 @@ the pinned Node image with Docker `--init` and read-only mounts of only the two
 test scripts. This host QA is separate from the product's container isolation
 proof. The Linux CI run remains the integration check for the downloaded Linux
 emulator and real Android services.
+
+The next retained CI run reached Android: API 34 and 35 each passed 47 native
+assertions. API 35 also passed all eight integration checks and 30 independent
+reads, but its job failed because the final one-shot process/ADB cleanup check
+was unconfirmed. API 34 separately failed integration with a `session_expired`
+response; the cause of that session termination remains under investigation.
+The cleanup evidence did not identify which component remained, so the new
+bounded retirement observations preserve that distinction; they do not waive
+cleanup failures or replace failed native or integration tests.
+
+That run's Android 16 QPR2 image restarted `system_server` repeatedly and never
+unlocked, before any application tests ran. For failures in those two readiness
+stages only, the runner now projects bounded crash-buffer code locations:
+allowlisted system process names, signals, framework exception classes and
+frames, native module/function identifiers and fixed failure categories. It
+discards exception messages, argument/template text, addresses and raw log
+content. Once a test starts, this boot-only projection is disabled. It helps
+diagnose the OS failure without changing readiness deadlines or app guards.
