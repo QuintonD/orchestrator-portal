@@ -23,6 +23,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '12266719'
       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'system-images;android-36;google_apis;x86_64'
       - run: npm ci
       - run: npm run build

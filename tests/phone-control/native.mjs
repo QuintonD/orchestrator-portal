@@ -1,13 +1,14 @@
 import { readEmulatorEvidence } from "./device-evidence.mjs";
 // This runner replaces synthetic grants, so it refuses physical or unnamed AVDs.
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { once } from "node:events";
 import { cleanupSteps, safeFailure, stopChild, within } from "./runner-cleanup.mjs";
 import { parseNativeResult } from "./native-result.mjs";
+import { parseInstallEvidence } from "./install-evidence.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const serial = process.env.PHONE_QA_SERIAL ?? "emulator-5570";
@@ -27,12 +28,20 @@ let failure;
 let cleanup = [];
 let stage = "install synthetic APKs";
 let oversizedOutput = false;
+const installs = [];
 try {
-  for (const apk of [
-    "app/build/outputs/apk/debug/app-debug.apk",
-    "fixture/build/outputs/apk/debug/fixture-debug.apk",
-    "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
-  ]) adb("install", "-r", join(root, "apps/phone-android", apk));
+  for (const [role, apk] of [
+    ["companion", "app/build/outputs/apk/debug/app-debug.apk"],
+    ["fixture", "fixture/build/outputs/apk/debug/fixture-debug.apk"],
+    ["instrumentation", "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"],
+  ]) {
+    const apkPath = join(root, "apps/phone-android", apk);
+    const started = performance.now();
+    const installed = spawnSync("adb", ["-s", serial, "install", "-r", apkPath], { cwd: root, encoding: "utf8", timeout: 30000, windowsHide: true, maxBuffer: 16384, stdio: ["ignore", "pipe", "pipe"] });
+    const evidence = parseInstallEvidence({ role, apkPath, elapsedMs: Math.round(performance.now() - started), exitCode: installed.status, signal: installed.signal, commandSucceeded: !installed.error, stdout: installed.stdout, stderr: installed.stderr });
+    installs.push(evidence);
+    assert.equal(evidence.passed, true, "Synthetic APK installation must succeed before continuing");
+  }
   stage = "verify emulator credential storage is unlocked";
   assert.match(adb("shell", "run-as", pkg, "id"), /^uid=/, "Unlock the enrolled disposable emulator before instrumentation");
   stage = "enable disposable emulator fixture session";
@@ -68,7 +77,7 @@ const { checks, diagnostics } = parsed;
 const functionalPassed = !failure && !oversizedOutput && parsed.passed;
 const passed = functionalPassed && cleanup.every((item) => item.passed);
 for (const item of cleanup.filter((entry) => !entry.passed)) console.error(`FAIL cleanup: ${item.name} (${item.code})`);
-try { writeFileSync(join(output, "results.json"), JSON.stringify({ serial, apiLevel, platform, passed, functionalPassed, checks, diagnostics, oversizedOutput, cleanup, ...(failure ? { failure } : {}), scope: "Synthetic fixture and emulator; physical acceptance not established" }, null, 2)); }
+try { writeFileSync(join(output, "results.json"), JSON.stringify({ serial, apiLevel, platform, passed, functionalPassed, checks, diagnostics, installs, oversizedOutput, cleanup, ...(failure ? { failure } : {}), scope: "Synthetic fixture and emulator; physical acceptance not established" }, null, 2)); }
 catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }
 for (const check of checks) console.log(check);
 console.log(JSON.stringify({ functionalPassed, diagnostics, oversizedOutput }));

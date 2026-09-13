@@ -34,6 +34,14 @@ category, then bounds and verifies the decoded bytes before extraction.
 The download has a three-minute bound; startup has a ten-minute bound. The AVD
 uses 2 CPU cores, 2048 MB RAM, and a 720×1600 LCD at density 280.
 
+The workflow selects command-line tools 16.0 (build 12266719), and the runner
+uses that versioned directory after checking its revision metadata. If setup
+reuses `latest`, the runner accepts it only when the versioned directory is
+absent and the same exact revision is verified. It does not assume `latest`
+refers to the tools selected by setup. New owned
+AVDs explicitly use a 6 GiB data partition, matching local QPR2 QA. This setting
+is applied before first boot; it never resizes or clears an existing AVD.
+
 Readiness requires the boot flag, expected API and emulator identity, a running
 `system_server`, and live activity, package, input, window and settings services.
 Read-only settings and package queries must succeed. Three consecutive samples
@@ -145,9 +153,35 @@ This is a controlled profile change involving two settings, not evidence that
 QPR2 universally requires Vulkan or that ANGLE caused the earlier crashes.
 The selected profile is recorded with the unchanged image/build pins, readiness
 checks, deadlines and test gates. Its Linux acceptance requires fresh CI.
-The runner also records host storage capacity before launch and, for pre-test
-boot failures only, host and guest `/data` total/available bytes. Unreadable,
+The runner also records host storage capacity before launch, then host and guest
+`/data` total/available bytes before tests and after boot or test failures. Unreadable,
 ambiguous or invalid observations become `null`. It retains no paths, raw
 command output or storage contents. These diagnostic facts never establish
 readiness or excuse a failed test; a SQLite exception alone does not establish
 storage exhaustion.
+
+The profile candidate passed Android 14 and 15 again, including complete raw
+native Stop metadata. QPR2 reached readiness but failed while installing the
+synthetic APKs, before instrumentation. Host storage had 84 GB available; guest
+capacity was not observed by that candidate. The former `androidStable: false`
+value was a default after test failure, not independent evidence of a restart.
+The launcher now probes Android after failed tests too and records the actual
+snapshot, with `null` when no snapshot can be read. A failed test cannot pass
+because Android remains ready. An unverified post-test state also fails and
+does not, by itself, establish whether the process restarted.
+
+Investigation found that setup selected tools 16.0 while the launcher invoked
+the runner's preinstalled tools 12.0 through `latest`. A separate, unbooted
+Pixel 7/QPR2 configuration generated with Google's checksum-verified tools 12.0
+used an 800 MiB data partition; local tools 21.0 generated 6 GiB. The launcher
+previously changed RAM and display settings but retained that storage default.
+This establishes the configuration mismatch. It supports the guest-storage
+hypothesis without proving the unrecorded installation error or every earlier
+OS crash. Explicit tool and partition selection plus fresh guest storage and
+install diagnostics are required for the next qualification run.
+The native harness records the attempted APK role, elapsed time, exit status
+and a fixed allowlisted package-manager failure code. It preserves prior
+successful installs and stops after the first failed attempt. Both successful
+process exit and the exact installation success protocol are required before
+instrumentation. Missing, overflowing or contradictory output fails without
+exporting APK paths, error messages or retrying installation.

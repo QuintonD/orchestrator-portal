@@ -274,6 +274,22 @@ passed 48 checks in a real Linux container, including four subprocess checks;
 Windows passed 44 and explicitly skipped those four. Fresh complete hosted
 integration is still required for this candidate.
 
+Candidate `d248f9b4` passed Android 14 and 15 again, including the complete raw
+Stop lifecycle record. QPR2 reached readiness but failed in APK installation,
+before instrumentation. Its default `androidStable: false` after failure was
+not an independent observation of a restart. The updated launcher records a
+real post-test snapshot for unsuccessful tests too; missing proof cannot pass.
+
+The CI log exposed tools 12.0 behind the launcher's hardcoded `latest` path,
+despite setup selecting tools 16.0 separately. A checksum-verified tools 12.0
+reproduction generated an 800 MiB Pixel 7/QPR2 data partition; tools 21.0 used by
+local QA generated 6 GiB. Newly created CI AVDs now explicitly use 6 GiB and the
+selected tools revision. Guest free-space observations and typed per-APK install
+results will test this correction without inventing the earlier error code.
+The final local diagnostic checks passed 51 Linux tests and 46 phone harness
+tests. Independent review covered failed tests with ready Android, unavailable
+state, exact tool-version selection, installation failure and output redaction.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

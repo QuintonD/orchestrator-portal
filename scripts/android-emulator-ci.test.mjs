@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, graphicsProfile, hasDevices, optionalCleanupQuery, parseOptions, preTestBootCrashLocations, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForEmulatorRetirement, waitForReady } from './android-emulator-ci.mjs';
+import { assessAndroidAfterTest, avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, graphicsProfile, hasDevices, optionalCleanupQuery, parseOptions, preTestBootCrashLocations, runLifecycle, selectCommandLineTools, snapshotReady, verifyCommandLineTools, verifyPinnedEmulator, waitForEmulatorRetirement, waitForReady } from './android-emulator-ci.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -30,8 +30,8 @@ test('ownership checks exclude parent, sibling-prefix and pre-existing attached 
   assert.equal(hasDevices('List of devices attached\nphysical-device\tdevice\n'), true);
 });
 test('actual AVD hardware configuration contains one authoritative value for every LCD and resource key', () => {
-  const text = avdConfiguration('hw.lcd.width=1080\r\nhw.lcd.width = 1440\r\nhw.lcd.height=2400\r\nhw.lcd.density=420\r\nhw.ramSize=4096\r\nhw.cpu.ncore=4\r\nimage.sysdir.1=system-images/android-36.1/google_apis/x86_64/\r\n');
-  for (const [key, value] of Object.entries({ 'hw.lcd.width': '720', 'hw.lcd.height': '1600', 'hw.lcd.density': '280', 'hw.ramSize': '2048', 'hw.cpu.ncore': '2' })) assert.deepEqual(text.split('\n').filter((line) => line.startsWith(key + '=')), [`${key}=${value}`]);
+  const text = avdConfiguration('hw.lcd.width=1080\r\nhw.lcd.width = 1440\r\nhw.lcd.height=2400\r\nhw.lcd.density=420\r\nhw.ramSize=4096\r\nhw.cpu.ncore=4\r\ndisk.dataPartition.size=800M\r\ndisk.dataPartition.size = 2G\r\nimage.sysdir.1=system-images/android-36.1/google_apis/x86_64/\r\n');
+  for (const [key, value] of Object.entries({ 'hw.lcd.width': '720', 'hw.lcd.height': '1600', 'hw.lcd.density': '280', 'hw.ramSize': '2048', 'hw.cpu.ncore': '2', 'disk.dataPartition.size': '6G' })) assert.deepEqual(text.split('\n').filter((line) => line.startsWith(key + '=')), [`${key}=${value}`]);
   assert.match(text, /image\.sysdir\.1=system-images\/android-36\.1/u);
 });
 test('only QPR2 selects the explicit local-QA graphics profile', () => {
@@ -40,6 +40,25 @@ test('only QPR2 selects the explicit local-QA graphics profile', () => {
   for (const image of ['36.0', '36.2', '', undefined, '-gpu host']) assert.throws(() => graphicsProfile(image));
   graphicsProfile('36.1').arguments.push('-feature', '-Vulkan');
   assert.deepEqual(graphicsProfile('36.1').arguments, ['-gpu', 'swiftshader']);
+});
+
+test('AVD tools require the selected revision instead of trusting a stale latest directory', () => {
+  assert.deepEqual(verifyCommandLineTools('Pkg.Revision=16.0\r\nPkg.Path=cmdline-tools;16.0\r\n'), { build: '12266719', version: '16.0' });
+  for (const text of ['', undefined, 'x'.repeat(16385), 'Pkg.Revision=12.0', 'Pkg.Revision=21.0', '# Pkg.Revision=16.0', 'Pkg.Revision=16.0\nPkg.Revision=12.0', 'Pkg.Revision=16.0\nPkg.Revision =12.0', 'Pkg.Revision=16.0\n Pkg.Revision:12.0', 'Pkg.Revision=16.0-malicious']) assert.throws(() => verifyCommandLineTools(text), /command_line_tools_version_mismatch/u);
+});
+
+test('AVD tool selection permits setup reuse only for the exact revision within the SDK', async () => {
+  const sdk = path.resolve('/android/sdk'); const versioned = path.join(sdk, 'cmdline-tools/16.0'); const latest = path.join(sdk, 'cmdline-tools/latest');
+  for (const reuse of [false, true]) {
+    const calls = [];
+    const selected = await selectCommandLineTools(sdk, { realpath: async name => { calls.push(name); if (reuse && name === versioned) throw Object.assign(new Error(), { code: 'ENOENT' }); return name; }, readFile: async () => 'Pkg.Revision=16.0' });
+    assert.equal(selected.directory, reuse ? latest : versioned); assert.deepEqual(calls, reuse ? [versioned, latest] : [versioned]);
+  }
+  for (const revision of ['12.0', '21.0']) await assert.rejects(selectCommandLineTools(sdk, { realpath: async name => { if (name === versioned) throw Object.assign(new Error(), { code: 'ENOENT' }); return name; }, readFile: async () => `Pkg.Revision=${revision}` }), /command_line_tools_version_mismatch/u);
+  await assert.rejects(selectCommandLineTools(sdk, { realpath: async () => path.resolve('/outside/sdk'), readFile: async () => 'Pkg.Revision=16.0' }), /unowned_command_line_tools/u);
+  let calls = 0;
+  await assert.rejects(selectCommandLineTools(sdk, { realpath: async () => { calls++; throw Object.assign(new Error('unreadable'), { code: 'EACCES' }); } }), /unreadable/u);
+  assert.equal(calls, 1);
 });
 
 test('boot flag alone and wrong service, user, process or API facts never establish readiness', () => {
@@ -60,6 +79,18 @@ test('readiness times out and never substitutes retries of tests for missing And
   await assert.rejects(waitForReady({ probe: async () => { probes++; return { ...ready(), services: {} }; }, image: '36.1', deadline: 6000, now: () => clock, sleep: async (ms) => { clock += ms; } }), /android_services_readiness_timeout/u);
   assert.equal(probes, 3);
 });
+test('post-test Android assessment distinguishes stable, restarted and unreadable observations', async () => {
+  for (const after of [ready(), ready('202'), ready(''), { ...ready(), unlocked: false }]) {
+    const seen = [];
+    const result = await assessAndroidAfterTest({ probe: async () => after, current: ready(), image: '36.1', onSample: value => seen.push(value) });
+    const expected = after.pid ? after.pid === '201' && after.unlocked : null;
+    assert.equal(result.androidStable, expected); assert.deepEqual(result.androidSnapshot, after);
+    assert.equal(seen.length, 1); assert.equal(seen[0].stable, expected ? 3 : 0);
+  }
+  const unreadable = await assessAndroidAfterTest({ probe: async () => { throw new Error('private transport text'); }, current: ready(), image: '36.1' });
+  assert.deepEqual(unreadable, { androidStable: null, androidSnapshot: null });
+});
+
 test('cleanup waits for stale ADB registration to retire after the owned process exits', async () => {
   let clock = 0; const seen = []; const registrations = [true, true, false];
   const result = await waitForEmulatorRetirement({ probe: async () => ({ processExited: true, adbReadable: true, registered: registrations.shift() }), deadline: 10000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: (sample) => seen.push(sample.confirmed) });
