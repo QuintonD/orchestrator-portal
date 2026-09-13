@@ -5,8 +5,9 @@ export function parseNativeResult(output, exitCode) {
   const assertionCounts = [];
   const assertionFailures = [];
   const failureStages = [];
-  const safeStages = new Set(["configuration", "accessibility_setup", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]);
-  const safeClasses = new Set(["AssertionError", "IllegalStateException", "JSONException", "ApiException", "IOException", "SocketTimeoutException", "InterruptedException", "NullPointerException", "IllegalArgumentException", "RuntimeException", "SecurityException", "Exception", "Error"]);
+  const failureCauses = [];
+  const safeStages = new Set(["configuration", "accessibility_automation", "accessibility_setup", "accessibility_disable", "accessibility_enable", "accessibility_connect", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]);
+  const safeClasses = new Set(["AssertionError", "SetupFailure", "ExceptionInInitializerError", "PatternSyntaxException", "IllegalStateException", "JSONException", "ApiException", "IOException", "SocketTimeoutException", "InterruptedException", "NullPointerException", "IllegalArgumentException", "RuntimeException", "SecurityException", "Exception", "Error"]);
   const safeCodes = ["screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error", "screenshot_unavailable", "sensitive_window", "observation_blocked", "observation_expired", "consent_unavailable", "invalid_request", "forbidden"];
   const failureKinds = new Set();
   safeCodes.push("protected_window", "window_unavailable", "stale_observation", "tree_too_large", "app_unavailable", "session_expired", "unknown_action_state", "internal_error");
@@ -30,6 +31,14 @@ export function parseNativeResult(output, exitCode) {
     if (stage) {
       failureKinds.add("reported_failure_stage");
       if (safeStages.has(stage[1]) && failureStages.length < 32) failureStages.push(stage[1]);
+    }
+    const cause = /^INSTRUMENTATION_RESULT: phone_qa_failure_cause=(.*)$/.exec(line);
+    if (cause) {
+      failureKinds.add("reported_failure_cause");
+      const pattern = /^PatternSyntaxException:(-1|0|[1-9]\d{0,4})$/.exec(cause[1]);
+      if (pattern && Number(pattern[1]) <= 65_536 && failureCauses.length < 4) {
+        failureCauses.push({ errorClass: "PatternSyntaxException", patternIndex: Number(pattern[1]) });
+      }
     }
     const stream = /^INSTRUMENTATION_RESULT: stream=(.*)$/.exec(line);
     if (stream) resultStream = !terminalSeen;
@@ -60,6 +69,7 @@ export function parseNativeResult(output, exitCode) {
       assertionCounts: assertionCounts.slice(0, 32),
       assertionFailures: assertionFailures.slice(0, 32),
       failureStages,
+      ...(failureCauses.length ? { failureCauses } : {}),
       failureKinds: [...failureKinds],
     },
   };

@@ -47,15 +47,24 @@ public final class SmokeTest extends Instrumentation {
                 throw new IllegalArgumentException("documentProbe requires a bounded debug-only document case");
             if (liveAgents && (!hostProbe || biometricProbe || !getTargetContext().getPackageName().endsWith(".debug")))
                 throw new IllegalArgumentException("liveAgents requires a debug hostProbe without biometricProbe");
+            stage = "accessibility_automation";
+            UiAutomation automation = getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
             stage = "accessibility_setup";
-            getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
-            // am instrument restarts the target process; explicitly rebind on this disposable test device.
-            shell("settings put secure enabled_accessibility_services null");
-            Thread.sleep(500);
-            shell("settings put secure enabled_accessibility_services " + getTargetContext().getPackageName() + "/io.github.quintond.orchestrator.phonecontrol.PhoneService");
-            shell("settings put secure accessibility_enabled 1");
-            long until = System.currentTimeMillis() + 20_000;
-            while (PhoneService.instance == null && System.currentTimeMillis() < until) Thread.sleep(100);
+            // am instrument restarts the process. Wait for the manager's cached disable
+            // acknowledgement before re-enabling; DB writes alone can be coalesced.
+            try (BoundedSetupShell setupShell = new BoundedSetupShell(() -> {
+                android.os.ParcelFileDescriptor[] pipes = automation.executeShellCommandRwe("/system/bin/sh");
+                if (pipes == null || pipes.length != 3 || pipes[0] == null || pipes[1] == null || pipes[2] == null) {
+                    if (pipes != null) for (android.os.ParcelFileDescriptor pipe : pipes) if (pipe != null) try { pipe.close(); } catch (java.io.IOException ignored) { /* Close every returned pipe. */ }
+                    throw new java.io.IOException("Disposable shell pipes unavailable");
+                }
+                return new BoundedSetupShell.Channel(new android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[0]),
+                        new android.os.ParcelFileDescriptor.AutoCloseOutputStream(pipes[1]),
+                        new android.os.ParcelFileDescriptor.AutoCloseInputStream(pipes[2]));
+            })) {
+                AccessibilitySetup.prepare(getTargetContext().getPackageName() + "/io.github.quintond.orchestrator.phonecontrol.PhoneService",
+                        setupShell, () -> PhoneService.instance != null, android.os.SystemClock::elapsedRealtime, Thread::sleep);
+            }
             require(PhoneService.instance != null, "Accessibility service must be enabled on the disposable emulator");
             PhoneService service = PhoneService.instance;
             stage = "session_setup";
@@ -208,10 +217,19 @@ public final class SmokeTest extends Instrumentation {
             result.putString("stream", "PASS: " + assertions + " native assertions; no token or observation content exported.\n");
             finish(android.app.Activity.RESULT_OK, result);
         } catch (Throwable failed) {
+            if (failed instanceof AccessibilitySetup.SetupFailure setupFailure) stage = setupFailure.stage;
             if (PhoneService.instance != null) PhoneService.instance.stopSession("Native fixture QA failed");
             // Fixed source-owned labels distinguish startup failures without exporting
             // exception text, active-app names, credentials or observation content.
             result.putString("phone_qa_failure_stage", stage);
+            Throwable cause = failed;
+            for (int depth = 0; cause != null && depth < 4; depth++, cause = cause.getCause()) {
+                if (cause instanceof java.util.regex.PatternSyntaxException syntax) {
+                    int index = syntax.getIndex();
+                    result.putString("phone_qa_failure_cause", "PatternSyntaxException:" + (index >= -1 && index <= 65_536 ? index : -1));
+                    break;
+                }
+            }
             result.putString("stream", "FAIL after " + assertions + " assertions: " + failed.getClass().getSimpleName() + ": " + failed.getMessage() + "\n");
             finish(android.app.Activity.RESULT_CANCELED, result);
         } finally { token = null; }

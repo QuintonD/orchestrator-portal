@@ -348,6 +348,51 @@ harness tests. Thirteen focused cleanup/removal cases cover incomplete replies,
 component aliases, pre-existing absence, failed force-stop, late observations
 and cleanup after failure. License-boundary and diff checks also passed.
 
+Candidate `9abcbfbd` passed the complete Android 14 and 15 native/integration
+workflows with five cleanup steps each. Observed service removal took 7,016 ms
+on API 34 and 287 ms on API 35, demonstrating why a fixed short sleep cannot
+replace that acknowledgement. QPR2 reached readiness, installed all three APKs,
+and retained one stable system-server PID with no recorded crashes. Its native
+test then failed before the first assertion in accessibility setup; cleanup
+observed service removal in 408 ms. No capture or integration result is claimed
+for that QPR2 run.
+
+The setup investigation found another timing assumption: instrumentation writes
+the enabled-service setting off, sleeps 500 ms, then writes it on. Android's
+settings observer compares the current database value with its cached enabled
+set; if the writes coalesce, it can miss the disabling transition needed for a
+rebind. The public enabled-service list only enumerates bound services and
+cannot by itself prove that the cached set changed. This is a source-supported
+setup gap; the failed CI artifact does not expose the earlier cached state.
+
+Intel Mac packaging in that candidate failed to connect to `nodejs.org` while
+downloading the pinned Node archive. Only that failed job was rerun, and all six
+desktop packages then passed complete checksum inventories and 13 smoke checks
+each. The original timeout remains recorded separately from the passing retry.
+
+The replacement setup observes Android's cached enabled, binding and crashed
+service sets and the local connection before enabling the service once. Its
+fixed shell commands share a 20-second deadline; bounded stdout/stderr, complete
+dump framing and command status are required. The helpers are included only in
+the instrumentation APK and debug JVM tests. An independent DEX inspection
+confirmed their absence from the companion app APK. The first build passed 56
+JVM tests, lint and 60 Node harness tests, but actual QPR2 execution failed before
+its first assertion with `ExceptionInInitializerError`; all five cleanup steps
+passed. A separate ICU reproduction rejected the helper's unescaped closing
+regex brace, which the JVM accepted. Escaping that literal brace compiled under
+ICU. This failure and the original APK hashes remain recorded.
+
+The corrected build passed 56 JVM tests, 61 Node harness tests, lint and legal
+packaging. Actual QPR2 execution then passed 46 native assertions and all five
+cleanup steps in `test-results/phone-control/native-1789310764747/`. The subsequent
+CLI/MCP/portal integration passed all eight checks, 20 tree observations and ten
+window screenshots without failed observations. Its original native terminal
+evidence confirmed authenticated paired-host Stop; all cleanup passed. The
+fixture screenshot was inspected in
+`test-results/phone-control/integration-1789310825775/`. The corrected helper's
+device pass does not establish that settings coalescing caused the earlier CI
+failure. Fresh hosted checks remain a separate gate.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

@@ -62,7 +62,7 @@ test("state differences expose only the fixed category and no window details", (
 });
 
 test("failure stages identify only fixed harness phases and cannot turn a failure into success", () => {
-  for (const stage of ["configuration", "accessibility_setup", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]) {
+  for (const stage of ["configuration", "accessibility_automation", "accessibility_setup", "accessibility_disable", "accessibility_enable", "accessibility_connect", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]) {
     const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=${stage}\n${success}`, 0);
     assert.equal(result.passed, false);
     assert.deepEqual(result.diagnostics.failureStages, [stage]);
@@ -70,9 +70,20 @@ test("failure stages identify only fixed harness phases and cannot turn a failur
   }
 });
 
+test("cached accessibility setup failures expose the fixed stage and class without shell content", () => {
+  const secret = "synthetic-private-shell-reply";
+  for (const stage of ["accessibility_disable", "accessibility_enable", "accessibility_connect"]) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=${stage}\nINSTRUMENTATION_RESULT: stream=FAIL after 0 assertions: SetupFailure: ${secret}\nINSTRUMENTATION_CODE: 0\n`, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.failureStages, [stage]);
+    assert.deepEqual(result.diagnostics.assertionFailures, [{ afterAssertions: 0, errorClass: "SetupFailure", recognizedCodes: [] }]);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+});
+
 test("unknown, injected and excessive stage diagnostics never export private text", () => {
   const secret = "synthetic-private-window-or-token";
-  for (const stage of [secret, `fixture_launch ${secret}`, `fixture_launch=${secret}`, ""]) {
+  for (const stage of [secret, `fixture_launch ${secret}`, `fixture_launch=${secret}`, `accessibility_disable_${secret}`, `accessibility_connect ${secret}`, ""]) {
     const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=${stage}\n${success}`, 0);
     assert.equal(result.passed, false);
     assert.deepEqual(result.diagnostics.failureStages, []);
@@ -84,4 +95,24 @@ test("unknown, injected and excessive stage diagnostics never export private tex
   const repeated = parseNativeResult(`${"INSTRUMENTATION_RESULT: phone_qa_failure_stage=fixture_launch\n".repeat(100)}${success}`, 0);
   assert.equal(repeated.passed, false);
   assert.equal(repeated.diagnostics.failureStages.length, 32);
+});
+
+test("initializer failures preserve only the fixed nested pattern class and bounded index", () => {
+  const secret = "synthetic-private-pattern-or-message";
+  for (const index of [-1, 0, 53, 65536]) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=accessibility_setup\nINSTRUMENTATION_RESULT: phone_qa_failure_cause=PatternSyntaxException:${index}\nINSTRUMENTATION_RESULT: stream=FAIL after 0 assertions: ExceptionInInitializerError: ${secret}\nINSTRUMENTATION_CODE: 0\n`, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.failureCauses, [{ errorClass: "PatternSyntaxException", patternIndex: index }]);
+    assert.equal(result.diagnostics.assertionFailures[0].errorClass, "ExceptionInInitializerError");
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+  for (const value of [secret, `PatternSyntaxException:53 ${secret}`, "PatternSyntaxException:01", "PatternSyntaxException:-2", "PatternSyntaxException:65537", "PatternSyntaxException:9999999999999999999999999", "OtherClass:53", "PatternSyntaxException:"]) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_cause=${value}\n${success}`, 0);
+    assert.equal(result.passed, false);
+    assert.equal(result.diagnostics.failureCauses, undefined);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+  const repeated = parseNativeResult(`${"INSTRUMENTATION_RESULT: phone_qa_failure_cause=PatternSyntaxException:53\n".repeat(100)}${success}`, 0);
+  assert.equal(repeated.passed, false);
+  assert.equal(repeated.diagnostics.failureCauses.length, 4);
 });

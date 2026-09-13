@@ -30,7 +30,11 @@ android {
         debug { applicationIdSuffix '.debug'; versionNameSuffix '-qa' }
         release { signingConfig signingConfigs.phone; minifyEnabled false; debuggable false }
     }
-    sourceSets { main { assets.srcDir "$buildDir/generated/legal"; assets.srcDir "$buildDir/generated/releaseIdentity"; res.srcDir "../shared-res" } }
+    sourceSets {
+        main { assets.srcDir "$buildDir/generated/legal"; assets.srcDir "$buildDir/generated/releaseIdentity"; res.srcDir "../shared-res" }
+        androidTest.java.srcDir 'src/qa/java'
+        testDebug.java.srcDir 'src/qa/java'
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
