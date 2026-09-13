@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import { assertHostProbeStopped, parseHostProbeEvidence, parsePowerEvidence } from './host-probe-evidence.mjs';
+import { createAdbTransportEvidence } from './adb-transport-evidence.mjs';
 
 const ready = 'INSTRUMENTATION_STATUS: stream=PHONE_HOST_PROBE_READY (private test token; 180 second maximum)\n';
 const terminal = reason => ['end_reason=' + reason, 'elapsed_ms=9241', 'lease_seconds=180', 'interactive=false', 'keyguard_locked=true'].map(field => 'INSTRUMENTATION_RESULT: phone_qa_probe_' + field).join('\n') + '\n';
@@ -53,10 +54,11 @@ test('the actual integration launch requests raw output and waits for stream dra
   const launch = source.slice(source.indexOf('  instrument = start("adb"'), source.indexOf('  stage = "initialize standalone broker"'));
   const stopGate = source.slice(source.indexOf('  stage = "verify raw host probe terminal evidence"'), source.indexOf('\n} catch (error)', source.indexOf('  stage = "verify raw host probe terminal evidence"')));
   assert.ok(launch.length > 0 && stopGate.length > 0);
-  const child = new EventEmitter(); child.exitCode = null; child.stdout = new EventEmitter(); child.stderr = { resume() {} }; child.kill = () => false;
+  const child = new EventEmitter(); child.exitCode = null; child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.kill = () => false;
+  const instrumentTransport = createAdbTransportEvidence();
   let args; let terminalChecked = false; let recorded = false;
   const context = vm.createContext({ assert, serial: 'emulator-5574', runner: 'synthetic.test/SmokeTest', nativeOutput: '', instrumentClosed: false, instrumentOutputOverflow: false,
-    probeTiming: {}, harnessStarted: performance.now(), performance, parseHostProbeEvidence, samplePower() {},
+    probeTiming: {}, instrumentTransport, harnessStarted: performance.now(), performance, parseHostProbeEvidence, samplePower() {},
     start(command, argv) { assert.equal(command, 'adb'); args = argv; queueMicrotask(() => child.stdout.emit('data', args.includes('-r') ? ready + 'INSTRUMENTATION_STATUS_CODE: 1\n' : ready.replace('INSTRUMENTATION_STATUS: stream=', ''))); return child; },
     async eventually(check) { await Promise.resolve(); assert.equal(check(), true, 'Required raw readiness or stream close is absent'); },
     assertHostProbeStopped(output, code) { terminalChecked = true; assertHostProbeStopped(output, code); },
@@ -75,6 +77,37 @@ test('the actual integration launch requests raw output and waits for stream dra
   child.stdout.emit('data', 'x'.repeat(1024 * 1024 + 1));
   await assert.rejects(vm.runInContext(`(async () => {${stopGate}})()`, context));
   assert.equal(terminalChecked, false); assert.equal(recorded, false);
+  context.instrumentOutputOverflow = false; child.exitCode = 255;
+  child.stderr.emit('data', Buffer.from('adb: error: device offline\n'));
+  assert.equal(instrumentTransport.finish().markers.device_offline, 1);
+  await assert.rejects(vm.runInContext(`(async () => {${stopGate}})()`, context));
+  assert.equal(recorded, false);
+});
+
+test('integration transport evidence reports incomplete stderr when failure exits before close', async () => {
+  const source = await readFile(new URL('./integration.mjs', import.meta.url), 'utf8');
+  const hooks = source.match(/^  instrument\.stderr\.on\("data", .*$/m)[0] + '\n'
+    + source.match(/^  instrument\.once\("close", .*$/m)[0];
+  const projection = source.match(/adbTransport: (\{ \.\.\.instrumentTransport\.finish\(\), streamClosed: instrumentClosed \})/)[1];
+  for (const closeBeforeEvidence of [false, true]) {
+    const instrument = new EventEmitter(); instrument.stderr = new EventEmitter();
+    const context = vm.createContext({ instrument, instrumentClosed: false, instrumentTransport: createAdbTransportEvidence() });
+    vm.runInContext(hooks, context);
+    instrument.emit('exit', 255);
+    assert.equal(context.instrumentClosed, false);
+    if (closeBeforeEvidence) {
+      instrument.stderr.emit('data', Buffer.from('adb: error: device offline\n')); instrument.emit('close', 255);
+    }
+    const result = vm.runInContext(`(${projection})`, context);
+    assert.equal(result.streamClosed, closeBeforeEvidence);
+    assert.equal(result.markers.device_offline, closeBeforeEvidence ? 1 : 0);
+    if (!closeBeforeEvidence) {
+      instrument.stderr.emit('data', Buffer.from('adb: error: device offline\n')); instrument.emit('close', 255);
+      assert.equal(result.streamClosed, false);
+      assert.equal(result.markers.device_offline, 0);
+    }
+    assert.throws(() => assertHostProbeStopped(completed, 255));
+  }
 });
 
 test('unknown, injected, duplicate and contradictory terminal values are not exported', () => {
