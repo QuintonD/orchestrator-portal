@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { EventEmitter } from "node:events";
+import { createAdbTransportEvidence } from "./adb-transport-evidence.mjs";
+import { parseNativeResult } from "./native-result.mjs";
 import { cleanupSteps } from "./runner-cleanup.mjs";
 import { requireServiceState, waitForNativeServiceRemoval, nativeRemovalFailureFacts } from "./native-force-stop.mjs";
 
@@ -11,6 +14,52 @@ const verdict = source.match(/^const passed = functionalPassed && cleanup\.every
 const pkg = "io.github.quintond.orchestrator.phonecontrol.debug";
 const component = `${pkg}/io.github.quintond.orchestrator.phonecontrol.PhoneService`;
 const reply = (stdout) => ({ stdout, stderr: "", status: 0, signal: null });
+
+test("actual native stderr wiring retains safe transport facts without overriding failed instrumentation", () => {
+  const child = { stderr: new EventEmitter() };
+  const adbTransport = createAdbTransportEvidence();
+  const hook = source.match(/^  child\.stderr\.on\("data", .*$/m)[0];
+  runInNewContext(hook, { child, adbTransport });
+  child.stderr.emit("data", Buffer.from("synthetic-private-output\nadb: error: device offline\n"));
+  child.stderr.emit("data", Buffer.from("adb: connection closed"));
+  const evidence = adbTransport.finish();
+  assert.equal(evidence.markers.device_offline, 1);
+  assert.equal(evidence.markers.connection_closed, 0);
+  assert.equal(evidence.discardedLines, 1);
+  assert.equal(evidence.incompleteLine, true);
+  assert.ok(!JSON.stringify(evidence).includes("synthetic-private-output"));
+  const output = "INSTRUMENTATION_RESULT: stream=PASS: 47 native assertions; no token or observation content exported.\nINSTRUMENTATION_CODE: -1\n";
+  const parsed = parseNativeResult(output, 255);
+  const actualVerdict = source.match(/^const functionalPassed = .*$/m)[0];
+  const functionalPassed = runInNewContext(`${actualVerdict}\nfunctionalPassed`, { failure: undefined, oversizedOutput: false, parsed });
+  assert.equal(functionalPassed, false);
+  assert.match(source, /adbTransport: \{ \.\.\.adbTransport\.finish\(\), streamClosed: childClosed \}/);
+});
+
+test("native transport evidence distinguishes process exit from drained stderr without waiting or changing failure", () => {
+  const hooks = source.match(/^  child\.stderr\.on\("data", .*$/m)[0] + "\n"
+    + source.match(/^  child\.once\("close", .*$/m)[0];
+  const projection = source.match(/adbTransport: (\{ \.\.\.adbTransport\.finish\(\), streamClosed: childClosed \})/)[1];
+  for (const closeBeforeEvidence of [false, true]) {
+    const child = new EventEmitter(); child.stderr = new EventEmitter();
+    const context = { child, childClosed: false, adbTransport: createAdbTransportEvidence() };
+    runInNewContext(hooks, context);
+    child.emit("exit", 255);
+    assert.equal(context.childClosed, false);
+    if (closeBeforeEvidence) {
+      child.stderr.emit("data", Buffer.from("adb: error: device offline\n")); child.emit("close", 255);
+    }
+    const evidence = runInNewContext(`(${projection})`, context);
+    assert.equal(evidence.streamClosed, closeBeforeEvidence);
+    assert.equal(evidence.markers.device_offline, closeBeforeEvidence ? 1 : 0);
+    if (!closeBeforeEvidence) {
+      child.stderr.emit("data", Buffer.from("adb: error: device offline\n")); child.emit("close", 255);
+      assert.equal(evidence.streamClosed, false);
+      assert.equal(evidence.markers.device_offline, 0);
+    }
+    assert.equal(parseNativeResult("", 255).passed, false);
+  }
+});
 const expected = [
   ["read enabled services"],
   ["shell", "am", "force-stop", pkg],

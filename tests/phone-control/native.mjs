@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { cleanupSteps, safeFailure, stopChild, within } from "./runner-cleanup.mjs";
 import { parseNativeResult } from "./native-result.mjs";
+import { createAdbTransportEvidence } from "./adb-transport-evidence.mjs";
 import { parseInstallEvidence } from "./install-evidence.mjs";
 import { requireServiceState, waitForNativeServiceRemoval, nativeRemovalFailureFacts } from "./native-force-stop.mjs";
 
@@ -27,7 +28,9 @@ let nativeServiceEnabledBeforeStop = null;
 let nativeForceStopSucceeded = false;
 let nativeStopRemoval = null;
 let result = "";
+const adbTransport = createAdbTransportEvidence();
 let child;
+let childClosed = false;
 let code;
 let failure;
 let cleanup = [];
@@ -63,7 +66,8 @@ try {
     if (result.length + chunk.length > 1024 * 1024) { oversizedOutput = true; child.kill(); return; }
     result += chunk;
   });
-  child.stderr.resume();
+  child.stderr.on("data", (chunk) => adbTransport.write(chunk));
+  child.once("close", () => { childClosed = true; });
   [code] = await within(() => once(child, "close"), 180000);
 } catch (error) {
   failure = { stage, ...safeFailure(error) };
@@ -88,7 +92,7 @@ const { checks, diagnostics } = parsed;
 const functionalPassed = !failure && !oversizedOutput && parsed.passed;
 const passed = functionalPassed && cleanup.every((item) => item.passed);
 for (const item of cleanup.filter((entry) => !entry.passed)) console.error(`FAIL cleanup: ${item.name} (${item.code})`);
-try { writeFileSync(join(output, "results.json"), JSON.stringify({ serial, apiLevel, platform, passed, functionalPassed, checks, diagnostics, installs, oversizedOutput, cleanup, forceStop: { enabledBeforeStop: nativeServiceEnabledBeforeStop, commandSucceeded: nativeForceStopSucceeded, removal: nativeStopRemoval }, ...(failure ? { failure } : {}), scope: "Synthetic fixture and emulator; physical acceptance not established" }, null, 2)); }
+try { writeFileSync(join(output, "results.json"), JSON.stringify({ serial, apiLevel, platform, passed, functionalPassed, checks, diagnostics, adbTransport: { ...adbTransport.finish(), streamClosed: childClosed }, installs, oversizedOutput, cleanup, forceStop: { enabledBeforeStop: nativeServiceEnabledBeforeStop, commandSucceeded: nativeForceStopSucceeded, removal: nativeStopRemoval }, ...(failure ? { failure } : {}), scope: "Synthetic fixture and emulator; physical acceptance not established" }, null, 2)); }
 catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }
 for (const check of checks) console.log(check);
 console.log(JSON.stringify({ functionalPassed, diagnostics, oversizedOutput }));

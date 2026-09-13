@@ -1,6 +1,7 @@
 import { readEmulatorEvidence } from "./device-evidence.mjs";
 import { recoveryEvidence, recoverySummary, captureWarningCount } from "./capture-recovery-evidence.mjs";
 import { CLOCK_SAMPLE_TIMEOUT_MS, CLOCK_SAMPLE_MAX_BYTES, sampleClock, observationClockEvidence } from "./clock-evidence.mjs";
+import { createAdbTransportEvidence } from "./adb-transport-evidence.mjs";
 // A real disposable Android device boundary, reached through the standalone CLI,
 // MCP and portal. Secrets stay in memory/private test files and never in output.
 import assert from "node:assert/strict";
@@ -44,6 +45,7 @@ const phaseTimings = [];
 const harnessStarted = performance.now();
 const probeTiming = { startedMs: null, readyMs: null, exitedMs: null };
 let nativeOutput = "";
+const instrumentTransport = createAdbTransportEvidence();
 const processes = [];
 const diagnosticCodes = new Set(["screenshot_unavailable", "observation_blocked", "stale_observation", "scope_forbidden", "device_outcome_unknown", "outcome_unknown", "forbidden", "unknown_action_state", "busy", "deadline_expired", "native_response_invalid", "native_unavailable", "persistence_unavailable"]);
 for (const code of ["screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error"]) diagnosticCodes.add(code);
@@ -183,7 +185,7 @@ try {
   instrument.once("exit", () => { probeTiming.exitedMs = Math.round(performance.now() - harnessStarted); });
   instrument.once("close", () => { instrumentClosed = true; });
   instrument.stdout.on("data", (chunk) => { if (nativeOutput.length + chunk.length > 1024 * 1024) { instrumentOutputOverflow = true; instrument.kill(); return; } nativeOutput += chunk; });
-  instrument.stderr.resume();
+  instrument.stderr.on("data", instrumentTransport.write);
   await eventually(() => parseHostProbeEvidence(nativeOutput, instrument.exitCode).readyLeaseSeconds === 180, 45000);
   probeTiming.readyMs = Math.round(performance.now() - harnessStarted);
   samplePower("probe_ready");
@@ -463,7 +465,7 @@ try {
     serial, apiLevel, platform, fixture, passed: results.every((item) => item.passed) && cleanup.every((item) => item.passed), results, cleanup, cliObservationWallMs: timings,
     httpObservation: { attempts: observationAttempts, treeOnly: { samplesMs: observationSamples, p50Ms: percentile(0.5), p95Ms: percentile(0.95) }, screenshots: { samplesMs: screenshotSamples, p50Ms: screenshotPercentile(0.5), p95Ms: screenshotPercentile(0.95) }, failedAttempts: observationAttempts.filter((attempt) => !attempt.observed).length, definition: "Successful owner HTTP transport plus broker and native observation, separated by pixel opt-in; failed attempts retained separately; excludes model reasoning and inter-sample delay" },
       captureRecovery: { sampledRequests: recoverySummary(observationAttempts), reportedRecoveries: captureRecoveries, warningSamples: captureWarningSamples, warningLimit: "Fixed-message counts from the sampled companion PID; log loss and other capture requests prevent per-request causal attribution. Raw logs are discarded." },
-      nativeMemory, powerSamples, clockDiagnostics: { samples: clockSamples, initialObservation: initialObservationClock ?? null, purpose: "Read-only clock intervals; never change deadlines or authorize retries. Observation capture timing also includes read latency." }, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
+      nativeMemory, powerSamples, clockDiagnostics: { samples: clockSamples, initialObservation: initialObservationClock ?? null, purpose: "Read-only clock intervals; never change deadlines or authorize retries. Observation capture timing also includes read latency." }, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode), adbTransport: { ...instrumentTransport.finish(), streamClosed: instrumentClosed } }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
     stopWallMs: stopWallMs ?? null,
     limits: ["Emulator and signed synthetic fixture only", "Two identities and CLI/MCP task equivalence; no model reasoning or parity test", "No real user accounts or external effects", "Hardware biometric and Astra model parity not established"],
   }, null, 2)); } catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }

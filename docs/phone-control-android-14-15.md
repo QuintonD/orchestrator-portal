@@ -138,3 +138,12 @@ Fresh hosted checks still gate merge. Publication also requires fresh signed bui
 matching workflow artifacts and complete in-place upgrade proofs. The
 [alpha validation record](alpha-7-validation.md) and PR identify which checks
 actually passed; this design description alone establishes no recovery rate.
+
+Later release qualification also encountered an ADB transport interruption on
+Android 15 and an unidentified native assertion failure on QPR2. The original
+records remain failures; a later successful Android 14/15 sample does not prove
+a repair of those events. Test-only checkpoints now distinguish exact native
+checks, and a bounded ADB stderr classifier exports fixed markers without raw
+output. These diagnostics do not change phone permissions, recovery eligibility,
+Stop, action deadlines or replay behavior. See the
+[qualification history](alpha-7-validation.md#final-main-qualification-and-failure-evidence).

@@ -1,9 +1,86 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { parseNativeResult } from "./native-result.mjs";
 
 const summary = "PASS: 36 native assertions; no token or observation content exported.";
 const success = `INSTRUMENTATION_RESULT: stream=${summary}\n\nINSTRUMENTATION_CODE: -1\n`;
+
+const nativeFacts = { schemaVersion: 1, check: "fixture_replay_conflict", responseKind: "result", responseCode: null };
+const nativeMarker = (facts = nativeFacts) => `INSTRUMENTATION_RESULT: phone_qa_native_failure=${JSON.stringify(facts)}\n`;
+
+test("every source-owned checkpoint projects a bounded failure, regardless of assertion count", () => {
+  const java = readFileSync(new URL("../../apps/phone-android/app/src/qa/java/io/github/quintond/orchestrator/phonecontrol/NativeCheckEvidence.java", import.meta.url), "utf8");
+  const checks = java.match(/enum Check \{([\s\S]*?)\n    \}/)[1].match(/[A-Z][A-Z_]+/g).map((check) => check.toLowerCase());
+  assert.equal(checks.length, 39);
+  for (const check of checks) {
+    const facts = { ...nativeFacts, check };
+    const result = parseNativeResult(nativeMarker(facts) + success, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.nativeFailure, facts);
+    assert.ok(result.diagnostics.failureKinds.includes("reported_native_failure"));
+  }
+});
+
+test("a native response result, known refusal and absent response are distinct", () => {
+  for (const newline of ["\n", "\r\n", "\r\r\n"]) {
+    const output = (nativeMarker() + success).replaceAll("\n", newline);
+    const result = parseNativeResult(output, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.nativeFailure, nativeFacts);
+  }
+  for (const responseKind of ["none", "result", "invalid"]) {
+    const facts = { ...nativeFacts, responseKind };
+    assert.deepEqual(parseNativeResult(nativeMarker(facts) + success, 0).diagnostics.nativeFailure, facts);
+  }
+  for (const responseCode of ["replay_conflict", "deadline_expired", "stale_observation", "screenshot_internal_error", "other"]) {
+    const facts = { ...nativeFacts, responseKind: "error", responseCode };
+    assert.deepEqual(parseNativeResult(nativeMarker(facts) + success, 0).diagnostics.nativeFailure, facts);
+  }
+});
+
+test("unknown, injected, noncanonical and oversized native facts fail without exposing content", () => {
+  const secret = "synthetic-private-window-or-token";
+  const invalid = [null, [], {}, { ...nativeFacts, schemaVersion: 2 }, { ...nativeFacts, check: secret },
+    { ...nativeFacts, responseKind: secret }, { ...nativeFacts, responseCode: secret }, { ...nativeFacts, private: secret },
+    { ...nativeFacts, responseKind: "error", responseCode: null }, { ...nativeFacts, responseCode: "replay_conflict" },
+    { ...nativeFacts, responseKind: "error", responseCode: "replay_conflict\n" },
+    { ...nativeFacts, responseKind: "error", responseCode: "x".repeat(1000) }];
+  const values = [...invalid.map(JSON.stringify), "not-json", JSON.stringify(nativeFacts).replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"schemaVersion\":1"), JSON.stringify(nativeFacts) + " "];
+  for (const value of values) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_native_failure=${value}\n${success}`, 0);
+    assert.equal(result.passed, false);
+    assert.equal(result.diagnostics.nativeFailure, undefined);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+});
+
+test("missing separator, duplicates and post-terminal native markers cannot supply authoritative facts", () => {
+  for (const output of [
+    "INSTRUMENTATION_RESULT: phone_qa_native_failure\n" + success,
+    "INSTRUMENTATION_RESULT: phone_qa_native_failure_suffix=private\n" + success,
+    " " + nativeMarker() + success,
+    nativeMarker().replaceAll("\n", "\u2028\n") + success,
+    nativeMarker().replaceAll("\n", "\u2029\n") + success,
+    nativeMarker() + nativeMarker() + success,
+    nativeMarker() + nativeMarker({ ...nativeFacts, check: "fixture_dispatch" }) + success,
+    nativeMarker().repeat(100) + success,
+    success + nativeMarker(),
+  ]) {
+    const result = parseNativeResult(output, 0);
+    assert.equal(result.passed, false);
+    assert.equal(result.diagnostics.nativeFailure, undefined);
+  }
+  const incidental = parseNativeResult("Untrusted prefix " + nativeMarker() + success, 0);
+  assert.equal(incidental.passed, true);
+  assert.equal(incidental.diagnostics.nativeFailure, undefined);
+});
+
+test("replay check wiring derives a guaranteed conflict from the original request and keeps its id", () => {
+  const java = readFileSync(new URL("../../apps/phone-android/app/src/androidTest/java/io/github/quintond/orchestrator/phonecontrol/SmokeTest.java", import.meta.url), "utf8");
+  assert.match(java, /nativeCheck\.at\(NativeCheckEvidence\.Check\.FIXTURE_REPLAY_CONFLICT\);\s+JSONObject conflict = new JSONObject\(mutation\.toString\(\)\); conflict\.put\("deadlineAt", NativeReplayFixture\.conflictingDeadline\(mutation\.getLong\("deadlineAt"\)\)\);\s+require\(error\(call\("fixture\.increment", conflict, id\)\)\.equals\("replay_conflict"\)/);
+  assert.doesNotMatch(java, /conflict\.put\("deadlineAt", System\.currentTimeMillis\(\)/);
+});
 
 test("exact terminal success survives incidental Android FAIL/Exception diagnostics", () => {
   const result = parseNativeResult(`OS diagnostic: Exception while trying a fallback; FAIL marker in an unrelated message\r\n${success}`, 0);

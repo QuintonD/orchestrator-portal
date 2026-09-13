@@ -20,6 +20,7 @@ public final class SmokeTest extends Instrumentation {
     private String token;
     private final String fixture = "io.github.quintond.orchestrator.phonefixture.debug";
     private int assertions;
+    private final NativeCheckEvidence nativeCheck = new NativeCheckEvidence();
     private boolean hostProbe;
     private boolean liveAgents;
     private boolean biometricProbe;
@@ -142,13 +143,19 @@ public final class SmokeTest extends Instrumentation {
                 return;
             }
             stage = "initial_observation";
+            nativeCheck.at(NativeCheckEvidence.Check.INITIAL_OBSERVATION);
             JSONObject observation = initialObservation();
+            nativeCheck.at(NativeCheckEvidence.Check.OBSERVATION_AVAILABLE);
             require(!observation.has("blockedReason") && observation.getJSONArray("nodes").length() > 0, "Real active-window observation available: " + observation.optString("blockedReason"));
             stage = "native_assertions";
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_DEFAULT);
             require(!observation.has("screenshot"), "Screenshot omitted by default");
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_GRANT_DEFAULT);
             require(!service.policy.screenshots(), "Screenshot disclosure starts disabled in this test session");
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_DISCLOSURE_DENIED);
             JSONObject pixelDenial = call("observe", Json.object("allowedPackages", new JSONArray().put(fixture), "includeScreenshot", true));
             require(pixelDenial.optJSONObject("error") != null && pixelDenial.getJSONObject("error").getString("code").equals("forbidden"), "Caller cannot opt into pixels without owner permission");
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_ENABLE_SESSION);
             runOnMainSync(() -> {
                 try {
                     service.stopSession("Owner changes screenshot disclosure in emulator QA");
@@ -158,61 +165,94 @@ public final class SmokeTest extends Instrumentation {
             });
             for (int i = 0; i < observation.getJSONArray("nodes").length(); i++) {
                 JSONObject node = observation.getJSONArray("nodes").getJSONObject(i);
+                nativeCheck.at(NativeCheckEvidence.Check.NODE_ID);
                 require(Policy.validId(node.getString("id")), "Safe node id");
+                nativeCheck.at(NativeCheckEvidence.Check.EDITABLE_REDACTION);
                 if (node.getBoolean("editable")) require(!node.has("text"), "Editable values redacted");
             }
             Thread.sleep(400);
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_OBSERVE);
             JSONObject pixels = observe(true);
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_MIME);
             require(pixels.getJSONObject("screenshot").getString("mimeType").equals("image/png"), "Explicit window screenshot works");
+            nativeCheck.at(NativeCheckEvidence.Check.SCREENSHOT_RENDERED);
             require(renderedFixture(pixels), "Fixture screenshot contains visible rendered color variation");
             // Pixel QA decodes and samples a bitmap. Observe again before the
             // separate positive action instead of spending that binding on test work.
+            nativeCheck.at(NativeCheckEvidence.Check.ACTION_OBSERVE);
             JSONObject actionView = observe(false);
             JSONObject mutation = bound(actionView);
             String id = UUID.randomUUID().toString();
+            nativeCheck.at(NativeCheckEvidence.Check.FIXTURE_DISPATCH);
             JSONObject action = call("fixture.increment", mutation, id);
             require(action.optJSONObject("result") != null, "Signed fixture dispatch: " + safeError(action));
+            nativeCheck.at(NativeCheckEvidence.Check.FIXTURE_DUPLICATE);
             JSONObject duplicate = call("fixture.increment", mutation, id);
             require(action.toString().equals(duplicate.toString()), "Duplicate returns persisted receipt");
-            JSONObject conflict = new JSONObject(mutation.toString()); conflict.put("deadlineAt", System.currentTimeMillis() + 29_000);
+            nativeCheck.at(NativeCheckEvidence.Check.FIXTURE_REPLAY_CONFLICT);
+            JSONObject conflict = new JSONObject(mutation.toString()); conflict.put("deadlineAt", NativeReplayFixture.conflictingDeadline(mutation.getLong("deadlineAt")));
             require(error(call("fixture.increment", conflict, id)).equals("replay_conflict"), "Changed payload cannot reuse id");
+            nativeCheck.at(NativeCheckEvidence.Check.OBSERVATION_CONSUMED);
             require(error(call("fixture.increment", bound(actionView))).equals("stale_observation"), "Executed observation consumed");
             Thread.sleep(400);
+            nativeCheck.at(NativeCheckEvidence.Check.POST_ACTION_OBSERVE);
             JSONObject after = observe(false);
+            nativeCheck.at(NativeCheckEvidence.Check.COUNTER_POSTCONDITION);
             require(Integer.parseInt(counter(after).substring(9)) == (Integer.parseInt(counter(actionView).substring(9)) + 1) % 1000, "Counter changed exactly once and duplicate did not replay");
+            nativeCheck.at(NativeCheckEvidence.Check.EXPECTED_PACKAGE);
             JSONObject wrong = bound(after); wrong.put("expectedPackage", "io.github.other.app");
             require(error(call("fixture.increment", wrong)).equals("stale_observation"), "Expected package enforced");
+            nativeCheck.at(NativeCheckEvidence.Check.EXPIRED_DEADLINE);
             JSONObject expired = bound(after); expired.put("deadlineAt", System.currentTimeMillis() - 1);
             require(error(call("fixture.increment", expired)).equals("deadline_expired"), "Expired action denied");
+            nativeCheck.at(NativeCheckEvidence.Check.INVALID_COORDINATES);
             JSONObject invalid = bound(after); invalid.put("x", -1).put("y", 0);
             require(error(call("tap", invalid)).equals("invalid_request"), "Coordinates enforced");
+            nativeCheck.at(NativeCheckEvidence.Check.TOUCH_BOUNDS);
             JSONObject touch = after.getJSONObject("touchBounds");
             int touchLeft = touch.getInt("left"), touchTop = touch.getInt("top"), touchRight = touch.getInt("right"), touchBottom = touch.getInt("bottom");
             require(touchLeft >= 0 && touchTop >= 0 && touchRight <= after.getInt("width") && touchBottom <= after.getInt("height"), "Touch bounds preserve screenshot coordinates");
             double middleY = (touchTop + touchBottom) / 2.0;
+            nativeCheck.at(NativeCheckEvidence.Check.EDGE_TAP);
             JSONObject edgeTap = bound(after); edgeTap.put("x", touchRight).put("y", middleY);
             require(error(call("tap", edgeTap)).equals("invalid_request"), "Right system gesture boundary denied before consent");
+            nativeCheck.at(NativeCheckEvidence.Check.EDGE_SWIPE);
             JSONObject edgeSwipe = bound(after); edgeSwipe.put("durationMs", 300).put("points", new JSONArray(List.of(
                     Json.object("x", (touchLeft + touchRight) / 2.0, "y", middleY), Json.object("x", touchLeft - 1, "y", middleY))));
             require(error(call("swipe", edgeSwipe)).equals("invalid_request"), "Every swipe point excludes system gesture edges");
+            nativeCheck.at(NativeCheckEvidence.Check.EDGE_PINCH);
             JSONObject edgePinch = bound(after); edgePinch.put("centerX", touchLeft + 1).put("centerY", middleY).put("scale", 2).put("durationMs", 300);
             require(error(call("pinch", edgePinch)).equals("invalid_request"), "Pinch endpoint excludes system gesture edges");
             if (!service.biometricAvailable()) {
+                nativeCheck.at(NativeCheckEvidence.Check.BIOMETRIC_REQUIRED);
                 JSONObject tap = bound(after); tap.put("x", 100).put("y", 100);
                 require(error(call("tap", tap)).equals("consent_unavailable"), "General action requires strong biometric");
             }
+            nativeCheck.at(NativeCheckEvidence.Check.SECURE_ENABLE);
             click("Toggle secure window"); Thread.sleep(500);
+            nativeCheck.at(NativeCheckEvidence.Check.SECURE_OBSERVE);
             JSONObject secure = observe(false);
+            nativeCheck.at(NativeCheckEvidence.Check.SECURE_REDACTION);
             require(secure.has("blockedReason") && secure.getJSONArray("nodes").length() == 0 && !secure.has("screenshot"), "Secure window exports no tree or pixels");
+            nativeCheck.at(NativeCheckEvidence.Check.SECURE_DIAGNOSTIC);
             require(secure.optString("blockedReason").equals("screenshot_secure_window"), "Secure-window denial has a precise safe diagnostic: " + secure.optString("blockedReason"));
+            nativeCheck.at(NativeCheckEvidence.Check.SECURE_DISABLE);
             click("Toggle secure window"); Thread.sleep(500);
+            nativeCheck.at(NativeCheckEvidence.Check.PASSWORD_ENABLE);
             click("Toggle password field"); Thread.sleep(500);
+            nativeCheck.at(NativeCheckEvidence.Check.PASSWORD_DENIAL);
             require(error(call("observe", scope(false))).equals("sensitive_window"), "Password window denied");
+            nativeCheck.at(NativeCheckEvidence.Check.PASSWORD_DISABLE);
             click("Toggle password field"); Thread.sleep(500);
+            nativeCheck.at(NativeCheckEvidence.Check.CALLER_SCOPE);
             require(error(call("observe", Json.object("allowedPackages", new JSONArray(List.of("io.github.other.app"))))).equals("forbidden"), "Caller scope intersects phone grants");
+            nativeCheck.at(NativeCheckEvidence.Check.COMPANION_LAUNCH);
             launch(getTargetContext().getPackageName() + "/io.github.quintond.orchestrator.phonecontrol.MainActivity"); Thread.sleep(500);
+            nativeCheck.at(NativeCheckEvidence.Check.COMPANION_EXCLUSION);
             require(error(call("observe", scope(false))).equals("forbidden"), "Companion surface excluded");
+            nativeCheck.at(NativeCheckEvidence.Check.AUTHENTICATED_STOP);
             require(call("stop", Json.object()).getJSONObject("result").getString("status").equals("stopped"), "Authenticated stop works without operation grant");
+            nativeCheck.at(NativeCheckEvidence.Check.TOKEN_REVOKED);
             require(service.pairingToken() == null, "Stop revokes token");
             result.putString("stream", "PASS: " + assertions + " native assertions; no token or observation content exported.\n");
             finish(android.app.Activity.RESULT_OK, result);
@@ -225,6 +265,7 @@ public final class SmokeTest extends Instrumentation {
             // Fixed source-owned labels distinguish startup failures without exporting
             // exception text, active-app names, credentials or observation content.
             result.putString("phone_qa_failure_stage", stage);
+            if (nativeCheck.facts() != null) result.putString("phone_qa_native_failure", nativeCheck.facts());
             Throwable cause = failed;
             for (int depth = 0; cause != null && depth < 4; depth++, cause = cause.getCause()) {
                 if (cause instanceof java.util.regex.PatternSyntaxException syntax) {
@@ -359,7 +400,9 @@ public final class SmokeTest extends Instrumentation {
             socket.getOutputStream().write(header.getBytes(StandardCharsets.US_ASCII)); socket.getOutputStream().write(body);
             byte[] response = socket.getInputStream().readNBytes(6_100_000);
             String text = new String(response, StandardCharsets.UTF_8);
-            return new JSONObject(text.substring(text.indexOf("\r\n\r\n") + 4));
+            JSONObject parsed = new JSONObject(text.substring(text.indexOf("\r\n\r\n") + 4));
+            nativeCheck.response(parsed.optJSONObject("result") != null && !parsed.has("error"), parsed.optJSONObject("error") != null && !parsed.has("result"), parsed.optJSONObject("error") == null ? null : parsed.optJSONObject("error").optString("code"));
+            return parsed;
         }
     }
 }
