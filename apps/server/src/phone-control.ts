@@ -40,10 +40,13 @@ const callInputs = {
   key: z.object({ observationId, key: z.enum(["back", "home"]) }).strict(),
 };
 const callInput = z.object({ id: identifier, deviceId: identifier, sessionId: identifier, taskId: identifier.optional(), method, params: z.unknown() }).strict();
-const receipt = z.object({ id: identifier, status: z.enum(["observed", "completed", "rejected", "unknown"]), result: z.unknown().optional(), error: z.object({ code: z.string().regex(/^[A-Z0-9_]{1,80}$/i), message: z.string().max(1000) }).optional() });
+const captureRecovery = z.object({ retryCount: z.literal(1), initialError: z.literal("screenshot_internal_error"), initialStage: z.literal("awaiting_callback"), initialElapsedMs: z.number().int().min(0).max(60000), totalElapsedMs: z.number().int().min(0).max(60000) }).strict().refine((value) => value.totalElapsedMs >= value.initialElapsedMs);
+const captureDetails = z.object({ captureRecovery: captureRecovery.optional() });
+const receipt = z.object({ id: identifier, status: z.enum(["observed", "completed", "rejected", "unknown"]), result: z.unknown().optional(), error: z.object({ code: z.string().regex(/^[A-Z0-9_]{1,80}$/i), message: z.string().max(1000), details: captureDetails.optional() }).optional() });
 const observation = z.object({
   observationId, packageName: z.string().max(200), windowId: z.union([z.number().int(), z.string().max(128)]), width: z.number().int().min(0).max(16384), height: z.number().int().min(0).max(16384), capturedAt: z.string().max(40),
   screenshot: z.object({ mimeType: z.literal("image/png"), base64: z.string().max(7 * 1024 * 1024).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).optional(),
+  captureRecovery: captureRecovery.optional(),
   touchBounds: z.object({ left: z.number().int().min(0).max(16384), top: z.number().int().min(0).max(16384), right: z.number().int().min(0).max(16384), bottom: z.number().int().min(0).max(16384) }).strict().optional(),
   nodes: z.array(z.object({ id: identifier, text: z.string().max(16384).optional(), description: z.string().max(16384).optional(), bounds: z.object({ left: z.number().int(), top: z.number().int(), right: z.number().int(), bottom: z.number().int() }), editable: z.boolean(), clickable: z.boolean(),
     resourceId: z.string().max(256).optional(), className: z.string().max(256).optional(), enabled: z.boolean().optional(), scrollable: z.boolean().optional(), checkable: z.boolean().optional(), selected: z.boolean().optional(),
@@ -188,7 +191,7 @@ export function registerPhoneControl(app: FastifyInstance, db: DatabaseSync, aut
         result = z.object({ protocolVersion: z.literal(1), platform: z.literal("android"), methods: z.array(method).max(14), session: z.object({ expiresAt: z.string().max(40).optional() }), capabilities: z.object({ screenshots: z.boolean(), gestures: z.boolean(), biometricConsent: z.boolean() }) }).parse(raw.result);
       }
       audit(db, request.principal!.userId, "phone.call", body.deviceId, { method: body.method, status: raw.status, receiptId: body.id });
-      return { id: raw.id, status: raw.status, ...(result === undefined ? {} : { result }), ...(raw.error ? { error: { code: raw.error.code, message: "The phone or broker rejected this request. Check scope, freshness, and consent on the phone." } } : {}) };
+      return { id: raw.id, status: raw.status, ...(result === undefined ? {} : { result }), ...(raw.error ? { error: { code: raw.error.code, message: "The phone or broker rejected this request. Check scope, freshness, and consent on the phone.", ...(raw.error.details?.captureRecovery ? { details: { captureRecovery: raw.error.details.captureRecovery } } : {}) } } : {}) };
     } catch (error) {
       if (error instanceof BrokerRefusal) {
         audit(db, request.principal!.userId, "phone.call", body.deviceId, { method: body.method, status: "rejected", receiptId: body.id });

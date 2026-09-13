@@ -1,4 +1,5 @@
 import { readEmulatorEvidence } from "./device-evidence.mjs";
+import { recoveryEvidence, recoverySummary, captureWarningCount } from "./capture-recovery-evidence.mjs";
 // A real disposable Android device boundary, reached through the standalone CLI,
 // MCP and portal. Secrets stay in memory/private test files and never in output.
 import assert from "node:assert/strict";
@@ -32,6 +33,8 @@ const timings = [];
 const observationSamples = [];
 const screenshotSamples = [];
 const observationAttempts = [];
+const captureRecoveries = [];
+const captureWarningSamples = [];
 const nativeMemory = [];
 const powerSamples = [];
 const phaseTimings = [];
@@ -65,6 +68,16 @@ function samplePower(phase) {
   try { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), ...parsePowerEvidence(execFileSync("adb", ["-s", serial, "shell", "dumpsys", "power"], { encoding: "utf8", windowsHide: true, timeout: 3000, stdio: ["ignore", "pipe", "pipe"] })) }); }
   catch { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), wakefulness: null, powered: null }); }
 }
+function sampleCaptureWarnings(phase) {
+  try {
+    const pidText = execFileSync("adb", ["-s", serial, "shell", "pidof", pkg], { encoding: "utf8", windowsHide: true, timeout: 3000, maxBuffer: 128, stdio: ["ignore", "pipe", "pipe"] }).trim();
+    assert.match(pidText, /^[1-9][0-9]{0,9}$/u);
+    const pid = Number(pidText);
+    const raw = execFileSync("adb", ["-s", serial, "logcat", "-d", "-b", "main", "--pid", pidText, "-v", "brief", "-s", "ScreenCapture:E"], { encoding: "utf8", windowsHide: true, timeout: 3000, maxBuffer: 65536, stdio: ["ignore", "pipe", "pipe"] });
+    captureWarningSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), status: "sampled", pid, consumerNotAliveWarnings: captureWarningCount(raw, pid) });
+    // Every other log byte is discarded, including exception and application text.
+  } catch { captureWarningSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), status: "unavailable" }); }
+}
 async function eventually(check, milliseconds = 20000) {
   const end = Date.now() + milliseconds;
   while (Date.now() < end) { if (await check()) return; await sleep(150); }
@@ -83,21 +96,31 @@ async function run(args, input) {
   child.stderr.resume();
   child.stdin.end(input === undefined ? undefined : JSON.stringify(input));
   const [code] = await within(() => once(child, "close"), 65000);
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { /* A nonzero CLI exit can have no JSON stdout. */ }
+  if (args[0] === "observe" && parsed !== undefined) retainRecovery(parsed, "cli");
   if (code !== 0) {
-    try {
-      const receiptCode = JSON.parse(out)?.error?.code;
-      if (diagnosticCodes.has(receiptCode)) stage += `: ${receiptCode}`;
-    } catch { /* Arbitrary CLI output is never exported as a diagnostic. */ }
+    const receiptCode = parsed?.error?.code;
+    if (diagnosticCodes.has(receiptCode)) stage += `: ${receiptCode}`;
     throw Object.assign(new Error("CLI check failed"), { code: `cli_exit_${code}` });
   }
-  return JSON.parse(out);
+  assert.ok(parsed && typeof parsed === "object", "Successful CLI returned a JSON receipt");
+  return parsed;
 }
 async function ownerCall(path, method = "GET", body) {
   const response = await fetch(`http://127.0.0.1:4421${path}`, {
     method, headers: { authorization: `Bearer ${owner}`, ...(body ? { "content-type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60000), redirect: "error",
   });
-  assert.equal(response.status, 200, "Owner endpoint returned a valid receipt"); return response.json();
+  assert.equal(response.status, 200, "Owner endpoint returned a valid receipt");
+  const receipt = await response.json();
+  if (body?.method === "observe") retainRecovery(receipt, "owner_http");
+  return receipt;
+}
+function retainRecovery(receipt, transport) {
+  const captureRecovery = recoveryEvidence(receipt, apiLevel);
+  if (captureRecovery) captureRecoveries.push({ transport, elapsedMs: Math.round(performance.now() - harnessStarted), observed: receipt.status === "observed", captureRecovery });
+  return captureRecovery;
 }
 function count(observation) {
   const value = observation.nodes.find((node) => /^Counter: \d+$/.test(node.text ?? ""))?.text;
@@ -130,7 +153,12 @@ function mcpProcess(tokenFile) {
       return new Promise((resolveResult, reject) => {
         if (!isRunning(child)) { reject(new Error("MCP process is unavailable")); return; }
         const timer = setTimeout(() => { waiting.delete(id); reject(new Error("MCP timeout")); }, 60000);
-        waiting.set(id, { resolve: resolveResult, reject, timer });
+        waiting.set(id, { resolve: (message) => {
+          try {
+            if (method === "tools/call" && params?.arguments?.method === "observe") retainRecovery(message.result?.structuredContent, "mcp");
+            resolveResult(message);
+          } catch (error) { reject(error); }
+        }, reject, timer });
         child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
       });
     },
@@ -251,6 +279,7 @@ try {
   }
   sampleNativeMemory("before observations");
   samplePower("before_observations");
+  sampleCaptureWarnings("before_observations");
   for (let index = 0; index < 30; index++) {
     const includeScreenshot = index >= 20;
     await sleep(400);
@@ -262,9 +291,11 @@ try {
     if (["queued", "awaiting_callback", "encoding"].includes(sample.error?.details?.captureStage)) safeDetails.captureStage = sample.error.details.captureStage;
     const captureElapsed = sample.error?.details?.captureElapsedMs;
     if (Number.isInteger(captureElapsed) && captureElapsed >= 0 && captureElapsed <= 60000) safeDetails.captureElapsedMs = captureElapsed;
-    observationAttempts.push({ includeScreenshot, wallMs: elapsed, elapsedMs: Math.round(started - harnessStarted), observed: sample.status === "observed", ...(sample.status === "observed" ? {} : { errorCode, ...safeDetails }) });
-    // These are independent reads, not retries. Keep failures visible and fail the gate
-    // after collecting the complete sample; no mutation is repeated or inferred successful.
+    const captureRecovery = recoveryEvidence(sample, apiLevel);
+    if ((captureRecovery || sample.status !== "observed") && !captureWarningSamples.some((entry) => entry.phase === "first_capture_failure")) sampleCaptureWarnings("first_capture_failure");
+    observationAttempts.push({ includeScreenshot, wallMs: elapsed, elapsedMs: Math.round(started - harnessStarted), observed: sample.status === "observed", ...(captureRecovery ? { captureRecovery } : {}), ...(sample.status === "observed" ? {} : { errorCode, ...safeDetails }) });
+    // Independent logical requests; native Android 14/15 may recover one failed read.
+    // Retain that original failure separately. The harness never retries a request.
     if (sample.status !== "observed") { if (!powerSamples.some(sample => sample.phase === "first_failed_observation")) samplePower("first_failed_observation"); continue; }
     assert.equal(count(sample.result), (initial + 2) % 1000);
     if (includeScreenshot) {
@@ -275,6 +306,7 @@ try {
   }
   sampleNativeMemory("after observations");
   samplePower("after_observations");
+  sampleCaptureWarnings("after_observations");
   const failedReads = observationAttempts.filter((attempt) => !attempt.observed);
   if (failedReads.length) {
     // Keep the run failed while allowing independent portal/revocation/Stop checks
@@ -282,7 +314,7 @@ try {
     results.push({ name: "Every independent observation succeeds", passed: false, failedReads: failedReads.length, errorCode: failedReads[0].errorCode });
     process.exitCode = 1;
     console.error(`FAIL observation reliability (${failedReads.length}/30 independent reads)`);
-  } else record("20 tree-only and 10 screenshot HTTP observations measured transport and native latency, without model time");
+  } else record("20 tree-only and 10 screenshot logical observations completed; first-attempt failures and bounded native read recoveries retained separately");
   stage = "portal authentication and native projection";
   process.env.NODE_ENV = "test";
   process.env.ORCHESTRATOR_PHONE_BROKER_TOKEN = owner;
@@ -297,7 +329,7 @@ try {
   const state = await portal.inject({ url: "/api/phone-control/state", headers }); assert.equal(state.json().mode, "connected");
   await sleep(400);
   const view = await portal.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { id: randomUUID(), deviceId: "emulator", sessionId: session.id, method: "observe", params: { includeScreenshot: true } } });
-  assert.equal(view.statusCode, 200); const visible = view.json(); assert.equal(visible.status, "observed");
+  assert.equal(view.statusCode, 200); const visible = view.json(); retainRecovery(visible, "portal"); assert.equal(visible.status, "observed");
   assert.equal(count(visible.result), (initial + 2) % 1000);
   const image = Buffer.from(visible.result.screenshot.base64, "base64");
   assert.equal(image.subarray(1, 4).toString(), "PNG"); writeFileSync(join(output, "fixture.png"), image);
@@ -313,22 +345,50 @@ try {
       import assert from 'node:assert/strict';
       import { PhonePilot } from '/opt/phone/src/pilot.mjs';
       import { SourcePhoneTask } from '/opt/phone/src/task.mjs';
+      const captureRecoveries = [];
+      try {
       const pilot = new PhonePilot({secret:process.env.PHONE_CONTROL_TOKEN,deviceId:process.env.PHONE_CONTROL_DEVICE,sessionId:process.env.PHONE_CONTROL_SESSION,brokerPublicKey:process.env.PHONE_CONTROL_BROKER_PUBLIC_KEY,budget:{maxActions:1,maxObservations:3,timeoutMs:30000}});
       await pilot.acquireTask({ttlSeconds:30,maxActions:1,label:'Confined fixture task'});
       const task = new SourcePhoneTask({pilot,checkpointFile:'/workspace/task.json',budget:{maxModelCalls:0,timeoutMs:30000}});
       const count = (view) => Number(view.nodes.find(node => /^Counter: \\d+$/.test(node.text ?? '')).text.slice(9));
-      const before = count(await task.observe());
+      const beforeView = await task.observe();
+      if (beforeView.captureRecovery) captureRecoveries.push({observed:true,captureRecovery:beforeView.captureRecovery});
+      const before = count(beforeView);
       const action = await task.act('fixture.increment'); assert.equal(action.status,'completed');
-      const after = count(await task.observe()); assert.equal(after,(before+1)%1000);
+      const afterView = await task.observe();
+      if (afterView.captureRecovery) captureRecoveries.push({observed:true,captureRecovery:afterView.captureRecovery});
+      const after = count(afterView); assert.equal(after,(before+1)%1000);
       const result = task.finish(); await pilot.releaseTask();
-      console.log(JSON.stringify({before,after,status:result.status,independentlyVerified:result.independentlyVerified,actions:task.checkpoint.actions.length}));
+      console.log(JSON.stringify({before,after,status:result.status,independentlyVerified:result.independentlyVerified,actions:task.checkpoint.actions.length,captureRecoveries}));
+      } catch (error) {
+        if (error.details?.captureRecovery) captureRecoveries.push({observed:false,captureRecovery:error.details.captureRecovery});
+        console.log(JSON.stringify({status:'failed',captureRecoveries}));
+        throw error;
+      }
     `);
     if (output.code !== 0) {
       const safe = /\b(?:Fault|Error): ([a-z_]{1,60})\b/.exec(output.stderr)?.[1];
       if (safe && diagnosticCodes.has(safe)) stage += `: ${safe}`;
     }
-    assert.equal(output.code, 0, "Confined source program exits successfully"); assert.equal(output.outputTruncated, false);
-    isolatedResult = JSON.parse(output.stdout); assert.equal(isolatedResult.status, "awaiting_verification"); assert.equal(isolatedResult.independentlyVerified, false); assert.equal(isolatedResult.actions, 1);
+    assert.equal(output.outputTruncated, false);
+    const reported = JSON.parse(output.stdout);
+    assert.ok(Array.isArray(reported.captureRecoveries) && reported.captureRecoveries.length <= 2);
+    const safeRecoveries = reported.captureRecoveries.map((item) => {
+      assert.equal(typeof item?.observed, "boolean");
+      const receipt = item.observed ? { status: "observed", result: { captureRecovery: item.captureRecovery } } : { status: "rejected", error: { details: { captureRecovery: item.captureRecovery } } };
+      const captureRecovery = retainRecovery(receipt, "confined_sdk");
+      assert.ok(captureRecovery);
+      return { observed: item.observed, captureRecovery };
+    });
+    if (reported.status === "failed") {
+      isolatedResult = { status: "failed", captureRecoveries: safeRecoveries };
+    } else {
+      assert.equal(reported.status, "awaiting_verification"); assert.equal(reported.independentlyVerified, false); assert.equal(reported.actions, 1);
+      assert.ok(safeRecoveries.every((item) => item.observed), "A successful source cannot conceal a terminal observation failure");
+      for (const count of [reported.before, reported.after]) assert.ok(Number.isInteger(count) && count >= 0 && count <= 999);
+      isolatedResult = { before: reported.before, after: reported.after, status: reported.status, independentlyVerified: false, actions: 1, captureRecoveries: safeRecoveries };
+    }
+    assert.equal(output.code, 0, "Confined source program exits successfully"); assert.equal(isolatedResult.status, "awaiting_verification");
     const independent = await ownerCall("/v1/call", "POST", { id: randomUUID(), deviceId: "emulator", sessionId: session.id, method: "observe", params: {} });
     assert.equal(count(independent.result), (initial + 3) % 1000); assert.equal(isolatedResult.after, count(independent.result));
     record("Confined source SDK task completed exactly one action; owner separately verified the fixture state");
@@ -384,7 +444,8 @@ try {
   try { writeFileSync(join(output, "results.json"), JSON.stringify({
     serial, apiLevel, platform, fixture, passed: results.every((item) => item.passed) && cleanup.every((item) => item.passed), results, cleanup, cliObservationWallMs: timings,
     httpObservation: { attempts: observationAttempts, treeOnly: { samplesMs: observationSamples, p50Ms: percentile(0.5), p95Ms: percentile(0.95) }, screenshots: { samplesMs: screenshotSamples, p50Ms: screenshotPercentile(0.5), p95Ms: screenshotPercentile(0.95) }, failedAttempts: observationAttempts.filter((attempt) => !attempt.observed).length, definition: "Successful owner HTTP transport plus broker and native observation, separated by pixel opt-in; failed attempts retained separately; excludes model reasoning and inter-sample delay" },
-    nativeMemory, powerSamples, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
+      captureRecovery: { sampledRequests: recoverySummary(observationAttempts), reportedRecoveries: captureRecoveries, warningSamples: captureWarningSamples, warningLimit: "Fixed-message counts from the sampled companion PID; log loss and other capture requests prevent per-request causal attribution. Raw logs are discarded." },
+      nativeMemory, powerSamples, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
     stopWallMs: stopWallMs ?? null,
     limits: ["Emulator and signed synthetic fixture only", "Two identities and CLI/MCP task equivalence; no model reasoning or parity test", "No real user accounts or external effects", "Hardware biometric and Astra model parity not established"],
   }, null, 2)); } catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }

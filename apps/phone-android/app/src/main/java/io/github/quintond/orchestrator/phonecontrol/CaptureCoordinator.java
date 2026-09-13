@@ -15,6 +15,7 @@ final class CaptureCoordinator {
         volatile String stage = "queued";
         private boolean abandoned;
         private boolean finished;
+        private boolean frameworkInternalFailure;
         Ticket(long started) { this.started = started; }
         synchronized boolean requested() {
             if (abandoned || finished || !stage.equals("queued")) return false;
@@ -22,6 +23,7 @@ final class CaptureCoordinator {
             return true;
         }
         synchronized boolean abandoned() { return abandoned; }
+        synchronized boolean recoveryEligible() { return finished && !abandoned && frameworkInternalFailure; }
     }
     private final AtomicReference<Ticket> active = new AtomicReference<>();
     Ticket current() { return active.get(); }
@@ -52,6 +54,17 @@ final class CaptureCoordinator {
             if (ticket.finished || ticket.stage.equals("encoding")) return;
             finish(ticket);
             ticket.result.completeExceptionally(failure);
+        }
+    }
+    void frameworkFailure(Ticket ticket, int errorCode, Throwable failure) {
+        synchronized (ticket) {
+            if (ticket.finished || ticket.stage.equals("encoding")) return;
+            // Only this actual public callback grants recovery provenance. Android may
+            // synthesize INTERNAL_ERROR (1) after five seconds; this is not proof that
+            // the lower-level capture finished. Never infer it from a projected code.
+            ticket.frameworkInternalFailure = errorCode == 1 && !ticket.abandoned
+                    && ticket.stage.equals("awaiting_callback") && active.get() == ticket;
+            failBeforeEncoding(ticket, failure);
         }
     }
     void finish(Ticket ticket) {

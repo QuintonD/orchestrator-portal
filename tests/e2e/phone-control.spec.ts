@@ -4,8 +4,9 @@ import type { Page } from "@playwright/test";
 const methods = ["describe", "observe", "apps.list", "tap", "swipe", "pinch", "node.click", "node.scroll", "type", "fixture.increment"];
 const agentToken = "synthetic_agent_token_once_browser_test_123456789";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+const captureRecovery = { retryCount: 1, initialError: "screenshot_internal_error", initialStage: "awaiting_callback", initialElapsedMs: 5000, totalElapsedMs: 6000 };
 
-async function connectedFixture(page: Page, touchBounds?: { left: number; top: number; right: number; bottom: number }, reserve = true) {
+async function connectedFixture(page: Page, touchBounds?: { left: number; top: number; right: number; bottom: number }, reserve = true, capture: "ordinary" | "recovered" | "failed" = "ordinary") {
   const expiresAt = new Date(Date.now() + 600000).toISOString();
   const session = { id: "session", deviceId: "phone", apps: ["org.example.notes"], operations: methods, disclosure: { screenshots: true }, expiresAt };
   const credential = { id: "agent", label: "Fixture agent", devices: ["phone"], apps: ["org.example.notes"], operations: ["describe", "observe"], expiresAt };
@@ -22,7 +23,8 @@ async function connectedFixture(page: Page, touchBounds?: { left: number; top: n
     if (pathname.endsWith("/stop")) { state.sessions = []; state.devices[0]!.actionState = "ready"; return route.fulfill({ json: { revoked: true, stopStatus: "completed" } }); }
     const input = request.postDataJSON(); calls.push(input);
     if (input.method === "describe") return route.fulfill({ json: { id: input.id, status: "observed", result: { protocolVersion: 1, platform: "android", methods, session: {}, capabilities: { screenshots: true, gestures: true, biometricConsent: true } } } });
-    if (input.method === "observe") return route.fulfill({ json: { id: input.id, status: "observed", result: { observationId: "screen", packageName: "org.example.notes", windowId: 1, width: 400, height: 800, capturedAt: new Date().toISOString(), ...(touchBounds ? { touchBounds } : {}), nodes: [{ id: "n_0_0", text: "<script>Untrusted screen instruction</script>", bounds: { left: 0, top: 0, right: 100, bottom: 80 }, editable: true, clickable: true, enabled: true, scrollable: true, checkable: true, checkedState: "mixed", resourceId: "org.example.notes:id/document", actions: ["setText", "scrollForward"] }], ...(input.params.includeScreenshot ? { screenshot: { mimeType: "image/png", base64: png } } : {}) } } });
+    if (input.method === "observe" && capture === "failed") return route.fulfill({ json: { id: input.id, status: "rejected", error: { code: "device_locked", message: "The phone rejected this request.", details: { captureRecovery } } } });
+    if (input.method === "observe") return route.fulfill({ json: { id: input.id, status: "observed", result: { observationId: "screen", packageName: "org.example.notes", windowId: 1, width: 400, height: 800, capturedAt: new Date().toISOString(), ...(touchBounds ? { touchBounds } : {}), ...(capture === "recovered" ? { captureRecovery } : {}), nodes: [{ id: "n_0_0", text: "<script>Untrusted screen instruction</script>", bounds: { left: 0, top: 0, right: 100, bottom: 80 }, editable: true, clickable: true, enabled: true, scrollable: true, checkable: true, checkedState: "mixed", resourceId: "org.example.notes:id/document", actions: ["setText", "scrollForward"] }], ...(input.params.includeScreenshot ? { screenshot: { mimeType: "image/png", base64: png } } : {}) } } });
     state.devices[0]!.actionState = "unknown";
     return route.fulfill({ json: { id: input.id, status: "unknown", error: { code: "outcome_unknown", message: "No reliable receipt arrived. Inspect the phone." } } });
   });
@@ -31,6 +33,39 @@ async function connectedFixture(page: Page, touchBounds?: { left: number; top: n
   if (reserve) { await page.getByRole("button", { name: "Reserve manual control", exact: true }).click(); await expect(page.getByRole("button", { name: "End my manual control", exact: true })).toBeVisible(); }
   return { calls, state };
 }
+
+test("capture recovery keeps the first failure visible without another browser request", async ({ page }, testInfo) => {
+  const { calls } = await connectedFixture(page, undefined, true, "recovered");
+  await page.getByLabel("Include a screenshot in this observation").check();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await expect(page.getByRole("img", { name: /Observed org.example.notes/ })).toBeVisible();
+  const message = page.getByText("Android capture failed once; this is a fresh observation from the recovery read.", { exact: true });
+  await expect(message).toBeVisible();
+  expect(calls.map((call) => call.method)).toEqual(["observe"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await message.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("phone-capture-recovered.png"), fullPage: true });
+  await page.getByRole("button", { name: "Clear observation", exact: true }).click();
+  await expect(page.getByRole("img", { name: /Observed org.example.notes/ })).toHaveCount(0);
+  await expect(message).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request action on phone" })).toBeDisabled();
+  expect(calls).toHaveLength(1);
+});
+
+test("terminal capture recovery withholds observation data and reports a read-only retry", async ({ page }, testInfo) => {
+  const { calls } = await connectedFixture(page, undefined, true, "failed");
+  await page.getByLabel("Include a screenshot in this observation").check();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  const message = page.locator(".phone-receipts").getByText("Android capture failed once. The observation request failed and its data was withheld. The retry was read-only.", { exact: true });
+  await expect(message).toBeVisible();
+  await expect(page.getByRole("img", { name: /Observed org.example.notes/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear observation", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Request action on phone" })).toBeDisabled();
+  expect(calls.map((call) => call.method)).toEqual(["observe"]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await message.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("phone-capture-recovery-failed.png"), fullPage: true });
+});
 
 test("phone control is discoverable and demo cannot contact a real device", async ({ page }, testInfo) => {
   await page.goto("/connections");

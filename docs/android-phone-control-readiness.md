@@ -6,6 +6,12 @@ execution and signed-upgrade work. Historical results below retain their origina
 scope and failures. The owner authorized continued emulator validation and an
 alpha deployment; physical-device acceptance and Astra parity remain unestablished.
 
+The later Android 15 gate at `c2bf845f` failed two of 30 observations. Android
+14/15 remain in scope by owner decision; a
+[version-specific read recovery](phone-control-android-14-15.md) is being added
+with explicit failure accounting and unchanged privacy/action checks. The earlier
+passing records below do not erase this failed gate or qualify the new behavior.
+
 Updated: 13 September 2026. Work is on `feat/android-phone-control`.
 Implementation is available for alpha QA. Regular Android 14 integration,
 visual capture and biometric workflows passed. Two scoped live model clients

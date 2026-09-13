@@ -6,6 +6,15 @@ The original Android 16 revision 7 failures remain valid evidence. The applicati
 still requires Android 14 or later and uses the public per-window screenshot API.
 No physical phone has been tested in this investigation.
 
+Later API 35 acceptance at `c2bf845f` failed two of 30 observations after
+5,004/5,003 ms. Source review found the weak consumer in the inspected Android
+14/15 code too, without proving the cause of those individual failures. The owner
+retained Android 14/15 support. The subsequent
+[bounded read recovery](phone-control-android-14-15.md) preserves every initial
+failure and repeats the full window guard; it does not repair the framework or
+relax the required platform matrix. Earlier no-retry measurements below retain
+their original meaning.
+
 ## Release qualification and legacy compatibility
 
 The required `Phone Control` release workflow now selects Google APIs images for
@@ -127,8 +136,9 @@ remain. This bounds resources against callback anomalies; it does not repair the
 old Android framework consumer or explain the platform benchmark improvement.
 
 The six-second application wait remains bounded delivery slack around Android's
-five-second failure callback. There are no automatic screenshot or mutation
-retries. A timed-out OS request retains its slot until callback cleanup. Failed
+five-second failure callback. At this stage there were no automatic screenshot
+or mutation retries; the later Android 14/15 read recovery is documented above.
+A local no-callback timeout retains its slot until callback cleanup. Failed
 capture withholds the tree and pixels and authorizes no action. The secure-window
 probe, freshness checks and action deadline remain in force. Full-display
 capture, hidden APIs, reflective access to framework internals and garbage

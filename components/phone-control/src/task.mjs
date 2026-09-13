@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { PhonePilot } from './pilot.mjs';
 import { assertPrivate, writePrivate } from './security.mjs';
-import { Fault, identifier, number, object, requireThat, MUTATIONS } from './validation.mjs';
+import { Fault, identifier, number, object, requireThat, captureRecovery, MUTATIONS } from './validation.mjs';
 
 const states = ['running', 'action_requested', 'dispatch_acknowledged', 'rejected', 'outcome_unknown', 'handoff_required', 'awaiting_verification', 'failed'];
 const reasons = ['owner_decision', 'protected_surface', 'verification_required', 'cancelled', 'budget_exhausted', 'reconciliation_required'];
@@ -65,12 +65,21 @@ export class SourcePhoneTask {
     // UI listeners are advisory; their failures cannot change recorded dispatch history.
     try { void Promise.resolve(this.#onEvent(immutable({ type: state, taskId: this.#checkpoint.taskId, sequence: this.#checkpoint.sequence, evidence: 'source_reported', ...fields }))).catch(() => {}); } catch { /* The checkpoint remains authoritative for this helper. */ }
   }
-  async #exclusive(operation) {
+  async #exclusive(operation, read = false) {
     this.#check(); requireThat(!this.#busy, 'task_busy', 409); this.#busy = true;
-    try { const result = await operation(); if (!this.#failed) this.#check(); return result; } finally { this.#busy = false; }
+    let result;
+    try { result = await operation(); if (!this.#failed) this.#check(); return result; }
+    catch (error) {
+      if (read && result && error instanceof Fault) {
+        const recovery = result.captureRecovery ?? result.observation?.captureRecovery;
+        if (recovery) error.details = { captureRecovery: captureRecovery(recovery) };
+        if (result.recoveries?.length) error.recoveries = Object.freeze(result.recoveries.slice(0, 30).map((item) => Object.freeze({ observation: item.observation, code: item.code, ...(item.captureRecovery ? { captureRecovery: Object.freeze(captureRecovery(item.captureRecovery)) } : {}) })));
+      }
+      throw error;
+    } finally { this.#busy = false; }
   }
-  observe(options = {}) { return this.#exclusive(() => this.#pilot.observe({ ...options, signal: this.signal })); }
-  waitFor(selector, options = {}) { return this.#exclusive(() => this.#pilot.waitFor(selector, { ...options, signal: this.signal })); }
+  observe(options = {}) { return this.#exclusive(() => this.#pilot.observe({ ...options, signal: this.signal }), true); }
+  waitFor(selector, options = {}) { return this.#exclusive(() => this.#pilot.waitFor(selector, { ...options, signal: this.signal }), true); }
   act(method, params) {
     requireThat(MUTATIONS.has(method) && method !== 'stop', 'invalid_action');
     return this.#exclusive(async () => {

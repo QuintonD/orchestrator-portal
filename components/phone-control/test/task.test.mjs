@@ -9,6 +9,8 @@ import { PhonePilot } from '../src/pilot.mjs';
 import { SourcePhoneTask, inspectTaskCheckpoint, readTaskCheckpoint } from '../src/task.mjs';
 import { securePath } from '../src/security.mjs';
 import { generateResponseIdentity, signHttpResponse, bodyHash } from '../src/response-proof.mjs';
+import { performance } from 'node:perf_hooks';
+import { CAPTURE_RECOVERY } from './helpers.mjs';
 
 const secret = 'synthetic-source-token-never-persist-this';
 const identity = generateResponseIdentity();
@@ -87,4 +89,22 @@ test('a source time budget prevents new work and cannot be enlarged through per-
   await new Promise((done) => setTimeout(done, 10));
   await assert.rejects(task.observe({ timeoutMs: 30_000 }), { code: 'task_time_budget_exhausted' }); assert.equal(calls.length, 0);
   assert.equal((await task.cancel()).stop.status, 'completed');
+});
+
+test('source task postread guards retain safe recovery facts without writing screen data into checkpoints', async (t) => {
+  let clock = 0; t.mock.method(performance, 'now', () => clock);
+  for (const method of ['observe', 'waitFor']) {
+    clock = 0;
+    const h = fixture(t, (input) => ({ id: input.id, status: 'observed', result: { observationId: 'view', packageName: 'com.example.allowed', windowId: 1, width: 400, height: 800, capturedAt: new Date().toISOString(), captureRecovery: CAPTURE_RECOVERY, nodes: [{ id: 'node', text: 'private recovery screen', editable: false, clickable: false, bounds: { left: 0, top: 0, right: 100, bottom: 100 } }] } }), { timeoutMs: 60000 });
+    const original = h.pilot[method].bind(h.pilot);
+    h.pilot[method] = async (...args) => { const result = await original(...args); clock = 60001; return result; };
+    const pending = method === 'observe' ? h.task.observe() : h.task.waitFor({ text: 'private recovery screen' }, { stableObservations: 1 });
+    await assert.rejects(pending, (error) => {
+      assert.equal(error.code, 'task_time_budget_exhausted'); assert.deepEqual(error.details, { captureRecovery: CAPTURE_RECOVERY });
+      if (method === 'waitFor') assert.deepEqual(error.recoveries, [{ observation: 1, code: 'screenshot_internal_error', captureRecovery: CAPTURE_RECOVERY }]);
+      return true;
+    });
+    const checkpoint = readFileSync(h.file, 'utf8');
+    assert.equal(checkpoint.includes('captureRecovery'), false); assert.equal(checkpoint.includes('private recovery screen'), false); assert.equal(h.calls.length, 1);
+  }
 });

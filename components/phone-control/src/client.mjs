@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { assertPrivate } from './security.mjs';
-import { Fault, requireThat, number, MAX_BODY_BYTES, MAX_NATIVE_BYTES } from './validation.mjs';
+import { Fault, requireThat, number, captureDetails, MAX_BODY_BYTES, MAX_NATIVE_BYTES } from './validation.mjs';
 import { bodyHash, verifyHttpResponse, validateBrokerPublicKey } from './response-proof.mjs';
 
 const definiteRejections = new WeakSet();
@@ -48,7 +48,10 @@ export function createClient({ port = 4421, secret, fetchImpl = fetch, timeoutMs
       let result; try { result = JSON.parse(raw); } catch { throw new Fault('broker_response_invalid', 502); }
       if (!response.ok) {
         const code = typeof result?.error?.code === 'string' && /^[a-z_]{1,60}$/u.test(result.error.code) ? result.error.code : 'broker_request_failed';
-        const failure = new Fault(code, response.status);
+        let details;
+        try { details = captureDetails(result.error?.details, code.startsWith('screenshot_')); }
+        catch { throw new Fault('broker_response_invalid', 502); }
+        const failure = new Fault(code, response.status, details);
         if (path === '/v1/call' && method === 'POST' && result.dispatch?.state === 'not_dispatched' && result.dispatch.requestHash === bodyHash(body ?? '')) definiteRejections.add(failure);
         if (path === '/v1/call' && method === 'POST' && !read && !definiteRejections.has(failure)) throw new Fault('outcome_unknown', 502);
         throw failure;

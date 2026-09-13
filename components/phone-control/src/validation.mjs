@@ -48,15 +48,22 @@ export function validateCall(value) {
     default: throw new Fault('unsupported_method');
   }
 }
-export function captureDetails(value) {
+export function captureRecovery(value) {
+  object(value, ['retryCount', 'initialError', 'initialStage', 'initialElapsedMs', 'totalElapsedMs']);
+  requireThat(value.retryCount === 1 && value.initialError === 'screenshot_internal_error' && value.initialStage === 'awaiting_callback');
+  number(value.initialElapsedMs, 0, 60000); number(value.totalElapsedMs, value.initialElapsedMs, 60000);
+  return { retryCount: 1, initialError: 'screenshot_internal_error', initialStage: 'awaiting_callback', initialElapsedMs: value.initialElapsedMs, totalElapsedMs: value.totalElapsedMs };
+}
+export function captureDetails(value, includeStages = true) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const details = {};
-  if (['queued', 'awaiting_callback', 'encoding'].includes(value.captureStage)) details.captureStage = value.captureStage;
-  if (Number.isInteger(value.captureElapsedMs) && value.captureElapsedMs >= 0 && value.captureElapsedMs <= 60000) details.captureElapsedMs = value.captureElapsedMs;
+  if (includeStages && ['queued', 'awaiting_callback', 'encoding'].includes(value.captureStage)) details.captureStage = value.captureStage;
+  if (includeStages && Number.isInteger(value.captureElapsedMs) && value.captureElapsedMs >= 0 && value.captureElapsedMs <= 60000) details.captureElapsedMs = value.captureElapsedMs;
+  if (Object.hasOwn(value, 'captureRecovery')) details.captureRecovery = captureRecovery(value.captureRecovery);
   return Object.keys(details).length ? details : undefined;
 }
 export function publicError(error) {
   const code = error instanceof Fault ? error.code : 'internal_error';
-  const details = code.startsWith('screenshot_') ? captureDetails(error.details) : undefined;
+  const details = error instanceof Fault ? captureDetails(error.details, code.startsWith('screenshot_')) : undefined;
   return { error: { code, message: code.replaceAll('_', ' '), ...(details ? { details } : {}) } };
 }

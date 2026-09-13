@@ -6,6 +6,33 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class CaptureCoordinatorTest {
+    @Test public void onlyTheSettledAwaitingFrameworkInternalCallbackGrantsRecovery() {
+        for (int code : new int[] { 1, 2, 3, 4, 5, 6, 9999 }) {
+            CaptureCoordinator coordinator = new CaptureCoordinator();
+            CaptureCoordinator.Ticket ticket = coordinator.begin(0);
+            assertTrue(ticket.requested());
+            coordinator.frameworkFailure(ticket, code, new RuntimeException("fixed failure"));
+            assertEquals(code == 1, ticket.recoveryEligible());
+            assertNull(coordinator.current());
+            CaptureCoordinator.Ticket replacement = coordinator.begin(1);
+            coordinator.frameworkFailure(ticket, 1, new RuntimeException("duplicate"));
+            assertEquals(code == 1, ticket.recoveryEligible()); assertSame(replacement, coordinator.current());
+        }
+    }
+    @Test public void queuedAbandonedEncodingAndGenericFailuresCannotGrantRecovery() {
+        for (String phase : new String[] { "queued", "abandoned", "encoding", "generic" }) {
+            CaptureCoordinator coordinator = new CaptureCoordinator();
+            CaptureCoordinator.Ticket ticket = coordinator.begin(0);
+            if (!phase.equals("queued")) assertTrue(ticket.requested());
+            if (phase.equals("abandoned")) coordinator.abandon(ticket);
+            if (phase.equals("encoding")) assertTrue(coordinator.encoding(ticket));
+            if (phase.equals("generic")) coordinator.failBeforeEncoding(ticket, new RuntimeException("screenshot_internal_error"));
+            coordinator.frameworkFailure(ticket, 1, new RuntimeException("late internal callback"));
+            assertFalse(ticket.recoveryEligible());
+            if (phase.equals("encoding")) assertSame(ticket, coordinator.current());
+            else assertNull(coordinator.current());
+        }
+    }
     @Test public void timeoutBeforeMainThreadCannotIssueALateOsRequest() {
         CaptureCoordinator coordinator = new CaptureCoordinator();
         CaptureCoordinator.Ticket ticket = coordinator.begin(100);

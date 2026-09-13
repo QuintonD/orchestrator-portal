@@ -4,7 +4,51 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Broker } from '../src/broker.mjs';
 import { validateCall, METHODS } from '../src/validation.mjs';
-import { harness, APP, PNG, deferred } from './helpers.mjs';
+import { harness, APP, PNG, deferred, CAPTURE_RECOVERY, invalidCaptureRecoveries } from './helpers.mjs';
+
+test('capture recovery remains in the observation receipt without another broker call or persisted pixels', async () => {
+  for (const times of [[0, 0], [5000, 9001], [60000, 60000]]) {
+    const captureRecovery = { ...CAPTURE_RECOVERY, initialElapsedMs: times[0], totalElapsedMs: times[1] };
+    const h = harness(); const actor = h.grant().actor;
+    h.setHandler(() => h.makeObservation({ captureRecovery }));
+    const call = h.makeCall('observe', { includeScreenshot: true });
+    const receipt = await h.broker.call(actor, call);
+    assert.equal(receipt.status, 'observed'); assert.deepEqual(receipt.result.captureRecovery, captureRecovery);
+    assert.deepEqual(await h.broker.call(actor, call), receipt); assert.equal(h.calls.length, 1);
+    assert.equal(JSON.stringify(h.saved()).includes('private-screen-text'), false);
+    assert.equal(h.broker.data.tasks[0].actionsUsed, 0);
+  }
+});
+
+test('capture recovery survives screenshot and noncapture terminal guards without blocked data or native text', async () => {
+  for (const code of ['screenshot_timeout', 'secure_window', 'device_locked', 'session_expired', 'stopped', 'unrecognized_private_error']) {
+    const h = harness(); const actor = h.grant().actor;
+    h.setHandler((body) => Response.json({ id: body.id, error: { code, message: 'private recovery contents', details: { captureRecovery: CAPTURE_RECOVERY, privateMessage: 'private recovery contents' } } }));
+    const receipt = await h.broker.call(actor, h.makeCall('observe', { includeScreenshot: true }));
+    assert.equal(receipt.status, 'rejected'); assert.equal(receipt.result, undefined);
+    assert.deepEqual(receipt.error.details, { captureRecovery: CAPTURE_RECOVERY });
+    assert.equal(JSON.stringify(receipt).includes('private recovery contents'), false); assert.equal(h.calls.length, 1);
+    h.setHandler(() => h.makeObservation({ blockedReason: code, captureRecovery: CAPTURE_RECOVERY }));
+    const blocked = await h.broker.call(actor, h.makeCall('observe'));
+    assert.equal(blocked.status, 'rejected'); assert.equal(blocked.result, undefined);
+    assert.deepEqual(blocked.error.details, { captureRecovery: CAPTURE_RECOVERY });
+    assert.equal(JSON.stringify(h.saved()).includes('private-screen-text'), false);
+  }
+});
+
+test('malformed capture recovery rejects success and error envelopes instead of stripping the first failure', async () => {
+  for (const captureRecovery of invalidCaptureRecoveries) {
+    for (const form of ['observed', 'blocked', 'error']) {
+      const h = harness(); const actor = h.grant().actor;
+      h.setHandler((body) => form === 'error'
+        ? Response.json({ id: body.id, error: { code: 'device_locked', details: { captureRecovery } } })
+        : h.makeObservation({ captureRecovery, ...(form === 'blocked' ? { blockedReason: 'screenshot_timeout' } : {}) }));
+      const receipt = await h.broker.call(actor, h.makeCall('observe'));
+      assert.equal(receipt.status, 'rejected'); assert.equal(receipt.error.code, 'native_response_invalid');
+      assert.equal(receipt.result, undefined); assert.equal(receipt.error.details, undefined); assert.equal(h.calls.length, 1);
+    }
+  }
+});
 
 test('credentials are distinct, hashed, narrowed and cannot grant authority', () => {
   const h = harness(); const { actor, credential } = h.grant({ operations: ['observe'] });
@@ -145,8 +189,10 @@ test('expiry after native dispatch is unknown, never a no-effect rejection', asy
 
 test('revocation suppresses private read responses even after capture', async () => {
   const gate = deferred(); const h = harness({ handler: (body) => body.method === 'stop' ? { status: 'stopped' } : gate.promise }); const { actor, credential } = h.grant();
-  const pending = h.broker.call(actor, h.makeCall('observe')); await h.broker.revokeCredential(h.owner, credential.id); gate.resolve(h.makeObservation());
+  const pending = h.broker.call(actor, h.makeCall('observe')); await h.broker.revokeCredential(h.owner, credential.id); gate.resolve(h.makeObservation({ captureRecovery: CAPTURE_RECOVERY }));
   const result = await pending; assert.equal(result.status, 'rejected'); assert.equal(result.result, undefined); assert.equal(h.broker.observations.size, 0);
+  assert.deepEqual(result.error.details, { captureRecovery: CAPTURE_RECOVERY });
+  assert.equal(JSON.stringify(result).includes('private-screen-text'), false);
 });
 
 test('timeouts durably quarantine mutations until stop acknowledgement; timeout does not retry', async () => {

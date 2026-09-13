@@ -440,6 +440,47 @@ and all five cleanup steps in
 checks over observed nodes; this local display differs from the hosted image.
 Fresh hosted acceptance is still required for this allowance.
 
+## Android 14/15 capture follow-up
+
+Candidate `c2bf845f` passed general CI, CodeQL, all six desktop targets, and all
+native/installation/cleanup checks across the three Android images. Android 14
+and QPR2 completed all eight integration checks and 30 observations. API 35
+completed seven checks and 28 of 30 observations: reads 16 and 19 reported
+`screenshot_internal_error`, `awaiting_callback`, after 5,004 and 5,003 ms.
+Its system process remained stable and authenticated Stop passed. Run
+`34765827817` and all original attempts remain failed evidence.
+
+Pinned source review found the known weak JNI consumer in Android 14/15 and no
+public API with which the companion can retain it. These two request failures
+remain causally unproven. The owner explicitly retained support for Android
+14/15 instead of limiting automation to a QPR2 emulator fingerprint.
+
+The [bounded recovery contract](phone-control-android-14-15.md) permits one fresh
+read only after the exact internal-error callback on API 34/35, within the same
+nine-second overall observation budget. It repeats every privacy check, retains
+the first failure through protocol projections, and cannot retry a mutation.
+Logical-request completion and first-attempt failures are measured separately.
+The new build passed all 73 JVM tests, lint and legal packaging. Actual API 35
+native QA passed 47 assertions with complete cleanup in
+`test-results/phone-control/native-1789318587474/`. Integration then passed all
+eight checks and 30 logical requests in `integration-1789318728790/`: 29 first
+attempts succeeded, one failed after 5,010 ms and its fresh read completed at
+5,257 ms total. There were no terminal failures. The fixed missing-consumer log
+count rose from zero to one for the same sampled companion PID; raw logs were
+discarded. This does not establish per-request causation or a general recovery
+rate. The fixture PNG was inspected, system-server PID 619 stayed stable,
+authenticated Stop took 372 ms, and all cleanup passed. The owned emulator was
+stopped with its data preserved. Fresh hosted acceptance remains required.
+
+Local CI also passed all 135 component tests, 246 workspace tests, 79 harness
+tests, 20 evaluation tests and 96 release-evidence tests, plus production builds
+and type checking. The 44 focused desktop/mobile browser cases passed without
+retries or skips; four recovery screenshots were inspected. Independent review
+found and corrected dropped diagnostics in CLI failures, confined-program
+postcondition failures, SDK cancellation/budget checks and failed stable waits.
+The final SDK follow-up passed 36 focused tests and exact package checks.
+These checks do not convert earlier failed captures into first-pass successes.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

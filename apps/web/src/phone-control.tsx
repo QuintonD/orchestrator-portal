@@ -16,14 +16,18 @@ interface Session extends Scope { id: string; deviceId: string }
 interface Credential extends Scope { id: string; label: string; devices: string[]; sessionIds?: string[]; token?: string }
 interface Event { at: string; actorId: string; deviceId?: string; method?: string; status: string; code?: string }
 interface State { mode: "demo" | "disabled" | "unavailable" | "connected"; storageState?: "ready" | "unavailable"; devices: { id: string; label: string; busy: boolean; connection?: "recently_observed" | "unknown"; lastSeenAt?: string; actionState?: "ready" | "unknown" }[]; sessions: Session[]; credentials: Credential[]; events: Event[]; tasks?: PhoneTask[] }
+interface CaptureRecovery { retryCount: 1; initialError: "screenshot_internal_error"; initialStage: "awaiting_callback"; initialElapsedMs: number; totalElapsedMs: number }
 interface Observation {
   observationId: string; packageName: string; windowId: number | string; width: number; height: number; capturedAt: string; blockedReason?: string;
   screenshot?: { mimeType: "image/png"; base64: string };
+  captureRecovery?: CaptureRecovery;
   touchBounds?: { left: number; top: number; right: number; bottom: number };
   nodes: { id: string; text?: string; description?: string; bounds: { left: number; top: number; right: number; bottom: number }; editable: boolean; clickable: boolean; resourceId?: string; className?: string; enabled?: boolean; scrollable?: boolean; checkable?: boolean; checkedState?: "unchecked" | "checked" | "mixed"; selected?: boolean; stateDescription?: string; hintText?: string; actions?: string[] }[];
 }
 interface Description { methods?: Method[]; capabilities?: { screenshots: boolean; gestures: boolean; biometricConsent: boolean } }
-interface Receipt { id: string; status: "observed" | "completed" | "rejected" | "unknown"; result?: unknown; error?: { code: string; message: string } }
+interface Receipt { id: string; status: "observed" | "completed" | "rejected" | "unknown"; result?: unknown; captureRecovery?: CaptureRecovery; error?: { code: string; message: string; details?: { captureRecovery?: CaptureRecovery } } }
+const recoveredObservationMessage = "Android capture failed once; this is a fresh observation from the recovery read.";
+const failedRecoveryMessage = "Android capture failed once. The observation request failed and its data was withheld. The retry was read-only.";
 type Notify = (message: string, tone?: "neutral" | "success" | "error") => void;
 const errorText = (error: unknown) => error instanceof Error ? error.message : "The phone request could not be completed.";
 const active = (scope: Scope) => !scope.revokedAt && Date.parse(scope.expiresAt) > Date.now();
@@ -147,14 +151,15 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
       dispatched = true;
       const result = await api<Receipt>("/api/phone-control/call", { method: "POST", body: JSON.stringify({ id, deviceId, sessionId, ...(taskId ? { taskId } : {}), method, params }) });
       if (mutations.includes(method) && result.id === id && ["completed", "rejected"].includes(result.status)) trackPending(null, id);
-      setReceipts((items) => [{ ...result, result: undefined, method, at: new Date().toISOString() }, ...items].slice(0, 30));
+      const recovery = method === "observe" && result.status === "observed" ? (result.result as Observation).captureRecovery : result.error?.details?.captureRecovery;
+      setReceipts((items) => [{ ...result, result: undefined, ...(recovery ? { captureRecovery: recovery } : {}), method, at: new Date().toISOString() }, ...items].slice(0, 30));
       if (requestGeneration !== generation.current) return;
       if (result.status === "observed") {
         if (method === "observe") { setObservation(result.result as Observation); setNow(Date.now()); }
         if (method === "describe") setDescription(result.result as Description);
         if (method === "apps.list") setApps((result.result as { apps: typeof apps }).apps);
       }
-      if (result.error) notify(`${result.error.code}: ${result.error.message}`, "error");
+      if (result.error) notify(result.error.details?.captureRecovery ? failedRecoveryMessage : `${result.error.code}: ${result.error.message}`, "error");
       else if (result.status === "completed") notify("Dispatch completed. Observe the phone again to inspect the result; the outcome is not verified.");
       if (mutations.includes(method)) await load();
     } catch (error) {
@@ -249,8 +254,8 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
       {!state?.credentials.length && <p className="form-note">No agent credentials are listed.</p>}
     </Card>
     <Card title="Action receipts">
-      <p><strong>Observed</strong> records source evidence. <strong>Completed</strong> means dispatch completed; it does not verify the outcome. <strong>Unknown</strong> requires inspection before another action. Requests are never retried automatically.</p>
-      {receipts.length > 0 && <ol className="phone-receipts">{receipts.map((item) => <li key={item.id}><div><strong>{item.method}</strong><StatusPill state={item.status} /><time dateTime={item.at}>{new Date(item.at).toLocaleTimeString()}</time></div><small>Receipt {item.id}</small>{item.error && <p>{item.error.message}</p>}</li>)}</ol>}
+      <p><strong>Observed</strong> records source evidence. <strong>Completed</strong> means dispatch completed; it does not verify the outcome. <strong>Unknown</strong> requires inspection before another action. Actions are never retried automatically. A failed Android capture may trigger one fresh read; its first failure remains recorded.</p>
+      {receipts.length > 0 && <ol className="phone-receipts">{receipts.map((item) => <li key={item.id}><div><strong>{item.method}</strong><StatusPill state={item.status} /><time dateTime={item.at}>{new Date(item.at).toLocaleTimeString()}</time></div><small>Receipt {item.id}</small>{item.captureRecovery && <p>{item.status === "observed" ? recoveredObservationMessage : failedRecoveryMessage}</p>}{item.error && <p>{item.error.message}</p>}</li>)}</ol>}
       <details><summary>Broker audit events ({state?.events.length ?? 0})</summary><ul className="phone-receipts">{state?.events.slice(-100).reverse().map((item, index) => <li key={`${item.at}-${index}`}><div><strong>{item.method ?? "Access change"}</strong><StatusPill state={item.status} /><time>{new Date(item.at).toLocaleString()}</time></div><small>{item.actorId}{item.deviceId ? ` · ${item.deviceId}` : ""}{item.code ? ` · ${item.code}` : ""}</small></li>)}</ul></details>
       {!receipts.length && <p className="form-note">No phone requests have been sent from this page.</p>}
     </Card>

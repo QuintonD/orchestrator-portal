@@ -10,6 +10,8 @@ import { generateResponseIdentity } from '../src/response-proof.mjs';
 export const APP = 'com.example.allowed';
 export const SECRET = 'owner-token-with-at-least-32-test-characters';
 export const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
+export const CAPTURE_RECOVERY = Object.freeze({ retryCount: 1, initialError: 'screenshot_internal_error', initialStage: 'awaiting_callback', initialElapsedMs: 5000, totalElapsedMs: 6000 });
+export const invalidCaptureRecoveries = [null, [], {}, { ...CAPTURE_RECOVERY, retryCount: 2 }, { ...CAPTURE_RECOVERY, initialError: 'screenshot_timeout' }, { ...CAPTURE_RECOVERY, initialStage: 'encoding' }, { ...CAPTURE_RECOVERY, initialElapsedMs: -1 }, { ...CAPTURE_RECOVERY, initialElapsedMs: 60001, totalElapsedMs: 60001 }, { ...CAPTURE_RECOVERY, totalElapsedMs: 60001 }, { ...CAPTURE_RECOVERY, totalElapsedMs: 4999 }, { ...CAPTURE_RECOVERY, totalElapsedMs: 1.5 }, { ...CAPTURE_RECOVERY, initialElapsedMs: '5000' }, { ...CAPTURE_RECOVERY, secret: 'private recovery contents' }];
 export function harness(options = {}) {
   let time = Date.now(); let saved; let sequence = 0; const calls = []; let handler = options.handler;
   const state = options.state ?? { credentials: [], sessions: [], receipts: [], audit: [], uncertainDevices: [] };

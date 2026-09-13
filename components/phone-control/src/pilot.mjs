@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 import { createClient, isDefiniteRejection } from './client.mjs';
-import { Fault, identifier, packageName, number, object, requireThat, validateCall, MUTATIONS } from './validation.mjs';
+import { Fault, identifier, packageName, number, object, requireThat, validateCall, captureDetails, captureRecovery, MUTATIONS } from './validation.mjs';
 
 const selectorFields = ['resourceId', 'className', 'text', 'description', 'hintText', 'stateDescription', 'enabled', 'editable', 'clickable', 'scrollable', 'checkable', 'checkedState', 'selected', 'action'];
 const booleans = new Set(['enabled', 'editable', 'clickable', 'scrollable', 'checkable', 'selected']);
@@ -13,7 +13,10 @@ const transientReadErrors = new Set(['broker_unavailable', 'device_busy', 'scree
 const errorCodes = new Set(['outcome_unknown', 'unauthorized', 'session_expired', 'scope_forbidden', 'operation_forbidden', 'app_forbidden', 'device_busy', 'device_outcome_unknown', 'stale_observation', 'observation_expired', 'out_of_bounds', 'node_unavailable', 'node_not_editable', 'node_not_clickable', 'node_not_scrollable', 'consent_denied', 'consent_timeout', 'consent_unavailable', 'biometric_unavailable', 'device_locked', 'secure_window', 'blocked_app', 'stopped', 'deadline_expired', 'rate_limited', 'persistence_unavailable', 'screenshot_rate_limited', 'screenshot_secure_window', 'screenshot_invalid_window', 'screenshot_invalid_display', 'screenshot_access_denied', 'screenshot_geometry_changed', 'screenshot_too_large', 'screenshot_timeout', 'screenshot_internal_error', 'screenshot_unavailable']);
 function projectedError(value, fallback) {
   const code = errorCodes.has(value?.code) ? value.code : fallback;
-  return { code, message: code.replaceAll('_', ' ') };
+  let details;
+  try { details = captureDetails(value?.details, code.startsWith('screenshot_')); }
+  catch { throw new Fault('receipt_invalid', 502); }
+  return { code, message: code.replaceAll('_', ' '), ...(details ? { details } : {}) };
 }
 function projectedView(value, includeScreenshot) {
   try {
@@ -40,6 +43,7 @@ function projectedView(value, includeScreenshot) {
       return result;
     });
     const result = { observationId: value.observationId, packageName: value.packageName, windowId: value.windowId, width: value.width, height: value.height, capturedAt: new Date(captured).toISOString(), nodes };
+    if (Object.hasOwn(value, 'captureRecovery')) result.captureRecovery = captureRecovery(value.captureRecovery);
     if (value.touchBounds !== undefined) {
       const bounds = rectangle(value.touchBounds); requireThat(Object.values(bounds).every((point) => point === 0) || bounds.right > bounds.left && bounds.bottom > bounds.top); result.touchBounds = bounds;
     }
@@ -128,7 +132,9 @@ export class PhonePilot {
       return result;
     } catch (failure) {
       if (isDefiniteRejection(failure)) { failure.requestId = input.id; throw failure; }
-      const error = new Fault(errorCodes.has(failure?.code) || ['receipt_invalid', 'invalid_observation', 'broker_unavailable', 'request_cancelled'].includes(failure?.code) ? failure.code : MUTATIONS.has(method) ? 'outcome_unknown' : 'observation_unconfirmed', 502);
+      const code = errorCodes.has(failure?.code) || ['receipt_invalid', 'invalid_observation', 'broker_unavailable', 'request_cancelled'].includes(failure?.code) ? failure.code : MUTATIONS.has(method) ? 'outcome_unknown' : 'observation_unconfirmed';
+      const details = failure instanceof Fault ? captureDetails(failure.details, code.startsWith('screenshot_')) : undefined;
+      const error = new Fault(code, 502, details);
       error.requestId = input.id; throw error;
     }
   }
@@ -143,10 +149,11 @@ export class PhonePilot {
     const combined = AbortSignal.any([this.#stopController.signal, ...(signal ? [signal] : [])]);
     let receipt;
     try { receipt = await this.#request('observe', { includeScreenshot }, timeoutMs, { signal: combined }); }
-    catch (error) { if (this.#closed) throw new Fault('session_closed', 409); throw error; }
-    requireThat(receipt.status === 'observed', receipt.error?.code ?? 'observation_unconfirmed', 409);
+    catch (error) { if (this.#closed) throw new Fault('session_closed', 409, error instanceof Fault ? captureDetails(error.details, false) : undefined); throw error; }
+    if (receipt.status !== 'observed') throw new Fault(receipt.error?.code ?? 'observation_unconfirmed', 409, receipt.error?.details);
     const view = receipt.result;
-    this.#remaining(signal);
+    try { this.#remaining(signal); }
+    catch (error) { if (error instanceof Fault && view.captureRecovery) error.details = { captureRecovery: view.captureRecovery }; throw error; }
     this.#view = freeze(view);
     return this.#view;
   }
@@ -161,31 +168,44 @@ export class PhonePilot {
     return this.#exclusive(async () => {
       this.#remaining(signal);
       const combined = AbortSignal.any([this.#stopController.signal, ...(signal ? [signal] : [])]);
-      const start = performance.now(); let stable = 0; let previous; const recoveries = [];
-      for (let count = 1; count <= maxObservations; count++) {
-        this.#remaining(signal);
-        const remaining = Math.floor(timeoutMs - (performance.now() - start));
-        requireThat(remaining > 0, 'condition_timeout', 408);
-        let view;
-        try { view = await this.#observe(false, Math.min(10_000, remaining), signal); }
-        catch (error) {
-          if (!transientReadErrors.has(error.code) || recoveries.length >= maxTransientFailures) throw error;
-          recoveries.push({ observation: count, code: error.code }); stable = 0; previous = undefined;
+      const start = performance.now(); let stable = 0; let previous; let transientFailures = 0; const recoveries = [];
+      try {
+        for (let count = 1; count <= maxObservations; count++) {
+          this.#remaining(signal);
+          const remaining = Math.floor(timeoutMs - (performance.now() - start));
+          requireThat(remaining > 0, 'condition_timeout', 408);
+          let view;
+          try { view = await this.#observe(false, Math.min(10_000, remaining), signal); }
+          catch (error) {
+            if (!transientReadErrors.has(error.code) || transientFailures >= maxTransientFailures) {
+              if (error.details?.captureRecovery) recoveries.push({ observation: count, code: error.code, captureRecovery: error.details.captureRecovery });
+              throw error;
+            }
+            transientFailures++;
+            recoveries.push({ observation: count, code: error.code, ...(error.details?.captureRecovery ? { captureRecovery: error.details.captureRecovery } : {}) }); stable = 0; previous = undefined;
+          }
+          if (view?.captureRecovery) {
+            recoveries.push({ observation: count, code: view.captureRecovery.initialError, captureRecovery: view.captureRecovery });
+            stable = 0; previous = undefined;
+          }
+          requireThat(performance.now() - start < timeoutMs, 'condition_timeout', 408);
+          const found = view?.nodes.filter((node) => matches(node, selector)) ?? [];
+          requireThat(found.length <= 1, 'selector_ambiguous', 409);
+          const identity = found.length ? JSON.stringify([view.packageName, view.windowId, found[0]]) : undefined;
+          stable = identity && identity === previous ? stable + 1 : identity ? 1 : 0; previous = identity;
+          if (stable >= stableObservations) return { observation: view, node: found[0], observations: count, recoveries, elapsedMs: Math.ceil(performance.now() - start) };
+          const left = timeoutMs - (performance.now() - start);
+          if (count < maxObservations && left > intervalMs) {
+            try { await delay(intervalMs, undefined, { signal: combined }); }
+            catch { throw new Fault(this.#closed ? 'session_closed' : 'request_cancelled', 409); }
+          }
+          else break;
         }
-        requireThat(performance.now() - start < timeoutMs, 'condition_timeout', 408);
-        const found = view?.nodes.filter((node) => matches(node, selector)) ?? [];
-        requireThat(found.length <= 1, 'selector_ambiguous', 409);
-        const identity = found.length ? JSON.stringify([view.packageName, view.windowId, found[0]]) : undefined;
-        stable = identity && identity === previous ? stable + 1 : identity ? 1 : 0; previous = identity;
-        if (stable >= stableObservations) return { observation: view, node: found[0], observations: count, recoveries, elapsedMs: Math.ceil(performance.now() - start) };
-        const left = timeoutMs - (performance.now() - start);
-        if (count < maxObservations && left > intervalMs) {
-          try { await delay(intervalMs, undefined, { signal: combined }); }
-          catch { throw new Fault(this.#closed ? 'session_closed' : 'request_cancelled', 409); }
-        }
-        else break;
+        throw new Fault('condition_timeout', 408);
+      } catch (error) {
+        if (error instanceof Fault && recoveries.length) error.recoveries = freeze(recoveries.slice(0, 30));
+        throw error;
       }
-      throw new Fault('condition_timeout', 408);
     });
   }
   act(method, params = {}, { signal, requestId } = {}) {

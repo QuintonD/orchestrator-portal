@@ -23,6 +23,7 @@ const session = { id: "session", deviceId: phone.id, ...scope };
 const state = { devices: [phone], sessions: [session], credentials: [] };
 const call = { id: "request", deviceId: "phone", sessionId: "session", method: "tap", params: { observationId: "screen", x: 20, y: 30 } };
 const screen = { observationId: "screen", packageName: "org.example.notes", windowId: 1, width: 400, height: 800, capturedAt: new Date().toISOString(), nodes: [{ id: "node", text: "Untrusted <script>prompt</script>", bounds: { left: 0, top: 0, right: 100, bottom: 60 }, editable: true, clickable: true }], screenshot: { mimeType: "image/png", base64: "iVBORw0KGgo=" } };
+const recovery = { retryCount: 1, initialError: "screenshot_internal_error", initialStage: "awaiting_callback", initialElapsedMs: 5000, totalElapsedMs: 6000 };
 
 afterEach(async () => {
   vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks();
@@ -55,6 +56,48 @@ function mockBroker(fn: (url: string, init: RequestInit) => unknown = (url) => u
 }
 
 describe("standalone phone-control boundary", () => {
+  it("preserves strict capture recovery on signed observations and terminal guard errors", async () => {
+    const { app, headers } = await fixture();
+    const observe = () => app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { ...call, method: "observe", params: { includeScreenshot: false } } });
+    for (const totalElapsedMs of [6000, 9001, 60000]) {
+      const captureRecovery = { ...recovery, totalElapsedMs };
+      const fetchMock = mockBroker(() => ({ id: call.id, status: "observed", result: { ...screen, captureRecovery, privateMetadata: "discard" } }));
+      const result = (await observe()).json();
+      expect(result).toMatchObject({ status: "observed", result: { captureRecovery } });
+      expect(result.result.screenshot).toBeUndefined(); expect(JSON.stringify(result)).not.toContain("discard"); expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+    for (const code of ["screenshot_timeout", "device_locked", "session_expired", "stopped"]) {
+      const fetchMock = mockBroker(() => ({ id: call.id, status: "rejected", error: { code, message: "private native message", details: { captureRecovery: recovery, privateMetadata: "discard" } } }));
+      const result = (await observe()).json();
+      expect(result).toMatchObject({ status: "rejected", error: { code, details: { captureRecovery: recovery } } });
+      expect(result.result).toBeUndefined(); expect(JSON.stringify(result)).not.toMatch(/discard|private native message/); expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("rejects malformed recovery metadata in signed successes and failures", async () => {
+    const { app, headers } = await fixture();
+    const invalid = [null, [], {}, { ...recovery, retryCount: 2 }, { ...recovery, initialError: "screenshot_timeout" }, { ...recovery, initialStage: "encoding" }, { ...recovery, initialElapsedMs: -1 }, { ...recovery, initialElapsedMs: "5000" }, { ...recovery, initialElapsedMs: 60001, totalElapsedMs: 60001 }, { ...recovery, totalElapsedMs: 60001 }, { ...recovery, totalElapsedMs: 4999 }, { ...recovery, totalElapsedMs: 1.5 }, { ...recovery, privateMetadata: "discard" }];
+    for (const captureRecovery of invalid) for (const success of [true, false]) {
+      const fetchMock = mockBroker(() => success ? { id: call.id, status: "observed", result: { ...screen, captureRecovery } } : { id: call.id, status: "rejected", error: { code: "device_locked", message: "rejected", details: { captureRecovery } } });
+      const result = (await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { ...call, method: "observe", params: {} } })).json();
+      expect(result).toMatchObject({ status: "unknown", error: { code: "BROKER_UNCONFIRMED" } });
+      expect(result.result).toBeUndefined(); expect(result.error.details).toBeUndefined(); expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("binds recovery facts to the signed body and never treats them as mutation authority", async () => {
+    const { app, headers } = await fixture();
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const value = { id: call.id, status: "observed", result: { ...screen, captureRecovery: recovery } };
+      const signed = await signedReply(value, url, init);
+      return new Response(JSON.stringify({ ...value, result: { ...value.result, captureRecovery: { ...recovery, totalElapsedMs: 6001 } } }), { headers: signed.headers });
+    }));
+    const result = (await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { ...call, method: "observe", params: {} } })).json();
+    expect(result).toMatchObject({ status: "unknown", error: { code: "BROKER_UNCONFIRMED" } }); expect(result.result).toBeUndefined();
+    mockBroker(() => ({ id: call.id, status: "observed", result: { ...screen, captureRecovery: recovery } }));
+    expect((await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { ...call, taskId: "task" } })).json().status).toBe("unknown");
+  });
+
   it("does not let signed contradictory or incomplete mutation receipts clear pending authority", async () => {
     const { app, headers } = await fixture();
     for (const invalid of [

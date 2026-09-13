@@ -154,6 +154,7 @@ public final class PhoneService extends AccessibilityService {
         boolean locked = false;
         boolean reserved = false;
         String hash = null;
+        JSONObject completedReadRecovery = null;
         JSONObject response;
         try {
             requireGeneration(sessionGeneration);
@@ -189,18 +190,24 @@ public final class PhoneService extends AccessibilityService {
                 case "observe" -> observe(params, sessionGeneration);
                 default -> mutate(method, params, sessionGeneration);
             };
+            if (method.equals("observe")) completedReadRecovery = result.optJSONObject("captureRecovery");
             if (mutation && (token == null || generation != sessionGeneration || SystemClock.elapsedRealtime() >= expiryElapsed))
                 throw new ApiException("unknown_action_state", "Session ended after action dispatch; observe before deciding what happened");
             requireGeneration(sessionGeneration);
             response = Json.object("id", id, "result", result);
         } catch (ApiException denied) {
             JSONObject error = Json.object("code", denied.code, "message", denied.getMessage());
-            if (denied.details != null) try { error.put("details", denied.details); } catch (JSONException impossible) { throw new AssertionError(impossible); }
+            JSONObject details = recoveryDetails(denied.details, completedReadRecovery);
+            if (details != null) try { error.put("details", details); } catch (JSONException impossible) { throw new AssertionError(impossible); }
             response = Json.object("id", id == null ? JSONObject.NULL : id, "error", error);
         } catch (JSONException invalid) {
-            response = Json.object("id", id == null ? JSONObject.NULL : id, "error", Json.object("code", "invalid_request", "message", "Invalid JSON request"));
+            JSONObject error = Json.object("code", "invalid_request", "message", "Invalid JSON request");
+            if (completedReadRecovery != null) try { error.put("details", recoveryDetails(null, completedReadRecovery)); } catch (JSONException impossible) { throw new AssertionError(impossible); }
+            response = Json.object("id", id == null ? JSONObject.NULL : id, "error", error);
         } catch (Exception failure) {
-            response = Json.object("id", id == null ? JSONObject.NULL : id, "error", Json.object("code", mutation ? "unknown_action_state" : "internal_error", "message", "Request could not be reconciled; do not replay an action"));
+            JSONObject error = Json.object("code", mutation ? "unknown_action_state" : "internal_error", "message", "Request could not be reconciled; do not replay an action");
+            if (completedReadRecovery != null) try { error.put("details", recoveryDetails(null, completedReadRecovery)); } catch (JSONException impossible) { throw new AssertionError(impossible); }
+            response = Json.object("id", id == null ? JSONObject.NULL : id, "error", error);
         } finally {
             if (locked) busy.set(false);
         }
@@ -239,52 +246,147 @@ public final class PhoneService extends AccessibilityService {
         return Json.object("apps", apps);
     }
     private JSONObject observe(JSONObject params, long currentGeneration) throws Exception {
+        ObservationRecovery recovery = new ObservationRecovery(android.os.Build.VERSION.SDK_INT, SystemClock::elapsedRealtime);
         Json.only(params, "includeScreenshot", "allowedPackages");
         if (params.has("includeScreenshot") && !(params.opt("includeScreenshot") instanceof Boolean)) throw new ApiException("invalid_request", "includeScreenshot must be boolean");
         if (params.optBoolean("includeScreenshot", false) && !policy.screenshots()) throw new ApiException("forbidden", "Screenshots are not enabled on the phone");
         Set<String> packages = scope(params);
         latest = null;
-        Observation before = onMain(() -> Observation.capture(this, packages));
-        byte[] bytes;
-        try { bytes = captureWindow(before, currentGeneration, params.optBoolean("includeScreenshot", false)); }
-        catch (ApiException failed) {
-            if (!CaptureDiagnostics.known(failed.code)) throw failed;
-            // Never return tree content when secure-window status could not be established by the OS capture API.
-            JSONObject blocked = Json.object("observationId", before.id, "packageName", before.packageName, "windowId", before.windowId,
-                    "width", before.bounds.width(), "height", before.bounds.height(), "capturedAt", before.capturedAt,
-                    "nodes", new JSONArray(), "blockedReason", failed.code);
-            if (failed.details != null) {
-                blocked.put("captureStage", failed.details.getString("captureStage"));
-                blocked.put("captureElapsedMs", failed.details.getLong("captureElapsedMs"));
+        boolean includePixels = params.optBoolean("includeScreenshot", false);
+        Observation[] captureTarget = new Observation[1];
+        try {
+            ObservationRecovery.Result<Observation, byte[]> captured = recovery.run(new ObservationRecovery.Work<Observation, byte[]>() {
+                @Override public Observation read(ObservationRecovery.Deadline deadline) throws Exception {
+                    requireGeneration(currentGeneration);
+                    policy.requireOperation("observe");
+                    return observeOnMain(() -> {
+                        requireGeneration(currentGeneration);
+                        return Observation.capture(PhoneService.this, packages);
+                    }, deadline);
+                }
+                @Override public byte[] capture(Observation before, ObservationRecovery.Deadline deadline) throws Exception {
+                    requireGeneration(currentGeneration);
+                    policy.requireOperation("observe");
+                    policy.requireApp(before.packageName);
+                    if (includePixels && !policy.screenshots()) throw new ApiException("forbidden", "Screenshot permission was removed");
+                    captureTarget[0] = before;
+                    return captureWindow(before, currentGeneration, includePixels, deadline);
+                }
+                @Override public void sameTarget(Observation first, Observation next) throws ApiException {
+                    if (!first.packageName.equals(next.packageName) || first.windowId != next.windowId || !first.identity.equals(next.identity))
+                        throw new ApiException("stale_observation", "Target changed before observation recovery");
+                }
+                @Override public void verify(Observation before, Observation after) throws ApiException {
+                    if (!before.same(after)) throw new ApiException("stale_observation", "Window changed during capture",
+                            Json.object("stateDifference", before.difference(after).replace(' ', '_')));
+                }
+            });
+            JSONObject result = captured.observation().response();
+            if (includePixels) {
+                if (!policy.screenshots()) throw new ApiException("forbidden", "Screenshot permission was removed");
+                result.put("screenshot", Json.object("mimeType", "image/png", "base64", Base64.encodeToString(captured.pixels(), Base64.NO_WRAP)));
             }
-            return blocked;
+            synchronized (this) {
+                requireGeneration(currentGeneration);
+                recovery.deadline.check();
+                JSONObject facts = captureRecovery(recovery);
+                if (facts != null) result.put("captureRecovery", facts);
+                // Publication and Stop share the same lock. A delayed read cannot
+                // restore latest after Stop has cleared it, or after its budget.
+                recovery.deadline.check();
+                latest = captured.observation();
+            }
+            return result;
+        } catch (Exception failed) {
+            ApiException failure = failed instanceof ApiException api ? api
+                    : failed instanceof ObservationRecovery.DeadlineExceeded
+                        ? CaptureDiagnostics.failure("screenshot_timeout")
+                        : new ApiException("internal_error", "Observation failed; tree and pixels withheld");
+            JSONObject facts = captureRecovery(recovery);
+            if (facts != null) {
+                failure = new ApiException(failure.code, failure.getMessage(), recoveryDetails(failure.details, facts));
+            }
+            // Preserve the existing blocked-observation protocol, with no tree or
+            // pixels, while carrying recovery facts through both response forms.
+            Observation before = captureTarget[0];
+            if (before != null && CaptureDiagnostics.known(failure.code)) {
+                JSONObject blocked = Json.object("observationId", before.id, "packageName", before.packageName, "windowId", before.windowId,
+                        "width", before.bounds.width(), "height", before.bounds.height(), "capturedAt", before.capturedAt,
+                        "nodes", new JSONArray(), "blockedReason", failure.code);
+                if (failure.details != null) {
+                    for (String key : new String[] { "captureStage", "captureElapsedMs", "captureRecovery" })
+                        if (failure.details.has(key)) blocked.put(key, failure.details.get(key));
+                }
+                return blocked;
+            }
+            throw failure;
         }
-        Observation after = onMain(() -> Observation.capture(this, packages));
-        if (!before.same(after)) throw new ApiException("stale_observation", "Window changed during capture",
-                Json.object("stateDifference", before.difference(after).replace(' ', '_')));
-        requireGeneration(currentGeneration);
-        latest = before;
-        JSONObject result = before.response();
-        if (params.optBoolean("includeScreenshot", false)) {
-            if (!policy.screenshots()) throw new ApiException("forbidden", "Screenshot permission was removed");
-            result.put("screenshot", Json.object("mimeType", "image/png", "base64", Base64.encodeToString(bytes, Base64.NO_WRAP)));
+    }
+
+    private static JSONObject captureRecovery(ObservationRecovery recovery) {
+        ObservationRecovery.Facts facts = recovery.facts();
+        return facts == null ? null : Json.object("retryCount", 1, "initialError", "screenshot_internal_error",
+                "initialStage", "awaiting_callback", "initialElapsedMs", facts.initialElapsedMs(), "totalElapsedMs", facts.totalElapsedMs());
+    }
+
+    private static JSONObject recoveryDetails(JSONObject existing, JSONObject recovery) {
+        if (recovery == null) return existing;
+        JSONObject details = new JSONObject();
+        try {
+            if (existing != null) for (java.util.Iterator<String> keys = existing.keys(); keys.hasNext();) {
+                String key = keys.next(); details.put(key, existing.get(key));
+            }
+            details.put("captureRecovery", recovery);
+        } catch (JSONException impossible) { throw new AssertionError(impossible); }
+        return details;
+    }
+
+    private <T> T observeOnMain(Callable<T> task, ObservationRecovery.Deadline deadline) throws Exception {
+        if (!deadline.bounded) return onMain(task);
+        FutureTask<T> future = new FutureTask<>(() -> { deadline.check(); return task.call(); });
+        long wait = deadline.remaining(5000);
+        main.post(future);
+        try {
+            T value = future.get(wait, TimeUnit.MILLISECONDS);
+            deadline.check();
+            return value;
+        } catch (java.util.concurrent.ExecutionException failed) {
+            if (failed.getCause() instanceof Exception cause) throw cause;
+            throw failed;
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            future.cancel(false);
+            throw new ObservationRecovery.DeadlineExceeded();
+        } catch (InterruptedException interrupted) {
+            future.cancel(false);
+            Thread.currentThread().interrupt();
+            throw interrupted;
         }
-        return result;
     }
 
     private byte[] captureWindow(Observation before, long currentGeneration, boolean includePixels) throws Exception {
+        return captureWindow(before, currentGeneration, includePixels, null);
+    }
+    private byte[] captureWindow(Observation before, long currentGeneration, boolean includePixels, ObservationRecovery.Deadline deadline) throws Exception {
+        if (deadline != null) deadline.check();
         if (!Policy.capturePixels(before.windowBounds.width(), before.windowBounds.height())) throw CaptureDiagnostics.failure("screenshot_too_large");
         // Android enforces a 333 ms screenshot request interval. Pace the read-only probe here so
         // fast MCP clients can observe then act immediately without undocumented client sleeps.
         long delay = Policy.SCREENSHOT_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastCaptureElapsed);
-        if (delay > 0) Thread.sleep(delay);
+        if (delay > 0) Thread.sleep(deadline == null ? delay : deadline.remaining(delay));
+        if (deadline != null) deadline.check();
         requireGeneration(currentGeneration);
         CaptureCoordinator.Ticket ticket = captures.begin(SystemClock.elapsedRealtime());
         if (ticket == null) throw CaptureDiagnostics.failure("screenshot_timeout", captures.current(), SystemClock.elapsedRealtime());
         main.post(() -> {
             try {
                 if (!ticket.requested()) { captures.finish(ticket); return; }
+                if (deadline != null) deadline.check();
                 requireGeneration(currentGeneration);
+                if (deadline != null) {
+                    policy.requireOperation("observe");
+                    policy.requireApp(before.packageName);
+                    if (includePixels && !policy.screenshots()) throw new ApiException("forbidden", "Screenshot permission was removed");
+                }
                 lastCaptureElapsed = SystemClock.elapsedRealtime();
                 takeScreenshotOfWindow(before.windowId, getMainExecutor(), new TakeScreenshotCallback() {
                     @Override public void onSuccess(ScreenshotResult result) {
@@ -297,6 +399,7 @@ public final class PhoneService extends AccessibilityService {
                             screenshotEncoder.execute(() -> captures.encode(ticket, () -> {
                                 try (buffer) {
                                     requireGeneration(currentGeneration);
+                                    requireCaptureDeadline(deadline);
                                     if (ticket.abandoned()) throw CaptureDiagnostics.failure("screenshot_timeout");
                                     if (!Policy.capturePixels(buffer.getWidth(), buffer.getHeight())) throw CaptureDiagnostics.failure("screenshot_too_large");
                                     if (buffer.getWidth() != before.windowBounds.width() || buffer.getHeight() != before.windowBounds.height())
@@ -305,6 +408,7 @@ public final class PhoneService extends AccessibilityService {
                                     // probe. Tree-only callers do not need a bitmap or encoded pixels.
                                     byte[] bytes = includePixels ? encodeScreenshot(before, buffer, result.getColorSpace()) : new byte[0];
                                     requireGeneration(currentGeneration);
+                                    requireCaptureDeadline(deadline);
                                     return bytes;
                                 }
                             }));
@@ -313,16 +417,33 @@ public final class PhoneService extends AccessibilityService {
                             ticket.result.completeExceptionally(captureError(rejected, ticket));
                         }
                     }
-                    @Override public void onFailure(int errorCode) { failCapture(ticket, CaptureDiagnostics.failure(CaptureDiagnostics.androidCode(errorCode))); }
+                    @Override public void onFailure(int errorCode) {
+                        captures.frameworkFailure(ticket, errorCode, captureError(CaptureDiagnostics.failure(CaptureDiagnostics.androidCode(errorCode)), ticket));
+                    }
                 });
             } catch (Exception error) { failCapture(ticket, error); }
         });
         // Android's accessibility client schedules its own failure callback at five
         // seconds. Allow bounded delivery slack; action deadlines remain independent.
-        try { return ticket.result.get(6, TimeUnit.SECONDS); }
+        try {
+            byte[] result = ticket.result.get(deadline == null ? 6000 : deadline.remaining(6000), TimeUnit.MILLISECONDS);
+            if (deadline != null) deadline.check();
+            return result;
+        }
         catch (java.util.concurrent.ExecutionException failed) {
-            if (failed.getCause() instanceof ApiException denied) throw captureError(denied, ticket);
+            if (failed.getCause() instanceof ApiException denied) {
+                ApiException failure = captureError(denied, ticket);
+                if (deadline != null && deadline.bounded && ticket.recoveryEligible())
+                    throw new ObservationRecovery.RetryableCaptureFailure(failure, SystemClock.elapsedRealtime() - ticket.started);
+                throw failure;
+            }
             throw CaptureDiagnostics.failure("screenshot_internal_error", ticket, SystemClock.elapsedRealtime());
+        }
+        catch (ObservationRecovery.DeadlineExceeded expired) {
+            captures.abandon(ticket);
+            ApiException failure = CaptureDiagnostics.failure("screenshot_timeout", ticket, SystemClock.elapsedRealtime());
+            ticket.result.completeExceptionally(failure);
+            throw failure;
         }
         catch (java.util.concurrent.TimeoutException timeout) {
             captures.abandon(ticket);
@@ -363,11 +484,18 @@ public final class PhoneService extends AccessibilityService {
         } finally { bitmap.recycle(); }
     }
     private ApiException captureError(Exception error, CaptureCoordinator.Ticket ticket) {
+        if (error instanceof ObservationRecovery.DeadlineExceeded)
+            return CaptureDiagnostics.failure("screenshot_timeout", ticket, SystemClock.elapsedRealtime());
         if (error instanceof ApiException denied) {
             if (!CaptureDiagnostics.known(denied.code)) return denied;
             return CaptureDiagnostics.failure(denied.code, ticket, SystemClock.elapsedRealtime());
         }
         return CaptureDiagnostics.failure("screenshot_internal_error", ticket, SystemClock.elapsedRealtime());
+    }
+    private static void requireCaptureDeadline(ObservationRecovery.Deadline deadline) throws ApiException {
+        if (deadline == null) return;
+        try { deadline.check(); }
+        catch (ObservationRecovery.DeadlineExceeded expired) { throw CaptureDiagnostics.failure("screenshot_timeout"); }
     }
     private void failCapture(CaptureCoordinator.Ticket ticket, Exception error) {
         captures.failBeforeEncoding(ticket, captureError(error, ticket));

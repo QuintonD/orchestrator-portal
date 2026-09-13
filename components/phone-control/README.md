@@ -493,6 +493,15 @@ Stop interrupts the helper's ordinary operation lock, permanently closes this
 instance and is sent at most once. A late mutation reply after Stop remains
 unknown. Create a new client only after owner reconciliation and fresh authority.
 
+On Android 14/15, the companion may recover one failed capture with a fresh read
+inside a nine-second overall observation budget. This does not retry an action
+or fix the framework defect. Successful views and terminal error details retain
+`captureRecovery`; stable waits reset their consecutive-match count. A failed
+SDK wait retains its bounded diagnostic history in `error.recoveries` (at most
+30 records). Caller/task deadlines still win, and no failed read grants action
+authority. See [Android 14/15 limits](../../docs/phone-control-android-14-15.md)
+for the exact eligibility, metrics and firmware caveats.
+
 `SourcePhoneTask` saves a private, metadata-only intent checkpoint before each
 action, reserves source model budgets before provider invocation and emits
 `source_reported` progress/handoff events. Existing checkpoints can be inspected,

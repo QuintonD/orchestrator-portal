@@ -2,9 +2,10 @@
 // Required origin notice: see ATTRIBUTION.md.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
 import { PhonePilot, selectNode } from '../src/pilot.mjs';
 import { generateResponseIdentity, requestHash, signHttpResponse, bodyHash } from '../src/response-proof.mjs';
-import { harness, runningServer, APP } from './helpers.mjs';
+import { harness, runningServer, APP, CAPTURE_RECOVERY, invalidCaptureRecoveries } from './helpers.mjs';
 
 const secret = 'synthetic-scoped-pilot-token-no-device';
 const identity = generateResponseIdentity();
@@ -22,6 +23,99 @@ function setup(reply, options = {}) {
   } });
   return { pilot, calls };
 }
+
+test('pilot keeps immutable recovery facts on successful views and any terminal read refusal', async () => {
+  const recovered = setup((input) => ({ id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY } }));
+  const observed = await recovered.pilot.observe();
+  assert.deepEqual(observed.captureRecovery, CAPTURE_RECOVERY);
+  assert.throws(() => { observed.captureRecovery.retryCount = 2; }, TypeError);
+  assert.equal(recovered.calls.length, 1); assert.equal(recovered.pilot.usage.actions, 0);
+  for (const code of ['screenshot_internal_error', 'device_locked', 'session_expired', 'stopped']) {
+    const failed = setup((input) => ({ id: input.id, status: 'rejected', error: { code, message: secret, details: { captureRecovery: CAPTURE_RECOVERY, privateMessage: secret } } }));
+    await assert.rejects(failed.pilot.observe(), (error) => error.code === code && assert.deepEqual(error.details, { captureRecovery: CAPTURE_RECOVERY }) === undefined && !JSON.stringify(error).includes(secret));
+    assert.equal(failed.pilot.observation, undefined); assert.equal(failed.calls.length, 1);
+  }
+});
+
+test('pilot rejects malformed recovery on signed success and failure receipts', async () => {
+  for (const captureRecovery of invalidCaptureRecoveries) {
+    for (const success of [true, false]) {
+      const h = setup((input) => success
+        ? { id: input.id, status: 'observed', result: { ...view(), captureRecovery } }
+        : { id: input.id, status: 'rejected', error: { code: 'device_locked', details: { captureRecovery } } });
+      await assert.rejects(h.pilot.observe(), { code: success ? 'invalid_observation' : 'receipt_invalid' });
+      assert.equal(h.pilot.observation, undefined); assert.equal(h.calls.length, 1);
+    }
+  }
+});
+
+test('a signed recovery field cannot be changed in transit or grant action authority', async () => {
+  const h = setup((input, count, options) => {
+    const raw = JSON.stringify({ id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY } });
+    const signature = signHttpResponse({ privateKey: identity.privateKey, nonce: options.headers['x-phone-request-nonce'], method: 'POST', path: '/v1/call', requestHash: bodyHash(options.body), status: 200, bodyHash: bodyHash(raw) });
+    return new Response(raw.replace('"totalElapsedMs":6000', '"totalElapsedMs":6001'), { headers: { 'x-phone-response-signature': signature } });
+  });
+  await assert.rejects(h.pilot.observe(), { code: 'observation_unconfirmed' });
+  await assert.rejects(h.pilot.act('node.click', { nodeId: 'n_0' }), { code: 'fresh_observation_required' });
+  assert.equal(h.calls.length, 1); assert.equal(h.pilot.observation, undefined);
+});
+
+test('a recovered read breaks matching continuity and records the first failure in wait results', async () => {
+  const h = setup((input, count) => ({ id: input.id, status: 'observed', result: { ...view(), ...(count === 2 ? { captureRecovery: CAPTURE_RECOVERY } : {}) } }));
+  const found = await h.pilot.waitFor({ text: 'Draft' }, { maxObservations: 3, timeoutMs: 2500, maxTransientFailures: 0 });
+  assert.equal(found.observations, 3); assert.equal(h.calls.length, 3);
+  assert.deepEqual(found.recoveries, [{ observation: 2, code: 'screenshot_internal_error', captureRecovery: CAPTURE_RECOVERY }]);
+  assert.equal(h.pilot.usage.actions, 0);
+});
+
+test('recovery metadata cannot extend a shorter SDK timeout or aggregate task budget', async () => {
+  for (const aggregate of [false, true]) {
+    const h = setup(async (input) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY } };
+    }, aggregate ? { budget: { timeoutMs: 10 } } : {});
+    await assert.rejects(h.pilot.observe({ timeoutMs: aggregate ? 1000 : 10 }));
+    assert.equal(h.pilot.observation, undefined); assert.equal(h.calls.length, 1);
+  }
+});
+
+test('a postresponse pilot budget guard keeps recovery facts while withholding the late view', async (t) => {
+  let clock = 0; t.mock.method(performance, 'now', () => clock);
+  const h = setup((input) => { clock = 60001; return { id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY } }; }, { budget: { timeoutMs: 60000 } });
+  await assert.rejects(h.pilot.observe(), (error) => {
+    assert.equal(error.code, 'task_time_budget_exhausted'); assert.deepEqual(error.details, { captureRecovery: CAPTURE_RECOVERY }); return true;
+  });
+  assert.equal(h.pilot.observation, undefined); assert.equal(h.calls.length, 1);
+});
+
+test('failed waits preserve bounded immutable recovery history on timeout, ambiguity and terminal rejection', async () => {
+  for (const reason of ['timeout', 'ambiguity', 'terminal']) {
+    const h = setup((input, count) => reason === 'terminal' && count === 2
+      ? { id: input.id, status: 'rejected', error: { code: 'device_locked', details: { captureRecovery: CAPTURE_RECOVERY } } }
+      : { id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY, ...(reason === 'ambiguity' ? { nodes: [node, { ...node, id: 'n_1' }] } : {}) } });
+    await assert.rejects(h.pilot.waitFor({ text: reason === 'ambiguity' ? 'Draft' : 'Missing' }, { maxObservations: reason === 'terminal' ? 2 : 1, stableObservations: 1, timeoutMs: 2000 }), (error) => {
+      assert.equal(error.code, reason === 'timeout' ? 'condition_timeout' : reason === 'ambiguity' ? 'selector_ambiguous' : 'device_locked');
+      const expected = [{ observation: 1, code: 'screenshot_internal_error', captureRecovery: CAPTURE_RECOVERY }, ...(reason === 'terminal' ? [{ observation: 2, code: 'device_locked', captureRecovery: CAPTURE_RECOVERY }] : [])];
+      assert.deepEqual(error.recoveries, expected); assert.throws(() => { error.recoveries[0].captureRecovery.retryCount = 2; }, TypeError); return true;
+    });
+    assert.equal(h.calls.length, reason === 'terminal' ? 2 : 1); assert.equal(h.pilot.usage.actions, 0);
+  }
+});
+
+test('cancelled waits retain an already-observed recovery without sending another read', async () => {
+  const controller = new AbortController();
+  const h = setup((input) => ({ id: input.id, status: 'observed', result: { ...view(), captureRecovery: CAPTURE_RECOVERY } }));
+  const pending = h.pilot.waitFor({ text: 'Missing' }, { signal: controller.signal });
+  const settled = pending.catch((error) => error);
+  const deadline = performance.now() + 3000;
+  while (!h.pilot.observation && performance.now() < deadline) await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  if (!h.pilot.observation) { await settled; assert.fail('Recovered observation was not published before the bounded cancellation check'); }
+  await assert.rejects(pending, (error) => {
+    assert.equal(error.code, 'request_cancelled'); assert.deepEqual(error.recoveries, [{ observation: 1, code: 'screenshot_internal_error', captureRecovery: CAPTURE_RECOVERY }]); return true;
+  });
+  assert.equal(h.calls.length, 1);
+});
 test('exact selector rejects ambiguity, miss, empty and instruction-shaped fields', () => {
   assert.equal(selectNode(view(), { resourceId: node.resourceId, enabled: true, action: 'setText' }).id, 'n_0');
   assert.throws(() => selectNode({ ...view(), nodes: [node, { ...node, id: 'n_1' }] }, { resourceId: node.resourceId }), /selector_ambiguous/);

@@ -20,7 +20,10 @@ The manual [legacy compatibility workflow](../../.github/workflows/phone-control
 keeps that image family under the same strict assertions. A failure stays failed
 and cannot satisfy the required release workflow. A capture failure clears the
 current observation, withholds tree and pixels, and grants no action authority.
-Authenticated Stop remains available. No capture retry hides a failed sample.
+Authenticated Stop remains available. Android 14/15 retain support with one
+bounded read-only recovery after an exact internal-error callback. The original
+failure remains visible; this is not a framework fix or an action retry. See
+[Android 14/15 recovery and caveats](../../docs/phone-control-android-14-15.md).
 
 ## Build and install
 
@@ -212,11 +215,14 @@ are never included. These codes diagnose refusal; they do not authorize replay.
 Safe diagnostics may include `captureStage` (`queued`, `awaiting_callback` or
 `encoding`) and `captureElapsedMs` (capped at 60,000). The capture wait is bounded
 at six seconds, allowing Android's own five-second failure callback a delivery
-margin; action deadlines are still checked independently before dispatch. This
-does not retry a capture or establish why a callback was late. Encoding runs on one worker,
-so it does not block main-thread stop/consent handling. A timed-out OS request
-retains its capture slot until Android delivers a callback and its buffer is
-closed; fresh requests cannot accumulate orphan captures. Android exposes no
+margin; action deadlines are still checked independently before dispatch. On
+Android 14/15, `observe` may make one fresh read after the exact internal-error
+callback, within a nine-second overall budget. Recovery diagnostics retain the
+first failure; they do not establish why its callback was late. Mutation probes
+do not retry. Encoding runs on one worker, so it does not block main-thread
+stop/consent handling. A local no-callback timeout retains its capture slot until
+Android delivers a callback and any buffer is closed. Android's own error callback
+does not prove downstream native work has finished. Android exposes no
 cancellation API for an already requested window screenshot. If its callback
 never arrives, capture stays blocked until the accessibility service restarts.
 
@@ -456,4 +462,5 @@ The biometric fixture modes use a bounded read-only readiness loop. Its safe
 refusal and the eventual recovery count. A geometry mismatch still discards the
 image; only a fresh observation can proceed, and no mutation is retried. Keep
 these functional readiness results separate from the integration runner's 30
-independent reads, which count every failed capture without retrying it.
+logical requests, which report first-attempt failures and bounded native recovery
+separately. The integration harness does not retry those requests.

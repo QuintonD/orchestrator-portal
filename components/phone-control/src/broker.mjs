@@ -2,7 +2,7 @@
 // Required origin notice: see ATTRIBUTION.md.
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { Fault, requireThat, object, identifier, packageName, number, string, validateGrant, validateCall, publicError, captureDetails, METHODS, MUTATIONS, MAX_BODY_BYTES, MAX_NATIVE_BYTES } from './validation.mjs';
+import { Fault, requireThat, object, identifier, packageName, number, string, validateGrant, validateCall, publicError, captureDetails, captureRecovery, METHODS, MUTATIONS, MAX_BODY_BYTES, MAX_NATIVE_BYTES } from './validation.mjs';
 import { digest, token, tokenMatches } from './security.mjs';
 import { requestHash, bodyHash, signHttpResponse } from './response-proof.mjs';
 
@@ -25,7 +25,7 @@ function sanitizeObservation(raw, allowedApps, includeScreenshot, now) {
     requireThat(typeof raw.windowId === 'number' && Number.isInteger(raw.windowId) || typeof raw.windowId === 'string' && raw.windowId.length <= 128);
     number(raw.width, 1, 16384); number(raw.height, 1, 16384);
     const captured = typeof raw.capturedAt === 'number' ? raw.capturedAt : Date.parse(raw.capturedAt); requireThat(Number.isFinite(captured) && captured <= now + 5000 && now - captured <= OBSERVATION_MS, 'stale_observation', 409);
-    if (raw.blockedReason) throw new Fault(SAFE_CAPTURE_ERRORS.has(raw.blockedReason) ? raw.blockedReason : 'observation_blocked', 403, SAFE_CAPTURE_ERRORS.has(raw.blockedReason) ? captureDetails(raw) : undefined);
+    if (raw.blockedReason) throw new Fault(SAFE_CAPTURE_ERRORS.has(raw.blockedReason) ? raw.blockedReason : 'observation_blocked', 403, captureDetails(raw, SAFE_CAPTURE_ERRORS.has(raw.blockedReason)));
     requireThat(Array.isArray(raw.nodes) && raw.nodes.length <= 1000); const nodeIds = new Set();
     const nodes = raw.nodes.map((node) => {
       identifier(node.id); requireThat(!nodeIds.has(node.id)); nodeIds.add(node.id); requireThat(typeof node.editable === 'boolean' && typeof node.clickable === 'boolean');
@@ -42,6 +42,7 @@ function sanitizeObservation(raw, allowedApps, includeScreenshot, now) {
       return { id: node.id, ...(node.text === undefined ? {} : { text: node.text }), ...(node.description === undefined ? {} : { description: node.description }), bounds: { left: b.left, top: b.top, right: b.right, bottom: b.bottom }, editable: node.editable, clickable: node.clickable, ...semantic };
     });
     const result = { observationId: raw.observationId, packageName: raw.packageName, windowId: raw.windowId, width: raw.width, height: raw.height, capturedAt: iso(captured), nodes };
+    if (Object.hasOwn(raw, 'captureRecovery')) result.captureRecovery = captureRecovery(raw.captureRecovery);
     if (raw.touchBounds !== undefined) {
       const bounds = raw.touchBounds;
       object(bounds, ['left', 'top', 'right', 'bottom']);
@@ -240,7 +241,12 @@ export class Broker {
   async native(device, call, signal) {
     const response = await this.fetch(`${device.origin}/v1/call`, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${device.token}` }, body: JSON.stringify(call), signal });
     requireThat(response.ok, 'native_transport_error', 502); const body = await boundedJson(response, MAX_NATIVE_BYTES); requireThat(body?.id === call.id && Object.hasOwn(body, 'result') !== Object.hasOwn(body, 'error'), 'native_response_invalid', 502);
-    if (body.error) throw new Fault(SAFE_NATIVE_ERRORS.has(body.error.code) ? body.error.code : 'native_rejected', SAFE_NATIVE_ERRORS.has(body.error.code) ? 422 : 502, SAFE_CAPTURE_ERRORS.has(body.error.code) ? captureDetails(body.error.details) : undefined);
+    if (body.error) {
+      let details;
+      try { details = captureDetails(body.error.details, SAFE_CAPTURE_ERRORS.has(body.error.code)); }
+      catch { throw new Fault('native_response_invalid', 502); }
+      throw new Fault(SAFE_NATIVE_ERRORS.has(body.error.code) ? body.error.code : 'native_rejected', SAFE_NATIVE_ERRORS.has(body.error.code) ? 422 : 502, details);
+    }
     requireThat(Object.hasOwn(body, 'result') && !Object.hasOwn(body, 'error'), 'native_response_invalid', 502); this.lastSeen.set(device.id, this.now()); return body.result;
   }
   prune() {
@@ -310,10 +316,14 @@ export class Broker {
     this.data.receipts.push(entry); this.persist(); // Write intent before crossing the device boundary. A crash cannot silently reinject a mutation.
     const controller = new AbortController(); this.inflight.set(device.id, { actorId: actor.id, controller }); const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     if (mutation) this.clearPrivateViews(undefined, device.id);
-    let nativeCompleted = false;
+    let nativeCompleted = false; let recovery;
     try {
       const result = await this.native(device, { id: digest(key), method: input.method, params }, controller.signal);
       nativeCompleted = true;
+      if (input.method === 'observe' && result && Object.hasOwn(result, 'captureRecovery')) {
+        try { recovery = captureRecovery(result.captureRecovery); }
+        catch { throw new Fault('native_response_invalid', 502); }
+      }
       this.scope(actor, input); // Revocation and expiry also gate responses, including already captured private screens.
       if (mutation) this.requireTask(actor, input, { response: true });
       let projected;
@@ -339,12 +349,13 @@ export class Broker {
     } catch (error) {
       const knownRejection = !nativeCompleted && error instanceof Fault && error.status < 500 && error.code !== 'unknown_action_state';
       const safe = error instanceof Fault ? error : new Fault('outcome_unknown', 502);
+      if (recovery) safe.details = { ...safe.details, captureRecovery: recovery };
       entry.receipt = receipt(input.id, mutation && !knownRejection ? 'unknown' : 'rejected', undefined, safe);
       entry.outcomeStatus = entry.receipt.status;
       entry.completedAt = iso(this.now());
       if (mutation && entry.receipt.status === 'unknown' && !this.data.uncertainDevices.includes(device.id)) this.data.uncertainDevices.push(device.id);
       if (!mutation) { entry.read = false; }
-      try { this.audit(actor.id, entry.receipt.status, { deviceId: device.id, method: input.method, code: safe.code }); } catch { entry.receipt = receipt(input.id, 'unknown', undefined, new Fault('persistence_unavailable', 500)); entry.outcomeStatus = 'unknown'; }
+      try { this.audit(actor.id, entry.receipt.status, { deviceId: device.id, method: input.method, code: safe.code }); } catch { entry.receipt = receipt(input.id, 'unknown', undefined, new Fault('persistence_unavailable', 500, safe.details?.captureRecovery ? { captureRecovery: safe.details.captureRecovery } : undefined)); entry.outcomeStatus = 'unknown'; }
       return entry.receipt;
     } finally { clearTimeout(timer); if (this.inflight.get(device.id)?.controller === controller) this.inflight.delete(device.id); }
   }

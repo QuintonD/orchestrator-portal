@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Required origin notice: see ATTRIBUTION.md.
 export interface Bounds { left: number; top: number; right: number; bottom: number }
+/** One fresh read retry began; elapsed facts do not extend any request budget. */
+export interface CaptureRecovery { retryCount: 1; initialError: 'screenshot_internal_error'; initialStage: 'awaiting_callback'; initialElapsedMs: number; totalElapsedMs: number }
+export interface PhoneError { code: string; message: string; details?: { captureStage?: 'queued' | 'awaiting_callback' | 'encoding'; captureElapsedMs?: number; captureRecovery?: CaptureRecovery } }
 export type NodeAction = 'click' | 'longClick' | 'scrollForward' | 'scrollBackward' | 'setText';
 export interface PhoneNode {
   id: string; bounds: Bounds; editable: boolean; clickable: boolean;
@@ -10,7 +13,7 @@ export interface PhoneNode {
 export type Selector = Partial<Omit<PhoneNode, 'id' | 'bounds' | 'actions'>> & { action?: NodeAction };
 export interface Observation {
   observationId: string; packageName: string; windowId: number | string; width: number; height: number; capturedAt: string; nodes: PhoneNode[];
-  touchBounds?: Bounds; screenshot?: { mimeType: 'image/png'; base64: string };
+  touchBounds?: Bounds; screenshot?: { mimeType: 'image/png'; base64: string }; captureRecovery?: CaptureRecovery;
 }
 export interface ActionParameters {
   'app.launch': { packageName: string }; tap: { x: number; y: number };
@@ -21,16 +24,19 @@ export interface ActionParameters {
 }
 export type ActionMethod = keyof ActionParameters;
 export type MutationReceipt = { id: string; status: 'completed'; result: { status: 'dispatched' | 'completed' | 'stopped' } }
-  | { id: string; status: 'rejected' | 'unknown'; error?: { code: string; message: string } };
+  | { id: string; status: 'rejected' | 'unknown'; error?: PhoneError };
 export interface TaskLease {
   id: string; deviceId: string; sessionId: string; status: 'active' | 'completed' | 'expired' | 'revoked' | 'interrupted'; expiresAt: string; maxActions: number; actionsUsed: number;
 }
 export interface PilotBudget { maxActions?: number; maxObservations?: number; timeoutMs?: number }
 export interface ObserveOptions { includeScreenshot?: boolean; timeoutMs?: number; signal?: AbortSignal }
 export interface WaitOptions { timeoutMs?: number; maxObservations?: number; intervalMs?: number; stableObservations?: number; maxTransientFailures?: number; signal?: AbortSignal }
-export interface WaitResult { observation: Observation; node: PhoneNode; observations: number; recoveries: { observation: number; code: string }[]; elapsedMs: number }
+export interface ReadRecovery { observation: number; code: string; captureRecovery?: CaptureRecovery }
+/** Failed waits retain at most 30 safe read-recovery records; they cannot resume work. */
+export interface WaitFailure extends Error { code: string; recoveries?: readonly ReadRecovery[]; details?: PhoneError['details'] }
+export interface WaitResult { observation: Observation; node: PhoneNode; observations: number; recoveries: ReadRecovery[]; elapsedMs: number }
 export interface Reconciliation {
-  receipt: { id: string; status: 'completed' | 'rejected' | 'unknown'; error?: { code: string; message: string } }; reconciliation: 'status_only'; resumeAllowed: false;
+  receipt: { id: string; status: 'completed' | 'rejected' | 'unknown'; error?: PhoneError }; reconciliation: 'status_only'; resumeAllowed: false;
 }
 export function selectNode(observation: Observation, selector: Selector): PhoneNode;
 export class PhonePilot {
