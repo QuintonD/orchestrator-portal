@@ -96,6 +96,11 @@ stable-condition waits reset their consecutive-match count after a recovery.
 - Emulator success does not establish physical biometrics, OEM behavior,
   TalkBack, battery/thermal suitability, broad live-agent task success or Astra
   parity. This remains an alpha for controlled owner testing.
+- The separate enrolled-QPR2 biometric regression had an unexplained failure
+  during its swipe sequence. After correcting a driver diagnostic parser, one
+  explicitly linked full run passed 45 assertions and in-flight Stop passed 13.
+  The original remains failed evidence; the parser change does not establish a
+  fix for that action failure. See the [validation record](alpha-7-validation.md).
 
 ## Acceptance evidence
 

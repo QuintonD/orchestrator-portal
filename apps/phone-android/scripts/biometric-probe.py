@@ -28,6 +28,15 @@ READINESS_CODES = frozenset((
     "screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display",
     "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error",
 ))
+FAILURE_STAGES = frozenset((
+    "configuration", "accessibility_automation", "accessibility_setup", "accessibility_disable",
+    "accessibility_enable", "accessibility_connect", "session_setup", "describe", "fixture_launch", "biometric_probe",
+))
+FAILURE_CLASSES = frozenset((
+    "AssertionError", "SetupFailure", "ExceptionInInitializerError", "PatternSyntaxException", "IllegalStateException",
+    "JSONException", "ApiException", "IOException", "SocketTimeoutException", "InterruptedException", "NullPointerException",
+    "IllegalArgumentException", "RuntimeException", "SecurityException", "Exception", "Error", "TimeoutException", "ExecutionException",
+))
 
 
 class ProbeFailure(Exception):
@@ -181,11 +190,43 @@ class Transcript:
         self.readiness_refused = 0
         self.readiness_completed = 0
         self.readiness_failed = False
+        self.failure_stage = None
+        self.failure_result = None
+        self.framework_failure = False
+
+    def attach_failure(self, failure):
+        diagnostics = list(failure.diagnostics)
+        if self.failure_stage is not None:
+            diagnostics.append("PHONE_BIOMETRIC_FAILURE_STAGE " + self.failure_stage)
+        if self.failure_result is not None:
+            diagnostics.extend(self.failure_result.diagnostics)
+        failure.diagnostics = tuple(dict.fromkeys(diagnostics))
+        return failure
 
     def feed(self, line):
+        try:
+            if len(line) > 4096:
+                raise ProbeFailure("output_line_limit")
+            return self._feed(line)
+        except ProbeFailure as failure:
+            raise self.attach_failure(failure) from None
+
+    def _feed(self, line):
         ready_prefix = "INSTRUMENTATION_STATUS: stream=PHONE_BIOMETRIC_READY "
         readiness_prefix = "INSTRUMENTATION_STATUS: stream=PHONE_READINESS_"
-        if line.startswith(readiness_prefix):
+        stage_prefix = "INSTRUMENTATION_RESULT: phone_qa_failure_stage="
+        if line.startswith(stage_prefix):
+            stage = line[len(stage_prefix):]
+            if stage not in FAILURE_STAGES or self.failure_stage is not None or self.summary_seen or self.failure_result is not None \
+                    or self.framework_success or self.framework_failure or self.pending is not None or self.pending_readiness is not None \
+                    or (stage != "biometric_probe" and (self.index or self.readiness_completed)):
+                raise ProbeFailure("invalid_failure_metadata")
+            # This latches failure, never success. Keep reading the bounded child
+            # stream so the subsequent FAIL summary supplies redacted cause facts.
+            self.failure_stage = stage
+        elif self.failure_stage is not None and line.startswith("INSTRUMENTATION_STATUS"):
+            raise ProbeFailure("invalid_failure_sequence")
+        elif line.startswith(readiness_prefix):
             if self.pending is not None or self.pending_readiness is not None or self.summary_seen or self.readiness_failed:
                 raise ProbeFailure("unexpected_readiness_diagnostic")
             value = line[len("INSTRUMENTATION_STATUS: stream="):]
@@ -232,32 +273,45 @@ class Transcript:
             self.index += 1
             return ready
         elif line.startswith("INSTRUMENTATION_RESULT: stream="):
+            if self.failure_result is not None or self.framework_failure:
+                raise ProbeFailure("duplicate_failure_summary")
             if line != "INSTRUMENTATION_RESULT: stream=" + summary(self.mode) or self.summary_seen or self.pending is not None \
                     or self.pending_readiness is not None or self.readiness_refused or self.readiness_failed or self.readiness_completed == 0 \
-                    or self.index != len(READY[self.mode]):
+                    or self.index != len(READY[self.mode]) or self.failure_stage is not None:
                 failure = ProbeFailure("unexpected_result_summary")
-                failed = re.fullmatch(r"INSTRUMENTATION_RESULT: stream=FAIL after ([0-9]{1,3}) assertions: [A-Za-z]+: (.*)", line)
+                failed = re.fullmatch(r"INSTRUMENTATION_RESULT: stream=FAIL after (0|[1-9][0-9]{0,2}) assertions: ([A-Za-z]+): (.*)", line)
                 if failed:
+                    if int(failed[1]) > COUNTS[self.mode]:
+                        raise ProbeFailure("invalid_failure_assertions")
                     diagnostics = ["PHONE_BIOMETRIC_FAILURE_ASSERTIONS " + failed[1]]
+                    diagnostics.append("PHONE_BIOMETRIC_FAILURE_CLASS " + (failed[2] if failed[2] in FAILURE_CLASSES else "Error"))
                     for code in ("stale_observation", "consent_denied", "consent_unavailable", "deadline_expired", "unknown_action_state", "invalid_request", "protected_window",
                                  "screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied",
                                  "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error"):
-                        if re.search(r"\b" + code + r"\b", failed[2]): diagnostics.append("PHONE_BIOMETRIC_FAILURE_CODE " + code)
+                        if re.search(r"\b" + code + r"\b", failed[3]): diagnostics.append("PHONE_BIOMETRIC_FAILURE_CODE " + code)
                     for text, reason in (("Original window did not return after consent", "restore_timeout"), ("Window changed since observation", "preconsent_changed"), ("Target changed immediately before execution", "predispatch_changed"),
                                          ("Native consent Activity did not appear", "consent_surface_absent"), ("Review controls and scroll area stay inside system insets", "layout_bounds"),
                                          ("changed actual foreground as expected", "foreground_timeout"),
                                          ("Missing fixture node Gesture test pad", "fixture_pad_unavailable")):
-                        if text in failed[2]: diagnostics.append("PHONE_BIOMETRIC_FAILURE_REASON " + reason)
-                    geometry = re.search(r"\blayoutGeometry=([0-9]{1,4}(?:,[0-9]{1,4}){5})\b", failed[2])
+                        if text in failed[3]: diagnostics.append("PHONE_BIOMETRIC_FAILURE_REASON " + reason)
+                    geometry = re.search(r"\blayoutGeometry=([0-9]{1,4}(?:,[0-9]{1,4}){5})\b", failed[3])
                     if geometry: diagnostics.append("PHONE_BIOMETRIC_LAYOUT_GEOMETRY " + geometry[1])
-                    stage = re.search(r"\bcaptureStage=(queued|awaiting_callback|encoding)\b", failed[2])
+                    stage = re.search(r"\bcaptureStage=(queued|awaiting_callback|encoding)\b", failed[3])
                     if stage: diagnostics.append("PHONE_BIOMETRIC_CAPTURE_STAGE " + stage[1])
-                    elapsed = re.search(r"\bcaptureElapsedMs=([0-9]{1,5})\b", failed[2])
+                    elapsed = re.search(r"\bcaptureElapsedMs=([0-9]{1,5})\b", failed[3])
                     if elapsed and int(elapsed[1]) <= 60000: diagnostics.append("PHONE_BIOMETRIC_CAPTURE_ELAPSED_MS " + elapsed[1])
                     failure.diagnostics = tuple(diagnostics)
+                    if self.failure_stage is not None:
+                        self.failure_result = failure
+                        return None
                 raise failure
             self.summary_seen = True
         elif line.startswith("INSTRUMENTATION_CODE:"):
+            if self.failure_result is not None:
+                if line != "INSTRUMENTATION_CODE: 0" or self.framework_failure or self.framework_success:
+                    raise ProbeFailure("framework_failed")
+                self.framework_failure = True
+                return None
             if line != "INSTRUMENTATION_CODE: -1" or self.framework_success or not self.summary_seen:
                 raise ProbeFailure("framework_failed")
             self.framework_success = True
@@ -267,14 +321,31 @@ class Transcript:
         return None
 
     def finish(self, returncode):
+        try:
+            self._finish(returncode)
+        except ProbeFailure as failure:
+            raise self.attach_failure(failure) from None
+
+    def _finish(self, returncode):
         if returncode != 0:
             raise ProbeFailure("instrumentation_adb_failed")
+        if self.failure_stage is not None:
+            if self.failure_result is None or not self.framework_failure:
+                raise ProbeFailure("incomplete_test_protocol")
+            raise self.failure_result
         if not self.summary_seen or not self.framework_success or self.pending is not None or self.pending_readiness is not None \
                 or self.readiness_refused or self.readiness_failed or self.readiness_completed == 0 or self.index != len(READY[self.mode]):
             raise ProbeFailure("incomplete_test_protocol")
 
 
 def parse_chunks(child, deadline, transcript, on_ready):
+    try:
+        _parse_chunks(child, deadline, transcript, on_ready)
+    except ProbeFailure as failure:
+        raise transcript.attach_failure(failure) from None
+
+
+def _parse_chunks(child, deadline, transcript, on_ready):
     pending = b""
     for chunk in child.read_until(deadline):
         pending += chunk

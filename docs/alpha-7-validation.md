@@ -481,6 +481,37 @@ postcondition failures, SDK cancellation/budget checks and failed stable waits.
 The final SDK follow-up passed 36 focused tests and exact package checks.
 These checks do not convert earlier failed captures into first-pass successes.
 
+Hosted candidate `1e711467` passed the complete Phone Control workflow
+`34770521738` on its first attempt: each image passed 73 JVM tests, 47 native
+assertions, three installations, all cleanup and eight integration checks.
+API 34 and QPR2 had no first-attempt failures in their 30-read samples. API 35
+retained one failure after 5,017 ms and a successful recovery at 5,272 ms total;
+no logical request failed. All six desktop targets and CodeQL also passed.
+General CI's completed tests included 167 browser passes and three intended
+cross-project exclusions. These are results for this candidate, not the later
+release commit.
+
+Additional enrolled-QPR2 QA passed 46 native assertions and cleanup, then failed
+during the full biometric swipe sequence. The Python driver rejected the native
+`phone_qa_failure_stage` field before draining the failure summary, so the
+underlying action failure was not retained. The original log remains failed in
+`test-results/phone-control/observation-recovery-20260913/qpr2/biometric-full.log`.
+Read-only device checks found a stable system process and no crash entry.
+
+The driver now accepts only fixed failure-stage metadata, latches failure and
+drains the bounded failure summary. A later PASS cannot clear that failure;
+unknown, duplicated or contradictory fields still reject, and no sensor input
+is injected after the failure marker. All 27 driver unit tests passed and
+independent review found no blocker. Other unknown failure metadata can still
+abbreviate diagnostics while leaving the run failed.
+
+One explicitly linked diagnostic run then completed all 45 biometric assertions,
+and the separate in-flight Stop run passed all 13. Neither changed the APK or
+replayed an action within the failed run. The original swipe-period subcause
+remains unknown: the parser fix restores diagnostic evidence, not a demonstrated
+product correction. These are linked follow-up results, not a first-pass claim.
+The confined SDK follow-up and fresh hosted checks remain separate gates.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

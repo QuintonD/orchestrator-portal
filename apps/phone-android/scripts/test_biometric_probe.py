@@ -36,6 +36,102 @@ class FakeClock:
 
 
 class BiometricHarnessTest(unittest.TestCase):
+    def test_fixed_failure_stage_drains_canonical_failure_without_becoming_success(self):
+        transcript = probe.Transcript("full")
+        self.assertIsNone(transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe"))
+        self.assertIsNone(transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 15 assertions: AssertionError: private fixture swipe screenshot_internal_error; captureStage=awaiting_callback; captureElapsedMs=5004"))
+        self.assertIsNone(transcript.feed("INSTRUMENTATION_CODE: 0"))
+        with self.assertRaisesRegex(probe.ProbeFailure, "unexpected_result_summary") as failed:
+            transcript.finish(0)
+        self.assertEqual(failed.exception.diagnostics, (
+            "PHONE_BIOMETRIC_FAILURE_ASSERTIONS 15", "PHONE_BIOMETRIC_FAILURE_CLASS AssertionError",
+            "PHONE_BIOMETRIC_FAILURE_CODE screenshot_internal_error", "PHONE_BIOMETRIC_CAPTURE_STAGE awaiting_callback",
+            "PHONE_BIOMETRIC_CAPTURE_ELAPSED_MS 5004", "PHONE_BIOMETRIC_FAILURE_STAGE biometric_probe"))
+        self.assertNotIn("private", " ".join(failed.exception.diagnostics))
+
+    def test_failure_metadata_rejects_unknown_oversized_duplicate_and_injected_values(self):
+        for stage in ("private title", "biometric_probe\n", "biometric_probe extra", "biometric_probe=PASS", "x" * 5000):
+            with self.subTest(stage=stage[:40]):
+                with self.assertRaises(probe.ProbeFailure):
+                    probe.Transcript("full").feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=" + stage)
+        for next_line in (
+                "INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe",
+                "INSTRUMENTATION_RESULT: phone_qa_failure_stage=accessibility_setup",
+                "INSTRUMENTATION_RESULT: phone_qa_unknown=private",
+                "INSTRUMENTATION_STATUS: stream=PHONE_BIOMETRIC_READY tap"):
+            transcript = probe.Transcript("full")
+            transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe")
+            with self.assertRaises(probe.ProbeFailure) as failed:
+                transcript.feed(next_line)
+            self.assertIn("PHONE_BIOMETRIC_FAILURE_STAGE biometric_probe", failed.exception.diagnostics)
+            self.assertNotIn("private", " ".join(failed.exception.diagnostics))
+
+    def test_failure_stage_cannot_agree_with_pass_or_precede_more_authentication(self):
+        transcript = probe.Transcript("layout")
+        readiness(transcript)
+        transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe")
+        with self.assertRaises(probe.ProbeFailure):
+            transcript.feed("INSTRUMENTATION_RESULT: stream=" + probe.summary("layout"))
+        with self.assertRaises(probe.ProbeFailure):
+            transcript.feed("INSTRUMENTATION_CODE: -1")
+        with self.assertRaises(probe.ProbeFailure):
+            transcript.finish(0)
+        transcript = probe.Transcript("full")
+        readiness(transcript)
+        with self.assertRaisesRegex(probe.ProbeFailure, "invalid_failure_metadata"):
+            transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=accessibility_disable")
+
+    def test_failure_drain_rejects_missing_or_disagreeing_terminal_and_assertion_bounds(self):
+        for terminal in (None, "INSTRUMENTATION_CODE: -1", "INSTRUMENTATION_CODE: 1"):
+            transcript = probe.Transcript("full")
+            transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe")
+            transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 15 assertions: AssertionError: synthetic")
+            with self.assertRaises(probe.ProbeFailure) as failed:
+                if terminal is not None:
+                    transcript.feed(terminal)
+                transcript.finish(0)
+            self.assertIn("PHONE_BIOMETRIC_FAILURE_ASSERTIONS 15", failed.exception.diagnostics)
+        for count in ("46", "999", "001", "-1", "100000"):
+            transcript = probe.Transcript("full")
+            transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe")
+            with self.assertRaises(probe.ProbeFailure):
+                transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after " + count + " assertions: AssertionError: synthetic")
+
+    def test_duplicate_failure_summary_and_framework_result_fail_closed(self):
+        for duplicate in ("INSTRUMENTATION_RESULT: stream=FAIL after 15 assertions: AssertionError: synthetic", "INSTRUMENTATION_CODE: 0"):
+            transcript = probe.Transcript("full")
+            transcript.feed("INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe")
+            transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 15 assertions: AssertionError: synthetic")
+            transcript.feed("INSTRUMENTATION_CODE: 0")
+            with self.assertRaises(probe.ProbeFailure):
+                transcript.feed(duplicate)
+
+    def test_failure_chunk_drain_reads_terminal_and_emits_only_fixed_diagnostics(self):
+        child = Mock()
+        child.process.returncode = 0
+        child.read_until.return_value = iter((
+            b"INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe\r\n",
+            b"INSTRUMENTATION_RESULT: stream=FAIL after 15 assertions: PrivateException: secret screenshot_timeout\r\n",
+            b"INSTRUMENTATION_CODE: 0\r\n"))
+        with self.assertRaises(probe.ProbeFailure) as failed:
+            probe.parse_chunks(child, time.monotonic() + 1, probe.Transcript("full"), lambda _: self.fail("Failure must not inject a touch"))
+        self.assertIn("PHONE_BIOMETRIC_FAILURE_CLASS Error", failed.exception.diagnostics)
+        self.assertIn("PHONE_BIOMETRIC_FAILURE_STAGE biometric_probe", failed.exception.diagnostics)
+        self.assertNotIn("PrivateException", " ".join(failed.exception.diagnostics))
+        self.assertNotIn("secret", " ".join(failed.exception.diagnostics))
+
+    def test_failure_drain_keeps_existing_deadline_and_retains_stage_when_child_stalls(self):
+        child = Mock()
+        def output(_deadline):
+            yield b"INSTRUMENTATION_RESULT: phone_qa_failure_stage=biometric_probe\n"
+            raise probe.ProbeFailure("deadline_exceeded")
+        child.read_until.side_effect = output
+        deadline = time.monotonic() + 0.1
+        with self.assertRaisesRegex(probe.ProbeFailure, "deadline_exceeded") as failed:
+            probe.parse_chunks(child, deadline, probe.Transcript("full"), lambda _: self.fail("Unexpected touch"))
+        child.read_until.assert_called_once_with(deadline)
+        self.assertEqual(failed.exception.diagnostics, ("PHONE_BIOMETRIC_FAILURE_STAGE biometric_probe",))
+
     def test_sensor_readiness_needs_live_owned_started_operation(self):
         active = sensor_dump()
         self.assertEqual(probe.started_fingerprint_request(active), 7)
@@ -250,7 +346,7 @@ class BiometricHarnessTest(unittest.TestCase):
         transcript = probe.Transcript("full")
         with self.assertRaises(probe.ProbeFailure) as failed:
             transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 13 assertions: AssertionError: private fixture contents screenshot_timeout hidden text")
-        self.assertEqual(failed.exception.diagnostics, ("PHONE_BIOMETRIC_FAILURE_ASSERTIONS 13", "PHONE_BIOMETRIC_FAILURE_CODE screenshot_timeout"))
+        self.assertEqual(failed.exception.diagnostics, ("PHONE_BIOMETRIC_FAILURE_ASSERTIONS 13", "PHONE_BIOMETRIC_FAILURE_CLASS AssertionError", "PHONE_BIOMETRIC_FAILURE_CODE screenshot_timeout"))
         with self.assertRaises(probe.ProbeFailure) as staged:
             transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 13 assertions: AssertionError: screenshot_timeout; captureStage=awaiting_callback; captureElapsedMs=5000 private text")
         self.assertEqual(staged.exception.diagnostics[-2:], ("PHONE_BIOMETRIC_CAPTURE_STAGE awaiting_callback", "PHONE_BIOMETRIC_CAPTURE_ELAPSED_MS 5000"))
@@ -262,7 +358,7 @@ class BiometricHarnessTest(unittest.TestCase):
         self.assertEqual(layout.exception.diagnostics[-2:], ("PHONE_BIOMETRIC_FAILURE_REASON layout_bounds", "PHONE_BIOMETRIC_LAYOUT_GEOMETRY 10,0,0,720,42,0"))
         with self.assertRaises(probe.ProbeFailure) as foreground:
             transcript.feed("INSTRUMENTATION_RESULT: stream=FAIL after 30 assertions: AssertionError: app.launch changed actual foreground as expected private text")
-        self.assertEqual(foreground.exception.diagnostics, ("PHONE_BIOMETRIC_FAILURE_ASSERTIONS 30", "PHONE_BIOMETRIC_FAILURE_REASON foreground_timeout"))
+        self.assertEqual(foreground.exception.diagnostics, ("PHONE_BIOMETRIC_FAILURE_ASSERTIONS 30", "PHONE_BIOMETRIC_FAILURE_CLASS AssertionError", "PHONE_BIOMETRIC_FAILURE_REASON foreground_timeout"))
 
     def test_unknown_output_never_becomes_a_sensor_marker(self):
         transcript = probe.Transcript("full")
