@@ -65,7 +65,8 @@ export async function waitForNativeServiceRemoval({ component, enabledBeforeStop
   assert.equal(enabledBeforeStop, true, "Native accessibility must be known enabled before force-stop");
   assert.equal(stopSucceeded, true, "Native force-stop must complete before checking its effect");
   const started = now();
-  const deadline = started + 10000;
+  // Allow slow test-environment package-monitor scheduling; product Stop deadlines are separate.
+  const deadline = started + 30000;
   let samples = 0;
   let lastQuery = null;
   let reason = "deadline";
@@ -88,7 +89,7 @@ export async function waitForNativeServiceRemoval({ component, enabledBeforeStop
       if (reason === "query_threw") lastQuery = serviceQueryFacts({ error, status: error.status, signal: error.signal, stdout: error.stdout, stderr: error.stderr }, component);
       const elapsed = Math.round(now() - started);
       removalFailures.set(error, { observed: false, reason, elapsedMs: Number.isFinite(elapsed) ? Math.max(0, Math.min(180000, elapsed)) : null,
-        samples: Math.min(100, samples), lastQuery });
+        samples: Math.min(200, samples), lastQuery });
     }
     throw error;
   }

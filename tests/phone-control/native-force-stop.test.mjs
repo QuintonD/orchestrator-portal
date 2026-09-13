@@ -66,14 +66,41 @@ test("pre-existing absence or failed stop never becomes completion evidence", as
   }
 });
 
-test("the ten-second observation budget bounds every read and rejects late absence", async () => {
+test("the thirty-second teardown allowance bounds every read and rejects late absence", async () => {
   const fixture = clockedQuery([`${component}\n`]);
-  await assert.rejects(waitForNativeServiceRemoval(fixture.options), { code: "ETIMEDOUT" });
-  assert.equal(fixture.reads(), 50);
+  await assert.rejects(waitForNativeServiceRemoval(fixture.options), (error) => {
+    assert.equal(error.code, "ETIMEDOUT");
+    assert.equal(nativeRemovalFailureFacts(error).samples, 150);
+    assert.equal(nativeRemovalFailureFacts(error).elapsedMs, 30000);
+    return true;
+  });
+  assert.equal(fixture.reads(), 150);
   assert.ok(fixture.timeouts.every((ms) => ms > 0 && ms <= 2000));
   assert.equal(fixture.timeouts.at(-1), 200);
-  const late = clockedQuery([]);
-  await assert.rejects(waitForNativeServiceRemoval({ ...late.options, query: () => { late.advance(10000); return reply("null\n"); } }), { code: "ETIMEDOUT" });
+  for (const elapsed of [30000, 30001]) {
+    const late = clockedQuery([]);
+    await assert.rejects(waitForNativeServiceRemoval({ ...late.options, query: () => { late.advance(elapsed); return reply("null\n"); } }), { code: "ETIMEDOUT" });
+  }
+});
+
+test("observed absence after ten seconds can complete within the thirty-second teardown allowance", async () => {
+  const fixture = clockedQuery([...Array(60).fill(`${component}\n`), "null\n"]);
+  assert.deepEqual(await waitForNativeServiceRemoval(fixture.options), { observed: true, elapsedMs: 12000, samples: 61 });
+  assert.ok(fixture.timeouts.every((timeout) => timeout > 0 && timeout <= 2000));
+});
+
+test("a failed read after ten seconds still fails immediately without another read", async () => {
+  const fixture = clockedQuery([`${component}\n`]);
+  const query = fixture.options.query;
+  await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: (timeout) => {
+    const result = query(timeout); return fixture.reads() === 56 ? { ...result, status: 1 } : result;
+  } }), (error) => {
+    assert.equal(error.code, "ERR_ASSERTION");
+    const facts = nativeRemovalFailureFacts(error);
+    assert.equal(facts.reason, "query_failed"); assert.equal(facts.elapsedMs, 11000); assert.equal(facts.samples, 56);
+    return true;
+  });
+  assert.equal(fixture.reads(), 56);
 });
 
 test("malformed observations and query errors stop immediately without read retries or output leakage", async () => {
@@ -139,11 +166,11 @@ test("thrown query diagnostics cannot inject evidence and preserve the original 
 
 test("aggregate timeout retains last query facts without turning late absence into completion", async () => {
   const fixture = clockedQuery([]);
-  await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => { fixture.advance(10000); return reply("null\n"); } }), (error) => {
+  await assert.rejects(waitForNativeServiceRemoval({ ...fixture.options, query: () => { fixture.advance(30000); return reply("null\n"); } }), (error) => {
     assert.equal(error.code, "ETIMEDOUT");
     const facts = nativeRemovalFailureFacts(error);
     assert.equal(facts.reason, "deadline"); assert.equal(facts.observed, false);
-    assert.equal(facts.elapsedMs, 10000); assert.equal(facts.samples, 1);
+    assert.equal(facts.elapsedMs, 30000); assert.equal(facts.samples, 1);
     assert.equal(facts.lastQuery.enabled, false); assert.equal(facts.lastQuery.commandSucceeded, true);
     return true;
   });

@@ -420,6 +420,26 @@ The explicitly linked full native check in
 five cleanup steps. It did not reproduce the earlier query failure and does not
 retroactively make that first run successful.
 
+Candidate `2cf3e4e6` passed all 60 JVM tests and 47 native assertions on each
+hosted image. Android 15 and QPR2 completed integration and cleanup. Android 14
+failed only its cleanup observation: 42 complete successful reads still showed
+the target enabled, and the final read timed out at 10,002 ms. Force-stop had
+succeeded, Android remained stable, and the other four cleanup steps passed.
+This establishes that the old ten-second observation window was insufficient
+for that run; it does not establish when removal would have occurred.
+
+The test harness now allows 30 seconds to observe that cleanup transition, with
+a 35-second outer limit for that one step. The two-second per-read limit,
+200 ms polling, strict output validation and immediate query-failure rejection
+remain in force. Product Stop, action and session deadlines are unchanged. All
+72 host tests passed, including absence after 12 seconds, rejection at or beyond
+30 seconds, immediate failure on an invalid late query and complete bounded
+sample counts. The actual local Android 14 check passed 44 native assertions
+and all five cleanup steps in
+`test-results/phone-control/native-1789313294727/`. The assertion count includes
+checks over observed nodes; this local display differs from the hosted image.
+Fresh hosted acceptance is still required for this allowance.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

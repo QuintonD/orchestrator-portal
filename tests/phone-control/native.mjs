@@ -75,7 +75,7 @@ try {
     { name: "stop native session", action: () => { cleanupAdb("shell", "am", "force-stop", pkg); nativeForceStopSucceeded = true; } },
     // PACKAGE_RESTARTED removes this enabled service under the accessibility lock.
     // Observe that transition before the next probe re-enables it; unrelated apps need no barrier.
-    { name: "observe native accessibility removal", action: async () => {
+    { name: "observe native accessibility removal", timeout: 35000, action: async () => {
       try { nativeStopRemoval = await waitForNativeServiceRemoval({ component, enabledBeforeStop: nativeServiceEnabledBeforeStop, stopSucceeded: nativeForceStopSucceeded, query: readNativeSetting }); }
       catch (error) { nativeStopRemoval = nativeRemovalFailureFacts(error); throw error; }
     } },

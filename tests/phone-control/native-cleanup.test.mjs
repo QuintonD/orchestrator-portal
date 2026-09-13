@@ -96,7 +96,7 @@ test("removal query failures and deadline preserve failure while files and child
     assert.equal(result.passed, false);
     assert.equal(result.nativeStopRemoval.observed, false);
     assert.equal(result.nativeStopRemoval.reason, mode === "timeout" ? "deadline" : "query_failed");
-    assert.equal(result.nativeStopRemoval.samples, mode === "timeout" ? 50 : 1);
+    assert.equal(result.nativeStopRemoval.samples, mode === "timeout" ? 150 : 1);
     assert.equal(result.nativeStopRemoval.lastQuery.status, mode === "timeout" ? 0 : 1);
     if (mode === "timeout") assert.equal(result.cleanup[2].code, "ETIMEDOUT");
   }
@@ -114,6 +114,20 @@ test("actual native cleanup records bounded read-timeout evidence while preservi
   assert.equal(result.nativeStopRemoval.lastQuery.parseValid, false);
   assert.deepEqual(result.attempted.slice(-2), expected.slice(-2));
   assert.ok(!JSON.stringify(result).includes(secret));
+});
+
+test("only the removal observation receives the thirty-five-second outer cleanup deadline", async () => {
+  const deadlines = [];
+  await runInNewContext(`(async () => { let cleanup; ${cleanupBlock} })()`, {
+    cleanupSteps: async (steps) => { deadlines.push(...steps.map(({ name, timeout = 18000 }) => [name, timeout])); return []; },
+  });
+  assert.deepEqual(deadlines, [
+    ["read native accessibility before force-stop", 18000],
+    ["stop native session", 18000],
+    ["observe native accessibility removal", 35000],
+    ["remove native private probe files", 18000],
+    ["terminate owned instrumentation client", 7000],
+  ]);
 });
 
 test("successful cleanup cannot erase an earlier native functional failure", async () => {
