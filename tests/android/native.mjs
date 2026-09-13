@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import assert from "node:assert/strict";
 
 export function nativeControls(getDevice) {
-  async function findNode(selector) {
+  async function findNode(selector, expectedPassword) {
     const device = getDevice();
     const result = (await device.shell("uiautomator dump /sdcard/orchestrator-qa.xml")).toString();
     if (!result.includes("dumped to")) return null;
@@ -18,6 +18,7 @@ export function nativeControls(getDevice) {
         point: { x: (bounds[0] + bounds[2]) / 2, y: (bounds[1] + bounds[3]) / 2, bounds },
         password: attributes.password === "true" && attributes.class === "android.widget.EditText",
         maskedLength: /^\u2022*$/u.test(attributes.text ?? "") ? (attributes.text ?? "").length : null,
+        passwordMatches: typeof expectedPassword === "string" && attributes.text === expectedPassword,
       };
     }
     return null;
@@ -66,12 +67,12 @@ export function nativeControls(getDevice) {
       await getDevice().shell(`input tap ${Math.round(node.point.x)} ${Math.round(node.point.y)}`);
     });
     const complete = async () => {
-      const node = await findNode(selector);
+      const node = await findNode(selector, value);
       requirePassword(node);
-      return node.maskedLength === value.length;
+      return node.maskedLength === value.length || node.passwordMatches;
     };
-    // Password text stays masked in the native tree. Length confirms complete
-    // entry; the subsequent successful login verifies the actual password.
+    // Android can expose a mask or the value for a protected field. Compare
+    // locally without returning text; successful login verifies the credential.
     for (let attempt = 0; attempt < 3; attempt++) {
       requirePassword(await findNode(selector));
       await getDevice().shell("input keycombination 113 29");
