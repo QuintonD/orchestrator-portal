@@ -197,6 +197,21 @@ the next boot failure without exporting abort messages; existing traces cannot
 identify those missing assertions retroactively. Configuration records the
 current fixed step name while preserving the original command failure.
 
+The corrected-storage QPR2 run still restarted repeatedly before unlocked
+readiness. Its exact assertion now identified missing readback-DMA support;
+the guest had over 5 GB available. The guest mapper requires the host extension
+`ANDROID_EMU_read_color_buffer_dma`, which the
+[graphics host](https://android.googlesource.com/platform/hardware/google/gfxstream/+/7e9d595b097b23f5fa5c114088245c819e29a9af/host/RenderControl.cpp)
+advertises only
+when both `GLDirectMem` and `HasSharedSlotsHostMemoryAllocator` are enabled.
+Host/guest feature defaults and mutable feature-server overrides make this
+capability dependent on more than the selected renderer. QPR2 therefore pins
+both required features through explicit command-line overrides; its evidence
+records those two fixed names. Other images retain their existing arguments.
+This addresses the observed missing capability without attributing an
+unrecorded individual feature value to an earlier run. Fresh hosted acceptance
+must still establish that the complete native and integration suites pass.
+
 An actual API 34 storage probe explained the unavailable guest facts: `df /data`
 reports its bind mount as `/data/user/0`, which the strict parser rejected.
 The fixed `/data` query now uses `stat -f -c %S:%b:%a`, a single numeric record
@@ -207,16 +222,26 @@ expanding a mount-name allowlist.
 The [Android 14 activity manager](https://android.googlesource.com/platform/frameworks/base/+/android14-release/services/core/java/com/android/server/am/ActivityManagerService.java)
 exposes a separate sequencing risk: `am force-stop` queues a
 `PACKAGE_RESTARTED` broadcast, whose accessibility package monitor can later
-remove the component from the current enabled-services set. The native harness
-now waits for the broadcast barrier, including broadcast-loop and application-
-thread flushes, immediately after force-stop and before the following test.
-It uses the existing ten-second cleanup command bound; failure still fails QA
-and cannot skip private-file or child-process cleanup. Five tests exercise the
-actual cleanup block's ordering and failure paths. Android 14, 15 and QPR2 source
-all expose this command and flags; the command also returned successfully in
-171 ms on the owned API 34 emulator. Local lifecycle probes did not reproduce
-the CI failure: one exited before READY, and a follow-up could not verify its
-instrumentation prerequisite. The latter's failed cleanup lacked command-level
-facts, so it cannot identify a barrier failure or timeout. This is a correction
-to a source-established sequencing gap, not a proven diagnosis of the earlier
-service destruction. Full hosted native/integration acceptance remains required.
+remove the component from the current enabled-services set. The first correction
+used a global broadcast barrier with application-thread flushes. It returned in
+171 ms locally and passed the full Android 14 CI suite, but timed out during
+Android 15 cleanup after all 47 native assertions passed. Source inspection
+shows that application flushing pings every running app and can give up after
+30 seconds while the shell command still returns zero. Increasing the timeout
+would therefore not establish the required completion.
+
+The native harness instead observes the companion's specific enabled-service
+transition: require it enabled before force-stop, always attempt force-stop,
+then require its removal within ten seconds. Android's accessibility package
+monitor removes and persists that component while holding its state lock. The
+read-only observation waits for that relevant side effect without flushing
+unrelated application threads or writing accessibility settings. Missing,
+malformed or unsuccessful queries cannot establish removal. A failed precheck
+or force-stop cannot pass because the setting later happens to be absent;
+remaining private-file and child-process cleanup is still attempted.
+
+Local lifecycle probes did not reproduce the earlier CI service destruction:
+one exited before READY, and a follow-up could not verify its instrumentation
+prerequisite. The latter's failed cleanup lacked command-level facts and cannot
+identify a barrier failure or timeout. Full hosted native/integration acceptance
+remains required for the revised synchronization.

@@ -46,9 +46,12 @@ export function avdConfiguration(text) {
 }
 export function graphicsProfile(image) {
   assert.ok(['34', '35', '36', '36.1'].includes(image), 'Unsupported emulator image');
-  // Use one explicit Linux software-rendering profile. Windows QA has a separate
-  // profile; neither passing configuration identifies a prior crash's cause.
-  return { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] };
+  // QPR2's mapper requires DMA readback. The host advertises it only when both
+  // features are enabled; pin both instead of depending on cached server rules.
+  // https://android.googlesource.com/platform/hardware/google/gfxstream/+/7e9d595b097b23f5fa5c114088245c819e29a9af/host/RenderControl.cpp
+  const requiredFeatures = image === '36.1' ? ['GLDirectMem', 'HasSharedSlotsHostMemoryAllocator'] : [];
+  return { mode: 'swangle', vulkan: 'disabled', requiredFeatures,
+    arguments: ['-gpu', 'swangle', '-feature', '-Vulkan', ...requiredFeatures.flatMap(feature => ['-feature', feature])] };
 }
 export function verifyCommandLineTools(properties) {
   if (typeof properties !== 'string' || properties.length > 16384) throw new CiError('command_line_tools_version_mismatch');

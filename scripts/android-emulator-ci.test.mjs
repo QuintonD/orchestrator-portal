@@ -34,11 +34,19 @@ test('actual AVD hardware configuration contains one authoritative value for eve
   for (const [key, value] of Object.entries({ 'hw.lcd.width': '720', 'hw.lcd.height': '1600', 'hw.lcd.density': '280', 'hw.ramSize': '2048', 'hw.cpu.ncore': '2', 'disk.dataPartition.size': '6G' })) assert.deepEqual(text.split('\n').filter((line) => line.startsWith(key + '=')), [`${key}=${value}`]);
   assert.match(text, /image\.sysdir\.1=system-images\/android-36\.1/u);
 });
-test('all supported images select the explicit Linux software graphics profile', () => {
-  for (const image of ['34', '35', '36', '36.1']) assert.deepEqual(graphicsProfile(image), { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] });
+test('older images retain the explicit Linux software graphics profile without QPR2 overrides', () => {
+  for (const image of ['34', '35', '36']) assert.deepEqual(graphicsProfile(image), { mode: 'swangle', vulkan: 'disabled', requiredFeatures: [], arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] });
   for (const image of ['36.0', '36.2', '', undefined, '-gpu host']) assert.throws(() => graphicsProfile(image));
-  graphicsProfile('36.1').arguments.push('-feature', '-Vulkan');
-  assert.deepEqual(graphicsProfile('36.1').arguments, ['-gpu', 'swangle', '-feature', '-Vulkan']);
+});
+
+test('QPR2 pins both DMA readback requirements independently of cached feature defaults', () => {
+  const expected = { mode: 'swangle', vulkan: 'disabled', requiredFeatures: ['GLDirectMem', 'HasSharedSlotsHostMemoryAllocator'],
+    arguments: ['-gpu', 'swangle', '-feature', '-Vulkan', '-feature', 'GLDirectMem', '-feature', 'HasSharedSlotsHostMemoryAllocator'] };
+  assert.deepEqual(graphicsProfile('36.1'), expected);
+  const modified = graphicsProfile('36.1');
+  modified.arguments.push('-gpu', 'host'); modified.requiredFeatures[0] = 'Vulkan';
+  assert.deepEqual(graphicsProfile('36.1'), expected);
+  for (const image of ['34', '35', '36']) assert.deepEqual(graphicsProfile(image).requiredFeatures, []);
 });
 
 test('AVD tools require the selected revision instead of trusting a stale latest directory', () => {

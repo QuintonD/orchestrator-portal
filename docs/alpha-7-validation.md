@@ -318,6 +318,36 @@ probes failed before establishing a session, so the CI service-destruction cause
 remains unproven. All 51 phone harness tests passed. Production lifecycle Stop,
 session authority and action-retry rules are unchanged.
 
+Candidate `b9d1a09a` again passed general CI, all six desktop targets and CodeQL.
+Independent review checked every desktop archive and file checksum, 13 smoke
+checks per target, and the gateway's 16 Android journey results and screenshot
+inventory. Direct visual review covered the gateway Phone Control preview and
+the API 34 integration fixture capture.
+Android 14 passed 47 native assertions, four cleanup steps, eight integration
+checks and all 30 observations, ending with authenticated Stop. Android 15 passed
+all native assertions but timed out in the new global application-thread barrier;
+integration correctly did not run. Framework source shows that this option waits
+on all running apps and can eventually return zero even after giving up.
+The replacement observes the exact companion enabled-service transition after
+force-stop, preserving the ten-second bound and all cleanup failure gates.
+
+QPR2 failed while waiting for the unlocked user before any tests. The new fixed
+diagnostic identified an unavailable readback-DMA capability in the emulator's
+graphics mapper. Actual guest storage was healthy: 6,228,115,456 total bytes and
+5,260,558,336 available. There were 44 distinct system-server PIDs in retained
+readiness samples; shutdown was confirmed. The precise capability failure is
+separate from the Android 15 teardown timeout. Earlier crash traces without the
+assertion cannot be retrospectively assigned the same cause.
+QPR2 now explicitly enables the two host features required to advertise that
+capability: `GLDirectMem` and `HasSharedSlotsHostMemoryAllocator`. This removes
+dependence on mutable feature-server overrides for those requirements, while
+retaining the renderer, image, emulator pin, storage and readiness bounds.
+Fresh hosted qualification remains mandatory.
+The revised candidate passed 54 Linux launcher/diagnostic tests and all 59 phone
+harness tests. Thirteen focused cleanup/removal cases cover incomplete replies,
+component aliases, pre-existing absence, failed force-stop, late observations
+and cleanup after failure. License-boundary and diff checks also passed.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete
