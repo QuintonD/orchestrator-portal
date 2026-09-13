@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHostProbeEvidence, parsePowerEvidence } from './host-probe-evidence.mjs';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import { EventEmitter } from 'node:events';
+import { assertHostProbeStopped, parseHostProbeEvidence, parsePowerEvidence } from './host-probe-evidence.mjs';
 
 const ready = 'INSTRUMENTATION_STATUS: stream=PHONE_HOST_PROBE_READY (private test token; 180 second maximum)\n';
 const terminal = reason => ['end_reason=' + reason, 'elapsed_ms=9241', 'lease_seconds=180', 'interactive=false', 'keyguard_locked=true'].map(field => 'INSTRUMENTATION_RESULT: phone_qa_probe_' + field).join('\n') + '\n';
+const completed = ready + 'INSTRUMENTATION_STATUS_CODE: 1\n' + terminal('paired_host_stop')
+  + 'INSTRUMENTATION_RESULT: stream=PASS: host probe stopped and private test credential removed.\n\nINSTRUMENTATION_CODE: -1\n';
 
 test('host probe projects bounded native elapsed time, lease and lifecycle facts without claiming success', () => {
   const result = parseHostProbeEvidence(ready + terminal('screen_off'), 0);
@@ -24,6 +29,52 @@ test('all explicit host and native terminal categories are accepted as diagnosti
 test('missing terminal output records uncertainty even if unrelated output says PASS', () => {
   assert.deepEqual(parseHostProbeEvidence('PASS: host probe stopped\n', null), { adbExitCode: null, readyLeaseSeconds: null, terminalState: 'missing' });
   assert.equal(parseHostProbeEvidence(ready, 0).terminalState, 'missing');
+});
+
+test('the Stop gate requires raw metadata and exact successful framework completion', () => {
+  assert.equal(assertHostProbeStopped(completed, 0).endReason, 'paired_host_stop');
+  assert.equal(assertHostProbeStopped(completed.replaceAll('\n', '\r\r\n'), 0).terminalState, 'recorded');
+  const formatted = 'PHONE_HOST_PROBE_READY (private test token; 180 second maximum)\nPASS: host probe stopped and private test credential removed.\n';
+  const movedTerminal = 'INSTRUMENTATION_RESULT: phone_qa_probe_elapsed_ms=9241\n';
+  for (const invalid of [formatted, completed.replace(terminal('paired_host_stop'), ''), completed.replace('paired_host_stop', 'screen_off'),
+    completed.replace(ready, '') + ready, completed.replace(movedTerminal, '') + movedTerminal,
+    completed.replace('INSTRUMENTATION_CODE: -1', 'INSTRUMENTATION_CODE: 0'), completed.replace('INSTRUMENTATION_CODE: -1', ''),
+    completed + 'INSTRUMENTATION_CODE: -1\n', completed + 'INSTRUMENTATION_FAILED: synthetic-private-error\n',
+    completed.replace('STATUS_CODE: 1', 'STATUS_CODE: -1'), completed.replace('stream=PASS:', 'stream=FAIL:'),
+    completed.replace('INSTRUMENTATION_STATUS_CODE: 1\n', ''), completed.replace('INSTRUMENTATION_CODE: -1', 'INSTRUMENTATION_RESULT: phone_qa_failure_stage=host_probe\nINSTRUMENTATION_CODE: -1')]) {
+    assert.throws(() => assertHostProbeStopped(invalid, 0), error => error.code === 'ERR_ASSERTION' && !JSON.stringify(error).includes('synthetic-private-error'));
+  }
+  assert.throws(() => assertHostProbeStopped(completed, 1));
+  assert.throws(() => assertHostProbeStopped(completed, null));
+});
+
+test('the actual integration launch requests raw output and waits for stream drain before the Stop gate', async () => {
+  const source = await readFile(new URL('./integration.mjs', import.meta.url), 'utf8');
+  const launch = source.slice(source.indexOf('  instrument = start("adb"'), source.indexOf('  stage = "initialize standalone broker"'));
+  const stopGate = source.slice(source.indexOf('  stage = "verify raw host probe terminal evidence"'), source.indexOf('\n} catch (error)', source.indexOf('  stage = "verify raw host probe terminal evidence"')));
+  assert.ok(launch.length > 0 && stopGate.length > 0);
+  const child = new EventEmitter(); child.exitCode = null; child.stdout = new EventEmitter(); child.stderr = { resume() {} }; child.kill = () => false;
+  let args; let terminalChecked = false; let recorded = false;
+  const context = vm.createContext({ assert, serial: 'emulator-5574', runner: 'synthetic.test/SmokeTest', nativeOutput: '', instrumentClosed: false, instrumentOutputOverflow: false,
+    probeTiming: {}, harnessStarted: performance.now(), performance, parseHostProbeEvidence, samplePower() {},
+    start(command, argv) { assert.equal(command, 'adb'); args = argv; queueMicrotask(() => child.stdout.emit('data', args.includes('-r') ? ready + 'INSTRUMENTATION_STATUS_CODE: 1\n' : ready.replace('INSTRUMENTATION_STATUS: stream=', ''))); return child; },
+    async eventually(check) { await Promise.resolve(); assert.equal(check(), true, 'Required raw readiness or stream close is absent'); },
+    assertHostProbeStopped(output, code) { terminalChecked = true; assertHostProbeStopped(output, code); },
+    record() { recorded = true; },
+  });
+  await vm.runInContext(`(async () => {${launch}})()`, context);
+  assert.deepEqual(Array.from(args), ['-s', 'emulator-5574', 'shell', 'am', 'instrument', '-w', '-r', '-e', 'hostProbe', 'true', 'synthetic.test/SmokeTest']);
+  child.exitCode = 0; child.emit('exit', 0);
+  await assert.rejects(vm.runInContext(`(async () => {${stopGate}})()`, context));
+  assert.equal(terminalChecked, false); assert.equal(recorded, false);
+  child.stdout.emit('data', completed.slice(ready.length + 'INSTRUMENTATION_STATUS_CODE: 1\n'.length)); child.emit('close', 0);
+  await vm.runInContext(`(async () => {${stopGate}})()`, context);
+  assert.equal(terminalChecked, true); assert.equal(recorded, true);
+  // A kill after process exit can fail; dropped late output must still fail the gate.
+  terminalChecked = false; recorded = false;
+  child.stdout.emit('data', 'x'.repeat(1024 * 1024 + 1));
+  await assert.rejects(vm.runInContext(`(async () => {${stopGate}})()`, context));
+  assert.equal(terminalChecked, false); assert.equal(recorded, false);
 });
 
 test('unknown, injected, duplicate and contradictory terminal values are not exported', () => {

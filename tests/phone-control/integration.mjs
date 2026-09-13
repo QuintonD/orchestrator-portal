@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { cleanupSteps, isRunning, safeFailure, stopChild, within } from "./runner-cleanup.mjs";
 import { assertMcpDenial } from "./mcp-result.mjs";
-import { parseHostProbeEvidence, parsePowerEvidence } from "./host-probe-evidence.mjs";
+import { assertHostProbeStopped, parseHostProbeEvidence, parsePowerEvidence } from "./host-probe-evidence.mjs";
 import { buildImage, IsolatedSource } from "../../components/phone-control/deployment/host.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -54,6 +54,8 @@ let cleanup = [];
 let stopWallMs;
 let portal;
 let instrument;
+let instrumentClosed = false;
+let instrumentOutputOverflow = false;
 let ownsForward = false;
 let stage = "start instrumentation";
 let owner;
@@ -140,11 +142,12 @@ function mcpProcess(tokenFile) {
 try {
   const isolatedImage = isolatedMode ? buildImage().image : undefined;
   probeTiming.startedMs = Math.round(performance.now() - harnessStarted);
-  instrument = start("adb", ["-s", serial, "shell", "am", "instrument", "-w", "-e", "hostProbe", "true", runner]);
+  instrument = start("adb", ["-s", serial, "shell", "am", "instrument", "-w", "-r", "-e", "hostProbe", "true", runner]);
   instrument.once("exit", () => { probeTiming.exitedMs = Math.round(performance.now() - harnessStarted); });
-  instrument.stdout.on("data", (chunk) => { if (nativeOutput.length + chunk.length > 1024 * 1024) { instrument.kill(); return; } nativeOutput += chunk; });
+  instrument.once("close", () => { instrumentClosed = true; });
+  instrument.stdout.on("data", (chunk) => { if (nativeOutput.length + chunk.length > 1024 * 1024) { instrumentOutputOverflow = true; instrument.kill(); return; } nativeOutput += chunk; });
   instrument.stderr.resume();
-  await eventually(() => nativeOutput.includes("PHONE_HOST_PROBE_READY"), 45000);
+  await eventually(() => parseHostProbeEvidence(nativeOutput, instrument.exitCode).readyLeaseSeconds === 180, 45000);
   probeTiming.readyMs = Math.round(performance.now() - harnessStarted);
   samplePower("probe_ready");
   stage = "initialize standalone broker";
@@ -339,8 +342,11 @@ try {
   if (isolation) assert.equal(stopped.nativeStopConfirmed, true, "Confined source shutdown must authenticate native Stop");
   else { assert.equal(stopped.statusCode, 200); assert.equal(stopped.json().revoked, true); assert.equal(stopped.json().stopStatus, "completed", "Actual phone must acknowledge stop"); }
   record("Revoked MCP identity fails and actual native stop is acknowledged");
-  await eventually(() => instrument.exitCode !== null, 10000);
-  assert.ok(nativeOutput.includes("PASS: host probe stopped"));
+  stage = "verify raw host probe terminal evidence";
+  // A process exit can precede its final stdout data; close includes stream drain.
+  await eventually(() => instrumentClosed, 10000);
+  assert.equal(instrumentOutputOverflow, false, "Host probe output must not be truncated");
+  assertHostProbeStopped(nativeOutput, instrument.exitCode);
   record("Instrumentation cleaned its private session credential");
 } catch (error) {
   const failure = safeFailure(error);

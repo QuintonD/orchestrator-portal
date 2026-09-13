@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, hasDevices, optionalCleanupQuery, parseOptions, preTestBootCrashLocations, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForEmulatorRetirement, waitForReady } from './android-emulator-ci.mjs';
+import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, graphicsProfile, hasDevices, optionalCleanupQuery, parseOptions, preTestBootCrashLocations, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForEmulatorRetirement, waitForReady } from './android-emulator-ci.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -34,6 +34,14 @@ test('actual AVD hardware configuration contains one authoritative value for eve
   for (const [key, value] of Object.entries({ 'hw.lcd.width': '720', 'hw.lcd.height': '1600', 'hw.lcd.density': '280', 'hw.ramSize': '2048', 'hw.cpu.ncore': '2' })) assert.deepEqual(text.split('\n').filter((line) => line.startsWith(key + '=')), [`${key}=${value}`]);
   assert.match(text, /image\.sysdir\.1=system-images\/android-36\.1/u);
 });
+test('only QPR2 selects the explicit local-QA graphics profile', () => {
+  assert.deepEqual(graphicsProfile('36.1'), { mode: 'swiftshader', vulkan: 'default', arguments: ['-gpu', 'swiftshader'] });
+  for (const image of ['34', '35', '36']) assert.deepEqual(graphicsProfile(image), { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] });
+  for (const image of ['36.0', '36.2', '', undefined, '-gpu host']) assert.throws(() => graphicsProfile(image));
+  graphicsProfile('36.1').arguments.push('-feature', '-Vulkan');
+  assert.deepEqual(graphicsProfile('36.1').arguments, ['-gpu', 'swiftshader']);
+});
+
 test('boot flag alone and wrong service, user, process or API facts never establish readiness', () => {
   assert.equal(snapshotReady(ready(), '36.1', true), true);
   for (const changed of [{ services: { ...ready().services, input: false } }, { services: { ...ready().services, settings: false } }, { settingsReadable: false }, { packageReadable: false }, { qemu: '0' }, { pid: '' }, { pid: '201 202' }, { sdk: '35' }, { unlocked: false }]) assert.equal(snapshotReady({ ...ready(), ...changed }, '36.1', true), false);

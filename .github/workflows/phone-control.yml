@@ -16,6 +16,7 @@ on:
       - 'scripts/phone-control-license-check.mjs'
       - 'scripts/android-emulator-ci*'
       - 'scripts/android-emulator-diagnostics*'
+      - 'scripts/android-emulator-storage*'
       - '.github/workflows/phone-control.yml'
   push:
     branches: [main]
@@ -32,6 +33,7 @@ on:
       - 'scripts/phone-control-license-check.mjs'
       - 'scripts/android-emulator-ci*'
       - 'scripts/android-emulator-diagnostics*'
+      - 'scripts/android-emulator-storage*'
       - '.github/workflows/phone-control.yml'
 
 permissions:
@@ -69,7 +71,7 @@ jobs:
       - run: npm test
         working-directory: components/phone-control
       - run: node --test tests/phone-control/*.test.mjs
-      - run: node --test scripts/android-emulator-ci.test.mjs scripts/android-emulator-diagnostics.test.mjs
+      - run: node --test scripts/android-emulator-ci.test.mjs scripts/android-emulator-diagnostics.test.mjs scripts/android-emulator-storage.test.mjs
       - run: npm run phone:test:evaluation
       - run: node --check tests/phone-control/agent-session.mjs
       - run: python -m unittest discover -s apps/phone-android/scripts -p 'test_*.py'

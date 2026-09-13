@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, statfs, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
 import { bootCrashLocations } from './android-emulator-diagnostics.mjs';
+import { guestStorageFacts, hostStorageFacts } from './android-emulator-storage.mjs';
 
 // Official archive/checksum: https://developer.android.com/studio/emulator_archive
 export const emulatorPin = Object.freeze({ build: '15507667', version: '36.6.11.0', bytes: 331232577, sha256: '1eade4cf2df6ea8eeead4902c635897ba12aaa32aac4389eaae0fdb498a5b830', url: 'https://dl.google.com/android/repository/emulator-linux_x64-15507667.zip' });
@@ -41,6 +42,14 @@ export function avdConfiguration(text) {
   const values = { 'hw.cpu.ncore': 2, 'hw.ramSize': 2048, 'hw.lcd.width': 720, 'hw.lcd.height': 1600, 'hw.lcd.density': 280 };
   const retained = text.split(/\r?\n/u).filter((line) => !Object.hasOwn(values, line.split('=')[0].trim()));
   return [...retained, ...Object.entries(values).map(([key, value]) => `${key}=${value}`)].join('\n') + '\n';
+}
+export function graphicsProfile(image) {
+  assert.ok(['34', '35', '36', '36.1'].includes(image), 'Unsupported emulator image');
+  // QPR2 uses the profile already exercised by local native and upgrade QA.
+  // Keep this explicit: success does not isolate ANGLE from Vulkan causation.
+  return image === '36.1'
+    ? { mode: 'swiftshader', vulkan: 'default', arguments: ['-gpu', 'swiftshader'] }
+    : { mode: 'swangle', vulkan: 'disabled', arguments: ['-gpu', 'swangle', '-feature', '-Vulkan'] };
 }
 export function snapshotReady(snapshot, image, unlocked = false) {
   const fullVersionMatches = image.includes('.') ? snapshot.sdkFull === image : !snapshot.sdkFull || [image, `${image}.0`].includes(snapshot.sdkFull);
@@ -168,6 +177,7 @@ export async function main(args = process.argv.slice(2)) {
     return executeCiCommand(tool, argv, { cwd: root, env: environment, timeout, input, allowFailure, signal: cancellable ? abort.signal : undefined, processGroup });
   }
   const device = (argv, extra) => command(adb, ['-s', serial, ...argv], extra);
+  const hostStorage = async () => { try { return hostStorageFacts(await statfs(work, { bigint: true })); } catch { return null; } };
   async function probe() {
     if (emulatorExited || emulatorFailed) throw new CiError('owned_emulator_exited_before_tests');
     const queries = [['boot', ['shell', 'getprop', 'sys.boot_completed']], ['qemu', ['shell', 'getprop', 'ro.kernel.qemu']], ['sdk', ['shell', 'getprop', 'ro.build.version.sdk']], ['sdkFull', ['shell', 'getprop', 'ro.build.version.sdk_full']], ['fingerprint', ['shell', 'getprop', 'ro.build.fingerprint']], ['pid', ['shell', 'pidof', 'system_server']], ['settings', ['shell', 'settings', 'get', 'global', 'device_provisioned']], ['package', ['shell', 'cmd', 'package', 'path', 'android']], ['users', ['shell', 'dumpsys', 'user']], ...services.map((service) => [`service:${service}`, ['shell', 'service', 'check', service]])];
@@ -195,7 +205,9 @@ export async function main(args = process.argv.slice(2)) {
         await command(path.join(sdk, 'cmdline-tools/latest/bin/avdmanager'), ['create', 'avd', '--name', options.name, '--package', `system-images;android-${options.image};google_apis;x86_64`, '--device', 'pixel_7', '--path', avdPath], { input: 'no\n', timeout: 60000 });
         if (!below(work, await realpath(avdPath))) throw new CiError('unowned_avd_path');
         const configuration = path.join(avdPath, 'config.ini'); await writeFile(configuration, avdConfiguration(await readFile(configuration, 'utf8')));
-        emulator = spawn(binary, ['-avd', options.name, '-port', '5554', '-no-window', '-gpu', 'swangle', '-feature', '-Vulkan', '-cores', '2', '-memory', '2048', '-skin', '720x1600', '-noaudio', '-no-boot-anim', '-no-snapshot'], { cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+        evidence.graphics = graphicsProfile(options.image);
+        evidence.storage = { beforeLaunch: { host: await hostStorage() } }; await save();
+        emulator = spawn(binary, ['-avd', options.name, '-port', '5554', '-no-window', ...evidence.graphics.arguments, '-cores', '2', '-memory', '2048', '-skin', '720x1600', '-noaudio', '-no-boot-anim', '-no-snapshot'], { cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
         emulator.on('error', () => { emulatorFailed = true; }); emulator.on('exit', () => { emulatorExited = true; });
         for (const stream of [emulator.stdout, emulator.stderr]) stream.on('data', (bytes) => { emulatorText = (emulatorText + bytes.toString('utf8')).slice(-1024 * 1024); });
         deadline = Date.now() + 600000; await save();
@@ -223,9 +235,16 @@ export async function main(args = process.argv.slice(2)) {
         if (!androidStable) throw new CiError('android_restarted_after_test');
       },
       diagnose: async () => {
-        const crash = emulator ? await device(['logcat', '-d', '-b', 'crash', '-t', '400'], { timeout: 10000, allowFailure: true, cancellable: false }) : { stdout: '', stderr: '' };
-        evidence.diagnostics = diagnosticsSummary(emulatorText + '\n' + crash.stdout + '\n' + crash.stderr);
+        const crash = emulator ? await optionalCleanupQuery(() => device(['logcat', '-d', '-b', 'crash', '-t', '400'], { timeout: 10000, allowFailure: true, cancellable: false })) : { stdout: '' };
+        evidence.diagnostics = diagnosticsSummary(emulatorText + '\n' + crash.stdout);
         evidence.diagnostics.bootCrashLocations = preTestBootCrashLocations(evidence, crash.stdout);
+        if (emulator && preTestBootCrashLocations(evidence, '')) {
+          const [host, guest] = await Promise.all([
+            hostStorage(),
+            optionalCleanupQuery(() => device(['shell', 'df', '-k', '/data'], { timeout: 5000, allowFailure: true, cancellable: false })),
+          ]);
+          evidence.storage.afterBootFailure = { host, guest: guest.ok ? guestStorageFacts(guest.stdout) : null };
+        }
         evidence.diagnostics.lastSnapshot = lastSnapshot ?? null; await save();
       },
       stop: async () => {

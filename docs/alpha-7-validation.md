@@ -257,6 +257,23 @@ before application tests start. Independent review caught and corrected native
 prose and message-embedded locations being misclassified as frames. No session
 duration, capture retry, production guard or readiness deadline was relaxed.
 
+Candidate `70ac9c1d` passed general CI, all six desktop targets and CodeQL.
+Android 14 and 15 each passed 47 native assertions, eight integration checks,
+30 independent observations and confirmed process/ADB retirement. QPR2 still
+restarted before tests. The next candidate records its explicit graphics profile
+and bounded storage facts; [the launcher notes](android-emulator-ci.md) explain
+the controlled profile change and limits on causal conclusions.
+
+The host-probe harness now requests raw instrumentation output and requires the
+complete successful lifecycle record after authenticated Stop and stdout drain.
+Absent metadata, invalid protocol order and late output overflow cannot pass.
+All 39 harness tests passed; a real API 34 probe returned the expected raw
+`paired_host_stop` record while preserving installation identities. Independent
+review tested 26 invalid protocol reorderings. The launcher and diagnostic suite
+passed 48 checks in a real Linux container, including four subprocess checks;
+Windows passed 44 and explicitly skipped those four. Fresh complete hosted
+integration is still required for this candidate.
+
 ## Release gates
 
 An independent pre-publication audit reproduced acceptance of an incomplete

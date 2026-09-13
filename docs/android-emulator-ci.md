@@ -132,3 +132,22 @@ frames, native module/function identifiers and fixed failure categories. It
 discards exception messages, argument/template text, addresses and raw log
 content. Once a test starts, this boot-only projection is disabled. It helps
 diagnose the OS failure without changing readiness deadlines or app guards.
+
+The next candidate passed the complete API 34 and 35 suites, including delayed
+process/ADB retirement. QPR2 still restarted before tests. Its boot trace
+included framework SQLite and Bluetooth failures plus graphics mapper lock
+frames; these locations do not establish a single cause. QPR2 now selects the
+`swiftshader` graphics mode with the default Vulkan setting, matching the
+profile used by local QPR2 native and upgrade QA. Other images retain `swangle`
+with Vulkan disabled. Both modes are described in the
+[official graphics documentation](https://developer.android.com/studio/run/emulator-acceleration).
+This is a controlled profile change involving two settings, not evidence that
+QPR2 universally requires Vulkan or that ANGLE caused the earlier crashes.
+The selected profile is recorded with the unchanged image/build pins, readiness
+checks, deadlines and test gates. Its Linux acceptance requires fresh CI.
+The runner also records host storage capacity before launch and, for pre-test
+boot failures only, host and guest `/data` total/available bytes. Unreadable,
+ambiguous or invalid observations become `null`. It retains no paths, raw
+command output or storage contents. These diagnostic facts never establish
+readiness or excuse a failed test; a SQLite exception alone does not establish
+storage exhaustion.
