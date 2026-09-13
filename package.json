@@ -40,7 +40,7 @@
     "typecheck": "npm run build -w @orchestrator/contracts && npm run build -w @orchestrator/adapter-sdk && npm run typecheck -w @orchestrator/server && npm run typecheck -w @orchestrator/web",
     "demo": "npm run build && node scripts/demo.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "release:test": "node --test scripts/release-*.test.mjs tests/release-upgrade-records.test.mjs tests/android/release-evidence.test.mjs",
+    "release:test": "node --test scripts/release-*.test.mjs tests/release-upgrade-records.test.mjs tests/android/release-evidence.test.mjs tests/android/native-password.test.mjs",
     "test:upgrade": "node tests/release-upgrade.mjs",
     "phone:test:isolation": "node --test components/phone-control/test/isolation-container.mjs"
   },

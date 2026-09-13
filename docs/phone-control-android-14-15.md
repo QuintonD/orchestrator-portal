@@ -44,6 +44,10 @@ The entire observation has a nine-second monotonic budget on these versions,
 including tree reads, screenshot pacing, capture and publication. Recovery uses
 the remaining time; it does not restart the budget. There is no third attempt.
 The shared capture checks used before mutations do not perform this recovery.
+An action can therefore be safely refused by a transient capture failure even
+when preceding observations succeed. A post-merge Android 14 native fixture
+action encountered such a guard failure; it did not dispatch, and its test
+remains failed evidence.
 Action, consent, session and SDK/task deadlines are unchanged.
 
 The result or terminal error retains a strictly bounded `captureRecovery` record:
@@ -101,6 +105,14 @@ stable-condition waits reset their consecutive-match count after a recovery.
   explicitly linked full run passed 45 assertions and in-flight Stop passed 13.
   The original remains failed evidence; the parser change does not establish a
   fix for that action failure. See the [validation record](alpha-7-validation.md).
+
+The action deadline protocol also depends on host and phone wall-clock agreement.
+An immediate `deadline_expired` refusal in the first main Android 15 run had no
+retained clock measurements, so its cause remains unproven. The native guard
+rejects deadlines already expired or more than 45 seconds ahead; the broker
+normally supplies 44 seconds. Clock disagreement can therefore cause a safe
+refusal. This is separate from capture recovery. No clock adjustment or wider
+deadline was introduced; new harness samples support future diagnosis.
 
 ## Acceptance evidence
 
