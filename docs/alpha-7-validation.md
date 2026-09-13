@@ -182,6 +182,18 @@ Linux check caught an ineffective `execFile` process-group option; the corrected
 helper uses `spawn`, and the original failed container probe remains documented.
 All 30 native/upgrade harness parser tests and 60 release/evidence tests passed.
 
+The next hosted attempt passed both broker platforms and isolation, then all
+three companion jobs stopped before emulator startup. Google's response used
+gzip: its advertised 329,592,949 transfer bytes did not equal the decoded
+331,232,577-byte ZIP. The download preflight had incorrectly equated these sizes.
+The corrected helper treats transfer headers as bounded diagnostics and still
+requires the exact decoded size and pinned SHA-256 before extraction. All 23
+Linux tests passed, including real compressed/chunked HTTP and refusal cases;
+Windows passed 20 with three explicit Linux-only skips. Nine additional
+independent HTTP adversarial cases passed. The actual Google download also
+matched the decoded size and checksum using the corrected helper. Original
+pre-start failures remain in `ci-launcher-34749110937-attempt2`.
+
 The second hosted gateway Docker job also failed before building project code
 because Docker Hub returned HTTP 502 for the BuildKit image manifest. The first
 run passed. This infrastructure failure remains recorded; the final source must
@@ -196,6 +208,18 @@ the required release workflow. See the [capture investigation](phone-control-cap
 for the exact failing build and the evidence limits. No API-level blacklist,
 automatic capture retry, hidden failure allowance or production guard relaxation
 was introduced.
+
+Browser QA reproduced an unhandled unavailable-`randomUUID` failure before any
+Phone Control request was sent. Request IDs now use the browser's cryptographic
+`getRandomValues` API with UUIDv4 version/variant bits. If entropy is unavailable,
+no request or false receipt is created, existing pending uncertainty survives,
+busy state is released, and Stop remains available. Whole-workspace type checking
+and all 243 tests passed; the web build and all 40 desktop/mobile Phone Control
+journeys passed. Screenshots were inspected. The original failure and corrected
+test-fixture failures remain in the UUID review evidence. An HTTP-origin shell
+confirmed the differing browser API availability; the full application still
+enforces its existing CSP and the native gateway rejects non-loopback HTTP.
+These checks do not establish native LAN HTTP support or WebView acceptance.
 
 ## Release gates
 

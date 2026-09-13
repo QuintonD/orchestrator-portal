@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { avdConfiguration, below, diagnosticsSummary, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, waitForReady } from './android-emulator-ci.mjs';
+import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, waitForReady } from './android-emulator-ci.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, rmdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 const environment = { GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '12345', GITHUB_RUN_ATTEMPT: '2', RUNNER_TEMP: '/runner/temp', ANDROID_HOME: '/android/sdk' };
 const args = ['--image', '36.1', '--test', 'tests/phone-control/native.mjs', '--test', 'tests/phone-control/integration.mjs'];
@@ -67,6 +73,52 @@ test('diagnostics retain only fixed counters and discard arbitrary log text and 
   assert.equal(summary.fatalException, 1); assert.equal(summary.missingInputService, 1); assert.equal(summary.outOfMemory, 1); assert.equal(summary.nativeFatalSignal, 1);
   assert.equal(JSON.stringify(summary).includes('private'), false);
   assert.ok(Object.values(summary).every(Number.isInteger));
+});
+const archiveFixture = Buffer.from('synthetic pinned emulator ZIP fixture\n'.repeat(100));
+async function archiveServer(t, handler) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'phone-ci-archive-test-')); const archive = path.join(directory, 'emulator.zip');
+  const server = createServer(handler);
+  t.after(async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(archive, { force: true }); await rmdir(directory); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { archive, pin: { url: `http://127.0.0.1:${server.address().port}/emulator.zip`, bytes: archiveFixture.length, sha256: createHash('sha256').update(archiveFixture).digest('hex') } };
+}
+test('pinned archive verifies decoded bytes when HTTP gzip length differs from ZIP length', async (t) => {
+  const encoded = gzipSync(archiveFixture); assert.notEqual(encoded.length, archiveFixture.length);
+  const { archive, pin } = await archiveServer(t, (_request, response) => { response.writeHead(200, { 'content-encoding': 'gzip', 'content-length': encoded.length }); response.end(encoded); });
+  let seen; const result = await downloadPinnedArchive(pin, archive, { onResponse: (metadata) => { seen = metadata; } });
+  assert.deepEqual(seen, { httpStatus: 200, contentLength: encoded.length, contentEncoding: 'gzip' });
+  assert.equal(result.receivedBytes, pin.bytes); assert.equal(result.sha256, pin.sha256); assert.deepEqual(await readFile(archive), archiveFixture);
+});
+test('pinned archive accepts chunked HTTP without a length only after exact size and checksum', async (t) => {
+  const { archive, pin } = await archiveServer(t, (_request, response) => { response.writeHead(200); response.write(archiveFixture.subarray(0, 10)); response.end(archiveFixture.subarray(10)); });
+  const result = await downloadPinnedArchive(pin, archive);
+  assert.equal(result.contentLength, null); assert.equal(result.contentEncoding, 'identity'); assert.equal(result.receivedBytes, pin.bytes); assert.deepEqual(await readFile(archive), archiveFixture);
+});
+test('pinned archive rejects unsuccessful or partial HTTP responses before creating an archive', async (t) => {
+  for (const status of [206, 404]) await t.test(String(status), async (child) => {
+    const { archive, pin } = await archiveServer(child, (_request, response) => { response.writeHead(status); response.end('private arbitrary error body'); });
+    let seen; await assert.rejects(downloadPinnedArchive(pin, archive, { onResponse: (metadata) => { seen = metadata; } }), /pinned_emulator_download_invalid/u);
+    assert.equal(seen.httpStatus, status); assert.equal(JSON.stringify(seen).includes('private'), false); await assert.rejects(readFile(archive), { code: 'ENOENT' });
+  });
+});
+test('pinned archive rejects same-sized content with the wrong checksum', async (t) => {
+  const wrong = Buffer.from(archiveFixture); wrong[0] ^= 1;
+  const { archive, pin } = await archiveServer(t, (_request, response) => response.end(wrong));
+  await assert.rejects(downloadPinnedArchive(pin, archive), /pinned_emulator_checksum_mismatch/u);
+});
+test('pinned archive caps decoded bytes even when gzip transport is smaller than the limit', async (t) => {
+  const encoded = gzipSync(Buffer.concat([archiveFixture, Buffer.from('extra')]));
+  const { archive, pin } = await archiveServer(t, (_request, response) => { response.writeHead(200, { 'content-encoding': 'gzip', 'content-length': encoded.length }); response.end(encoded); });
+  assert.ok(encoded.length < pin.bytes); await assert.rejects(downloadPinnedArchive(pin, archive), /pinned_emulator_download_oversize/u);
+  assert.ok((await readFile(archive)).length <= pin.bytes);
+});
+test('pinned archive rejects a short decoded body despite successful HTTP transfer', async (t) => {
+  const { archive, pin } = await archiveServer(t, (_request, response) => response.end(archiveFixture.subarray(0, -1)));
+  await assert.rejects(downloadPinnedArchive(pin, archive), /pinned_emulator_checksum_mismatch/u);
+});
+test('pinned archive cancellation stops an incomplete response and cannot validate it', async (t) => {
+  const { archive, pin } = await archiveServer(t, (_request, response) => { response.writeHead(200); response.write(archiveFixture.subarray(0, 10)); });
+  await assert.rejects(downloadPinnedArchive(pin, archive, { signal: AbortSignal.timeout(100) }), /abort|timeout/iu);
 });
 async function requireProcessesGone(result) {
   const pids = ['parent', 'child'].map((name) => Number(result.stdout.match(new RegExp(`${name}-ready:(\\d+)`))?.[1]));

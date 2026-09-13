@@ -11,7 +11,7 @@ async function connectedFixture(page: Page, touchBounds?: { left: number; top: n
   const credential = { id: "agent", label: "Fixture agent", devices: ["phone"], apps: ["org.example.notes"], operations: ["describe", "observe"], expiresAt };
   const task = { id: "manual-task", deviceId: "phone", sessionId: "session", actorId: "owner", label: "Owner manual control", expiresAt, maxActions: 30, actionsUsed: 0, status: "active", outcome: "unverified" };
   const state = { mode: "connected", devices: [{ id: "phone", label: "Synthetic test phone", busy: false, connection: "unknown", actionState: "ready" }], sessions: [session], credentials: [] as typeof credential[], events: [], tasks: [] as typeof task[] };
-  const calls: { method: string; params: Record<string, unknown> }[] = [];
+  const calls: { id: string; method: string; params: Record<string, unknown> }[] = [];
   await page.route("**/api/phone-control/**", async (route) => {
     const request = route.request(); const pathname = new URL(request.url()).pathname;
     if (pathname.endsWith("/state")) return route.fulfill({ json: state });
@@ -110,6 +110,80 @@ test("scoped agent token is masked, memory-only and cleared on dismiss", async (
   await expect(token).toHaveCount(0);
   await page.getByRole("button", { name: "Revoke Fixture agent", exact: true }).click();
   await expect(page.getByRole("button", { name: "Revoke Fixture agent", exact: true })).toHaveCount(0);
+});
+
+test("connected phone calls use cryptographic IDs when randomUUID is unavailable", async ({ page }, testInfo) => {
+  await page.addInitScript(() => { Object.defineProperty(crypto, "randomUUID", { value: undefined }); });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const { calls } = await connectedFixture(page);
+  expect(await page.evaluate(() => ({ uuid: typeof crypto.randomUUID, entropy: typeof crypto.getRandomValues }))).toEqual({ uuid: "undefined", entropy: "function" });
+  await page.getByRole("button", { name: "Check phone capabilities" }).click();
+  await expect(page.getByText(/Strong biometric consent available/)).toBeVisible();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await expect(page.getByText("org.example.notes", { exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action", exact: true }).selectOption("node.click");
+  await page.getByRole("combobox", { name: "Clickable element", exact: true }).selectOption("n_0_0");
+  await page.route("**/api/phone-control/call", async (route) => {
+    const input = route.request().postDataJSON();
+    if (input.method === "node.click") expect(await page.evaluate(() => JSON.parse(localStorage.getItem("orchestrator.phone-control.pending.v1")!))).toEqual([{ deviceId: "phone", id: input.id }]);
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "Request action on phone" }).click();
+  await expect(page.getByText(/This browser has an unacknowledged phone action/)).toBeVisible();
+  expect(calls.map((call) => call.method)).toEqual(["describe", "observe", "node.click"]);
+  expect(new Set(calls.map((call) => call.id)).size).toBe(3);
+  for (const call of calls) expect(call.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("phone-control-uuid-fallback.png"), fullPage: true });
+  await page.reload();
+  await expect(page.getByText(/This browser has an unacknowledged phone action/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reserve manual control", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Stop phone access", exact: true }).click();
+  await expect(page.getByText(/This browser has an unacknowledged phone action/)).toHaveCount(0);
+});
+
+for (const entropyFailure of ["missing", "throwing"]) test(`phone requests fail closed with ${entropyFailure} entropy and Stop remains available`, async ({ page }) => {
+  const { calls } = await connectedFixture(page);
+  await page.getByRole("button", { name: "Check phone capabilities" }).click();
+  await expect(page.getByText(/Strong biometric consent available/)).toBeVisible();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await expect(page.getByText("org.example.notes", { exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action", exact: true }).selectOption("node.click");
+  await page.getByRole("combobox", { name: "Clickable element", exact: true }).selectOption("n_0_0");
+  await page.evaluate((failure) => { Object.defineProperty(crypto, "getRandomValues", { value: failure === "missing" ? undefined : () => { throw new Error("Synthetic entropy failure"); } }); }, entropyFailure);
+  await page.getByRole("button", { name: "Request action on phone" }).click();
+  await expect(page.getByText("Secure randomness is unavailable. No phone request was sent. Stop phone access remains available.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Redacted accessibility tree (1 nodes)", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Observe now", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Observe now", exact: true })).toBeEnabled();
+  expect(calls.map((call) => call.method)).toEqual(["describe", "observe"]);
+  expect(await page.evaluate(() => localStorage.getItem("orchestrator.phone-control.pending.v1"))).toBeNull();
+  await expect(page.getByText(/^Receipt /)).toHaveCount(2);
+  await page.getByRole("button", { name: "Stop phone access", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Broker session", exact: true })).toHaveValue("");
+});
+
+test("entropy failure cannot erase an unacknowledged phone action", async ({ page }) => {
+  const { calls } = await connectedFixture(page);
+  await page.getByRole("button", { name: "Check phone capabilities" }).click();
+  await expect(page.getByText(/Strong biometric consent available/)).toBeVisible();
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await page.getByRole("combobox", { name: "Action", exact: true }).selectOption("node.click");
+  await page.getByRole("combobox", { name: "Clickable element", exact: true }).selectOption("n_0_0");
+  await page.getByRole("button", { name: "Request action on phone" }).click();
+  await expect(page.getByText(/This browser has an unacknowledged phone action/)).toBeVisible();
+  const pending = await page.evaluate(() => localStorage.getItem("orchestrator.phone-control.pending.v1"));
+  await page.evaluate(() => { Object.defineProperty(crypto, "getRandomValues", { value: undefined }); });
+  await page.getByRole("button", { name: "Observe now", exact: true }).click();
+  await expect(page.getByText("Secure randomness is unavailable. No phone request was sent. Stop phone access remains available.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("orchestrator.phone-control.pending.v1"))).toBe(pending);
+  expect(calls.map((call) => call.method)).toEqual(["describe", "observe", "node.click"]);
+  await expect(page.getByRole("button", { name: "Request action on phone" })).toBeDisabled();
+  await page.getByRole("button", { name: "Stop phone access", exact: true }).click();
+  await expect(page.getByText(/This browser has an unacknowledged phone action/)).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("orchestrator.phone-control.pending.v1")!))).toEqual([]);
 });
 
 test("screenshot permission defaults closed and cannot be replaced by caller opt-in", async ({ page }) => {

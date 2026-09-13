@@ -25,6 +25,10 @@ directory without overwriting the SDK emulator. Its Linux archive is pinned to
 `1eade4cf2df6ea8eeead4902c635897ba12aaa32aac4389eaae0fdb498a5b830`, verified against
 [Google's emulator archive](https://developer.android.com/studio/emulator_archive).
 It also checks the executable's reported version and build ID before launch.
+The size and checksum apply to the decoded ZIP. HTTP `Content-Length` is
+informational because Google can gzip the transfer or omit that header. The
+runner records only the HTTP status, advertised length and a fixed encoding
+category, then bounds and verifies the decoded bytes before extraction.
 The download has a three-minute bound; startup has a ten-minute bound. The AVD
 uses 2 CPU cores, 2048 MB RAM, and a 720×1600 LCD at density 280.
 
@@ -52,6 +56,14 @@ assuming a root cause.
 A second CI run reached the same unconditional input call and received a broken
 pipe from the input service (exit 224), also before instrumentation. Both
 failures remain recorded; neither is counted as native test coverage.
+
+The first owned-launcher CI attempt stopped all three companion jobs during the
+archive download, before starting an emulator. A reproduced HTTP 200 response
+advertised 329592949 gzip-encoded bytes for the pinned 331232577-byte ZIP. The
+original guard incorrectly compared those different lengths. Local HTTP tests
+now cover gzip and chunked delivery, failed or partial HTTP responses, incorrect
+checksums, short or oversized decoded bodies, and cancellation. Exact decoded
+size and SHA-256 checks remain mandatory.
 
 `test-results/phone-control/emulator-ci-<image>-<run-id>-<attempt>/results.json`
 contains typed readiness samples, stage, elapsed time, test exit codes, cleanup

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Camera, Copy, RefreshCw, ShieldCheck, Smartphone, Square, X } from "lucide-react";
 import { api, relativeTime } from "./lib.js";
 import { Card, PageHeader, StatusPill } from "./components.js";
+import { phoneRequestId } from "./phone-request-id.js";
 import "./phone-control.css";
 
 const methods = ["describe", "observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "stop", "fixture.increment", "node.click", "node.scroll"] as const;
@@ -132,9 +133,10 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     setBusy(true);
     // Any dispatched mutation invalidates the screen used to prepare it, even on transport failure.
     if (mutations.includes(method) || method === "observe") setObservation(null);
-    const id = crypto.randomUUID();
+    let id: string | undefined;
     let dispatched = false;
     try {
+      id = phoneRequestId();
       let taskId: string | undefined;
       if (mutations.includes(method)) {
         if (!manualTask) { notify("Reserve manual control, then observe the phone before preparing an action.", "error"); return; }
@@ -155,8 +157,10 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
       if (result.error) notify(`${result.error.code}: ${result.error.message}`, "error");
       else if (result.status === "completed") notify("Dispatch completed. Observe the phone again to inspect the result; the outcome is not verified.");
       if (mutations.includes(method)) await load();
-    } catch {
-      setReceipts((items) => [{ id, status: dispatched ? "unknown" as const : "rejected" as const, method, at: new Date().toISOString() }, ...items].slice(0, 30));
+    } catch (error) {
+      if (!id) { notify(errorText(error), "error"); return; }
+      const failedId = id;
+      setReceipts((items) => [{ id: failedId, status: dispatched ? "unknown" as const : "rejected" as const, method, at: new Date().toISOString() }, ...items].slice(0, 30));
       notify(dispatched ? "No reliable receipt arrived. Inspect the phone before another action. The request was not retried." : "Phone control could not be reserved. Check active tasks below. No phone action was sent.", "error");
       await load();
     } finally { setBusy(false); }

@@ -66,6 +66,21 @@ export function diagnosticsSummary(text) {
     ['systemServerWatchdog', /WATCHDOG KILLING SYSTEM PROCESS/gu], ['emulatorFatal', /\bFATAL\b/gu],
   ].map(([name, pattern]) => [name, [...String(text).matchAll(pattern)].length]));
 }
+export async function downloadPinnedArchive(pin, archive, { signal, onResponse = () => {} } = {}) {
+  const response = await fetch(pin.url, { redirect: 'error', signal });
+  const length = response.headers.get('content-length'); const encoding = response.headers.get('content-encoding')?.toLowerCase() ?? 'identity';
+  const metadata = { httpStatus: response.status, contentLength: /^\d{1,15}$/u.test(length ?? '') ? Number(length) : null, contentEncoding: ['identity', 'gzip', 'deflate', 'br'].includes(encoding) ? encoding : 'other' };
+  await onResponse(metadata);
+  if (response.status !== 200 || !response.body) { await response.body?.cancel(); throw new CiError('pinned_emulator_download_invalid'); }
+  // fetch decodes HTTP content encoding. Content-Length describes the encoded
+  // transfer, when present; only decoded archive bytes can satisfy the pin.
+  const hash = createHash('sha256'); let size = 0;
+  const meter = new Transform({ transform(chunk, encoding, callback) { size += chunk.length; if (size > pin.bytes) return callback(new CiError('pinned_emulator_download_oversize')); hash.update(chunk); callback(null, chunk); } });
+  await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(archive, { flags: 'wx' }), { signal });
+  const sha256 = hash.digest('hex');
+  if (size !== pin.bytes || sha256 !== pin.sha256) throw new CiError('pinned_emulator_checksum_mismatch');
+  return { ...metadata, receivedBytes: size, sha256 };
+}
 export async function runLifecycle(operations, tests, { signal } = {}) {
   let failure;
   try {
@@ -139,12 +154,8 @@ export async function main(args = process.argv.slice(2)) {
         for (const port of [5554, 5555]) await new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', () => reject(new CiError('reserved_emulator_port_in_use'))); server.listen(port, '127.0.0.1', () => server.close(resolve)); });
         const imageDirectory = path.join(sdk, 'system-images', `android-${options.image}`, 'google_apis', 'x86_64'); await realpath(imageDirectory);
         evidence.stage = 'download_pinned_emulator'; await save();
-        const response = await fetch(emulatorPin.url, { redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]) });
-        if (!response.ok || Number(response.headers.get('content-length')) !== emulatorPin.bytes) throw new CiError('pinned_emulator_download_invalid');
-        const archive = path.join(work, 'emulator.zip'); const hash = createHash('sha256'); let size = 0;
-        const meter = new Transform({ transform(chunk, encoding, callback) { size += chunk.length; if (size > emulatorPin.bytes) return callback(new CiError('pinned_emulator_download_oversize')); hash.update(chunk); callback(null, chunk); } });
-        await pipeline(Readable.fromWeb(response.body), meter, createWriteStream(archive, { flags: 'wx' }));
-        if (size !== emulatorPin.bytes || hash.digest('hex') !== emulatorPin.sha256) throw new CiError('pinned_emulator_checksum_mismatch');
+        const archive = path.join(work, 'emulator.zip');
+        evidence.download = await downloadPinnedArchive(emulatorPin, archive, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]), onResponse: async (metadata) => { evidence.download = metadata; await save(); } });
         evidence.stage = 'extract_pinned_emulator'; await save();
         const runtime = path.join(work, 'runtime'); await mkdir(runtime); await command('unzip', ['-q', archive, '-d', runtime], { timeout: 60000 });
         const binary = path.join(runtime, 'emulator/emulator');
