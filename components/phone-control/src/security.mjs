@@ -16,6 +16,9 @@ export function tokenMatches(candidate, hash) {
 function windowsIdentity() {
   return execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }).trim().match(/"(S-1-[0-9-]+)"\s*$/u)?.[1];
 }
+// A Node process launched from pwsh inherits its incompatible module search path.
+// Use this Windows PowerShell process's built-in modules, without changing the parent.
+const WINDOWS_ACL_POWERSHELL = '$ErrorActionPreference="Stop"; $env:PSModulePath="$PSHOME\\Modules"; Import-Module "$PSHOME\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1" -ErrorAction Stop; ';
 export function securePath(path, directory = false) {
   if (process.platform === 'win32') {
     const sid = windowsIdentity(); requireThat(sid, 'private_permissions_unavailable', 500);
@@ -28,7 +31,7 @@ export function securePath(path, directory = false) {
 export function assertPrivate(path) {
   for (let ancestor = resolve(path); ; ancestor = dirname(ancestor)) { requireThat(!lstatSync(ancestor).isSymbolicLink(), 'insecure_private_file', 500); if (dirname(ancestor) === ancestor) break; }
   if (process.platform === 'win32') {
-    const script = '$a=Get-Acl -LiteralPath $env:PHONE_CONTROL_PRIVATE_PATH; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $o=$a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; $bad=@($a.Access | Where-Object { $_.AccessControlType -eq "Allow" -and $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -notin @($u,"S-1-5-18","S-1-5-32-544") }); if($o -ne $u -or $bad.Count -ne 0){exit 2}';
+    const script = WINDOWS_ACL_POWERSHELL + '$a=Get-Acl -LiteralPath $env:PHONE_CONTROL_PRIVATE_PATH; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $o=$a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; $bad=@($a.Access | Where-Object { $_.AccessControlType -eq "Allow" -and $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -notin @($u,"S-1-5-18","S-1-5-32-544") }); if($o -ne $u -or $bad.Count -ne 0){exit 2}';
     try { execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, PHONE_CONTROL_PRIVATE_PATH: resolve(path) }, stdio: 'ignore', windowsHide: true }); }
     catch { throw new Fault('insecure_private_file', 500); }
   } else {
@@ -56,7 +59,7 @@ export function initialize(directory, port = 4421) {
   if (existsSync(root)) {
     requireThat(lstatSync(root).isDirectory() && readdirSync(root).length === 0, 'private_directory_not_empty', 409);
     if (process.platform === 'win32') {
-      const script = '$a=Get-Acl -LiteralPath $env:PHONE_CONTROL_PRIVATE_PATH; if($a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value){exit 2}';
+      const script = WINDOWS_ACL_POWERSHELL + '$a=Get-Acl -LiteralPath $env:PHONE_CONTROL_PRIVATE_PATH; if($a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value){exit 2}';
       try { execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, PHONE_CONTROL_PRIVATE_PATH: root }, stdio: 'ignore', windowsHide: true }); } catch { throw new Fault('insecure_private_file', 500); }
     } else requireThat(statSync(root).uid === process.getuid(), 'insecure_private_file', 500);
   }

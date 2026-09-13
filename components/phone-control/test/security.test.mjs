@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync, statSync, symlinkSync, readdirSync, unlinkSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createPublicKey, randomBytes } from 'node:crypto';
 import { initialize, loadConfiguration, provisionBrokerIdentity, addDevice, updateDeviceToken, acquireLock, securePath, assertPrivate, encrypt, decrypt, writePrivate, digest } from '../src/security.mjs';
 
@@ -15,7 +15,7 @@ function windowsFixture(t) {
   return directory;
 }
 function windowsAcl(path) {
-  const script = '$ErrorActionPreference="Stop"; $a=Get-Acl -LiteralPath $env:PHONE_TEST_ACL_PATH; $i=[System.Security.Principal.WindowsIdentity]::GetCurrent(); $p=New-Object System.Security.Principal.WindowsPrincipal($i); @{ownedByCurrentUser=($a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $i.User.Value); administrator=$p.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress';
+  const script = '$ErrorActionPreference="Stop"; $env:PSModulePath="$PSHOME\\Modules"; Import-Module "$PSHOME\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1" -ErrorAction Stop; $a=Get-Acl -LiteralPath $env:PHONE_TEST_ACL_PATH; $i=[System.Security.Principal.WindowsIdentity]::GetCurrent(); $p=New-Object System.Security.Principal.WindowsPrincipal($i); @{ownedByCurrentUser=($a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $i.User.Value); administrator=$p.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)} | ConvertTo-Json -Compress';
   return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', env: { ...process.env, PHONE_TEST_ACL_PATH: path }, windowsHide: true }));
 }
 
@@ -46,6 +46,24 @@ test('Windows private paths remove inherited access but still reject explicit fo
   assert.throws(() => assertPrivate(directory), { code: 'insecure_private_file' });
   execFileSync('icacls.exe', [directory, '/remove:g', '*S-1-1-0'], { stdio: 'ignore', windowsHide: true });
   assertPrivate(directory);
+});
+
+test('Windows private-file validation ignores an incompatible inherited PowerShell module path', { skip: process.platform !== 'win32' }, (t) => {
+  const directory = windowsFixture(t); securePath(directory, true);
+  const modules = join(directory, 'modules'); const shadow = join(modules, 'Microsoft.PowerShell.Security'); mkdirSync(shadow, { recursive: true });
+  writeFileSync(join(shadow, 'Microsoft.PowerShell.Security.psd1'), "@{ ModuleVersion='99.0'; PowerShellVersion='99.0'; FunctionsToExport=@('Get-Acl') }");
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath')), PSModulePath: modules, PHONE_TEST_ACL_PATH: directory };
+  // Reproduce the hosted pwsh -> Node -> Windows PowerShell autoload failure.
+  const control = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '$ErrorActionPreference="Stop"; Get-Acl -LiteralPath $env:PHONE_TEST_ACL_PATH'], { env, encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+  assert.notEqual(control.status, 0); assert.match(control.stderr, /CouldNotAutoloadMatchingModule/u);
+  const script = `import { mkdirSync } from 'node:fs'; import { join } from 'node:path';
+    import { securePath, assertPrivate, initialize } from ${JSON.stringify(new URL('../src/security.mjs', import.meta.url).href)};
+    const root = process.env.PHONE_TEST_ACL_PATH; assertPrivate(root);
+    const existing = join(root, 'existing'); mkdirSync(existing); securePath(existing, true);
+    const initialized = initialize(existing); assertPrivate(initialized.configPath);`;
+  // This checks module isolation, not Windows shell-startup latency under CI load.
+  const checked = spawnSync(process.execPath, ['--input-type=module', '-e', script], { env, encoding: 'utf8', windowsHide: true, timeout: 120_000 });
+  assert.equal(checked.status, 0, 'Private initialization must use the Windows PowerShell built-in ACL module');
 });
 
 test('AES-GCM detects tampering and key substitution', () => {

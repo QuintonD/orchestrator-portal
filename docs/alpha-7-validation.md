@@ -146,19 +146,56 @@ fresh-install success.
 
 ## Hosted CI follow-up
 
-The first PR run exposed an elevated Windows ownership error: newly created
-private paths could belong to the Administrators group even after receiving a
-current-user ACL. Setup now assigns the current account as owner explicitly;
-loading still rejects foreign ownership and broad explicit grants. The component
-suite passed 122 tests locally, including two Windows ACL regressions. The
-elevated-token branch still requires the hosted Windows result.
+Hosted Windows diagnostics exposed incompatible PowerShell module autoloading:
+Node inherited PowerShell 7's module search path before launching Windows
+PowerShell 5.1 for ACL inspection. A synthetic higher-version module reproduced
+the same failure locally. ACL inspection now selects that child process's own
+built-in modules; the regression failed before the correction and passed after
+it. Setup also explicitly assigns private paths to the current account, covering
+elevated tokens that default ownership to Administrators. Foreign ownership and
+broad explicit grants remain forbidden. The earlier ownership-only diagnosis was
+incomplete; both failed hosted runs remain recorded.
+The corrected full component suite passed all 123 tests locally, and package QA
+confirmed all 21 distributed source files. The new module regression's first
+full-run fixture timeout is retained; its setup allowance changed without
+altering a production timeout or retry.
 
 That run also failed Android 14 native startup, Android 16 screenshot reliability
-(five missing callbacks in 30 reads), and Android 16 QPR1 emulator startup before
-instrumentation. These remain failures pending diagnosis. Native diagnostics now
+(five missing callbacks in 30 reads), and Android 16 QPR2 emulator startup before
+instrumentation. Native diagnostics now
 report only fixed, allowlisted harness phases; eight parser tests cover injected,
 unknown and excessive stage values, and the Android test APK build passed. The
 additional diagnostics do not change assertions or retry device actions.
+
+A fresh matching local Android 14 run passed 44 assertions, and the subsequent
+hosted Android 14 native/integration job passed. The original failure is retained;
+its coarse diagnostics do not establish a specific cause. Android 16 QPR2 failed
+before testing in both hosted runs: the boot flag appeared while input/settings
+services were absent or the input call returned a broken pipe. The owned
+[CI launcher](android-emulator-ci.md) now checks live services and a stable system
+server before configuring input, retains bounded diagnostics, and checks cleanup.
+Its actual Linux execution remains a required CI gate.
+All 14 launcher tests passed in a disposable Linux container, including real
+parent/child termination after timeout and output overflow. The Windows run
+passed 11 and explicitly skipped the three Linux subprocess checks. The real
+Linux check caught an ineffective `execFile` process-group option; the corrected
+helper uses `spawn`, and the original failed container probe remains documented.
+All 30 native/upgrade harness parser tests and 60 release/evidence tests passed.
+
+The second hosted gateway Docker job also failed before building project code
+because Docker Hub returned HTTP 502 for the BuildKit image manifest. The first
+run passed. This infrastructure failure remains recorded; the final source must
+still pass the normal Docker build check.
+
+Release qualification uses strict native/integration gates on selected Android
+14, Android 15 and patched Android 16 QPR2 emulator images. The older Google
+Android 16 revision 7 image remains outside this qualification because of its
+upstream capture callback defect. Its separate manual compatibility workflow
+retains strict assertions and actual failed results; it cannot substitute for
+the required release workflow. See the [capture investigation](phone-control-capture-investigation.md)
+for the exact failing build and the evidence limits. No API-level blacklist,
+automatic capture retry, hidden failure allowance or production guard relaxation
+was introduced.
 
 ## Release gates
 

@@ -64,8 +64,9 @@ only the config and admin-token **file paths**, never the token. POSIX files use
 0600 and directories 0700. Windows setup removes inherited access, grants the
 current account access and explicitly assigns it ownership, including when an
 elevated token defaults new objects to the Administrators group. It then verifies
-the owner and ACL. Configuration loading
-refuses accessible private files, symlinks and invalid ciphertext.
+the owner and ACL using Windows PowerShell's built-in Security module, independently
+of the parent shell's module search path. Configuration loading refuses accessible
+private files, symlinks and invalid ciphertext.
 
 Initialization also creates the private Ed25519 signing key `broker-signing.pem`
 and public pin `broker-public.pem`. Provision only the public pin to clients,

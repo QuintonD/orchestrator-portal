@@ -1,0 +1,95 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { avdConfiguration, below, diagnosticsSummary, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, waitForReady } from './android-emulator-ci.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
+
+const environment = { GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '12345', GITHUB_RUN_ATTEMPT: '2', RUNNER_TEMP: '/runner/temp', ANDROID_HOME: '/android/sdk' };
+const args = ['--image', '36.1', '--test', 'tests/phone-control/native.mjs', '--test', 'tests/phone-control/integration.mjs'];
+const ready = (pid = '201') => ({ boot: '1', qemu: '1', sdk: '36', sdkFull: '36.1', pid, services: { activity: true, package: true, input: true, window: true, settings: true }, settingsReadable: true, packageReadable: true, unlocked: true });
+test('CI runner accepts only explicit CI platform, image and test allowlists', () => {
+  assert.deepEqual(parseOptions(args, environment, 'linux'), { image: '36.1', tests: ['tests/phone-control/native.mjs', 'tests/phone-control/integration.mjs'], name: 'orchestrator-phone-control-ci-361-12345-2' });
+  for (const invalid of [[], [...args, '--test', 'tests/phone-control/native.mjs'], ['--image', '36.2', '--test', 'tests/phone-control/native.mjs'], [...args, '--force', 'true'], ['--image', '36', '--test', '../private.mjs'], ['--image', '36', '--test', 'node -e code']]) assert.throws(() => parseOptions(invalid, environment, 'linux'));
+  assert.throws(() => parseOptions(args, environment, 'win32'));
+  assert.throws(() => parseOptions(args, { ...environment, GITHUB_ACTIONS: 'false' }, 'linux'));
+  assert.throws(() => parseOptions(args, { ...environment, GITHUB_RUN_ID: '../other' }, 'linux'));
+  assert.throws(() => parseOptions(args, { ...environment, RUNNER_TEMP: 'relative' }, 'linux'));
+});
+test('ownership checks exclude parent, sibling-prefix and pre-existing attached devices', () => {
+  assert.equal(below('/temp/owned', '/temp/owned/new'), true);
+  for (const child of ['/temp/owned', '/temp', '/temp/owned-other/new', '/private']) assert.equal(below('/temp/owned', child), false);
+  assert.equal(hasDevices('List of devices attached\n\n'), false);
+  assert.equal(hasDevices('List of devices attached\nemulator-5554\toffline\n'), true);
+  assert.equal(hasDevices('List of devices attached\nphysical-device\tdevice\n'), true);
+});
+test('actual AVD hardware configuration contains one authoritative value for every LCD and resource key', () => {
+  const text = avdConfiguration('hw.lcd.width=1080\r\nhw.lcd.width = 1440\r\nhw.lcd.height=2400\r\nhw.lcd.density=420\r\nhw.ramSize=4096\r\nhw.cpu.ncore=4\r\nimage.sysdir.1=system-images/android-36.1/google_apis/x86_64/\r\n');
+  for (const [key, value] of Object.entries({ 'hw.lcd.width': '720', 'hw.lcd.height': '1600', 'hw.lcd.density': '280', 'hw.ramSize': '2048', 'hw.cpu.ncore': '2' })) assert.deepEqual(text.split('\n').filter((line) => line.startsWith(key + '=')), [`${key}=${value}`]);
+  assert.match(text, /image\.sysdir\.1=system-images\/android-36\.1/u);
+});
+test('boot flag alone and wrong service, user, process or API facts never establish readiness', () => {
+  assert.equal(snapshotReady(ready(), '36.1', true), true);
+  for (const changed of [{ services: { ...ready().services, input: false } }, { services: { ...ready().services, settings: false } }, { settingsReadable: false }, { packageReadable: false }, { qemu: '0' }, { pid: '' }, { pid: '201 202' }, { sdk: '35' }, { unlocked: false }]) assert.equal(snapshotReady({ ...ready(), ...changed }, '36.1', true), false);
+  assert.equal(snapshotReady({ ...ready(), sdkFull: '36.0' }, '36.1', true), false);
+  assert.equal(snapshotReady({ ...ready(), sdkFull: '' }, '36.1', true), false);
+  assert.equal(snapshotReady({ ...ready(), sdk: '34', sdkFull: '' }, '34', true), true);
+});
+test('readiness waits for required services and three consecutive samples of one system_server', async () => {
+  const snapshots = [{ ...ready(), services: { ...ready().services, input: false } }, ready('201'), ready('201'), ready('202'), ready('202'), ready('202')];
+  const seen = []; let clock = 0;
+  const result = await waitForReady({ probe: async () => snapshots.shift(), image: '36.1', deadline: 20000, now: () => clock, sleep: async (ms) => { clock += ms; }, onSample: (sample) => seen.push(sample.stable) });
+  assert.equal(result.pid, '202'); assert.deepEqual(seen, [0, 1, 2, 1, 2, 3]); assert.equal(clock, 10000);
+});
+test('readiness times out and never substitutes retries of tests for missing Android services', async () => {
+  let clock = 0; let probes = 0;
+  await assert.rejects(waitForReady({ probe: async () => { probes++; return { ...ready(), services: {} }; }, image: '36.1', deadline: 6000, now: () => clock, sleep: async (ms) => { clock += ms; } }), /android_services_readiness_timeout/u);
+  assert.equal(probes, 3);
+});
+test('lifecycle preserves startup failure, skips input/tests, and still diagnoses and stops', async () => {
+  const calls = [];
+  await assert.rejects(runLifecycle({ start: async () => calls.push('start'), ready: async () => { calls.push('ready'); throw new Error('services unavailable'); }, configure: async () => calls.push('input'), test: async () => calls.push('test'), diagnose: async () => calls.push('diagnose'), stop: async () => calls.push('stop') }, ['native']), /services unavailable/u);
+  assert.deepEqual(calls, ['start', 'ready', 'diagnose', 'stop']);
+});
+test('lifecycle runs each test once, preserves test failure and cleans up even when diagnostics fail', async () => {
+  const calls = [];
+  await assert.rejects(runLifecycle({ start: async () => calls.push('start'), ready: async () => calls.push('ready'), configure: async () => calls.push('configure'), test: async (name) => { calls.push(name); throw new Error('test failed'); }, diagnose: async () => { calls.push('diagnose'); throw new Error('diagnostics failed'); }, stop: async () => calls.push('stop') }, ['native', 'integration']), /test failed/u);
+  assert.deepEqual(calls, ['start', 'ready', 'configure', 'native', 'diagnose', 'stop']);
+});
+test('a successful test run fails if owned emulator cleanup cannot be confirmed', async () => {
+  await assert.rejects(runLifecycle({ start: async () => {}, ready: async () => {}, configure: async () => {}, test: async () => {}, diagnose: async () => {}, stop: async () => { throw new Error('stop unconfirmed'); } }, ['native', 'integration']), /stop unconfirmed/u);
+});
+test('cancellation during final diagnostics cannot turn completed tests into a successful CI outcome', async () => {
+  const controller = new AbortController(); let stopped = false;
+  await assert.rejects(runLifecycle({ start: async () => {}, ready: async () => {}, configure: async () => {}, test: async () => {}, diagnose: async () => controller.abort(), stop: async () => { stopped = true; } }, ['native'], { signal: controller.signal }), /ci_cancelled/u);
+  assert.equal(stopped, true);
+});
+test('diagnostics retain only fixed counters and discard arbitrary log text and credentials', () => {
+  const summary = diagnosticsSummary("private-user-token-123 FATAL EXCEPTION\ncmd: Can't find service: input\nOutOfMemoryError: private message\nFatal signal 11\n");
+  assert.equal(summary.fatalException, 1); assert.equal(summary.missingInputService, 1); assert.equal(summary.outOfMemory, 1); assert.equal(summary.nativeFatalSignal, 1);
+  assert.equal(JSON.stringify(summary).includes('private'), false);
+  assert.ok(Object.values(summary).every(Number.isInteger));
+});
+async function requireProcessesGone(result) {
+  const pids = ['parent', 'child'].map((name) => Number(result.stdout.match(new RegExp(`${name}-ready:(\\d+)`))?.[1]));
+  assert.ok(pids.every((pid) => Number.isInteger(pid) && pid > 1), 'Both processes must have started and emitted readiness');
+  const exists = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { assert.equal(error.code, 'ESRCH'); return false; } };
+  for (let attempt = 0; attempt < 30 && pids.some(exists); attempt++) await delay(100);
+  assert.deepEqual(pids.filter(exists), [], 'The owned parent and child must both be gone');
+}
+const linux = { skip: process.platform !== 'linux' ? 'Linux process-group regression; skipped on this platform' : false };
+test('Linux subprocess timeout stops both the owned parent and its live child and remains failed', linux, async () => {
+  const code = `const {spawn}=require('node:child_process'); console.log('parent-ready:'+process.pid); const child=spawn(process.execPath,['-e',"console.log('child-ready:'+process.pid);setInterval(()=>{},1000)"],{stdio:['ignore','pipe','ignore']}); child.stdout.pipe(process.stdout); setInterval(()=>{},1000);`;
+  const result = await executeCiCommand(process.execPath, ['-e', code], { timeout: 1500, processGroup: true, allowFailure: true });
+  assert.equal(result.ok, false); assert.equal(result.timedOut, true);
+  await requireProcessesGone(result);
+});
+test('Linux subprocess output overflow is bounded, fails and stops the live owned process group', linux, async () => {
+  const code = `const {spawn}=require('node:child_process');console.log('parent-ready:'+process.pid);const child=spawn(process.execPath,['-e',"console.log('child-ready:'+process.pid);setTimeout(()=>process.stdout.write('x'.repeat(5*1024*1024)),50);setInterval(()=>{},1000)"],{stdio:['ignore','pipe','ignore']});child.stdout.pipe(process.stdout);setInterval(()=>{},1000);`;
+  const result = await executeCiCommand(process.execPath, ['-e', code], { timeout: 10000, processGroup: true, allowFailure: true });
+  assert.equal(result.ok, false); assert.equal(result.timedOut, false);
+  assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= 4 * 1024 * 1024);
+  await requireProcessesGone(result);
+});
+test('Linux process spawn errors fail closed without waiting for the command timeout', linux, async () => {
+  const result = await executeCiCommand('/nonexistent-orchestrator-ci-test-command', [], { timeout: 10000, processGroup: true, allowFailure: true });
+  assert.equal(result.ok, false); assert.equal(result.timedOut, false); assert.notEqual(result.exitCode, 0);
+});

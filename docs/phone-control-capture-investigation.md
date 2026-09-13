@@ -1,10 +1,61 @@
 # Android per-window capture investigation
 
-Status: emulator investigation, 13 September 2026. Android 16.1 Google APIs
-revision 4 passed the strict 30-read capture gate and actual pixel inspection.
+Status: emulator investigation, 13 September 2026. Android 16 QPR2 (SDK 36.1)
+Google APIs revision 4 passed the strict 30-read capture gate and actual pixel inspection.
 The original Android 16 revision 7 failures remain valid evidence. The application
 still requires Android 14 or later and uses the public per-window screenshot API.
 No physical phone has been tested in this investigation.
+
+## Release qualification and legacy compatibility
+
+The required `Phone Control` release workflow now selects Google APIs images for
+API 34, API 35 and patched Android 16 QPR2 / SDK 36.1. Each must pass its strict
+native and integration checks. This defines the release gate; it does not claim
+that every current run has passed or that every device on those SDK levels is
+reliable. The [readiness record](android-phone-control-readiness.md) records the
+actual results. Installation still permits API 34 and later. There is no SDK-level
+blacklist, and OEM backports of the framework correction have not been verified.
+
+The earlier Android 16 Google APIs revision 7 image is not release qualified.
+Its exact recorded identity is
+`google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`.
+In [PR 26's original Phone Control run](https://github.com/QuintonD/orchestrator-portal/actions/runs/34748059571),
+native smoke passed 44 assertions. The subsequent integration run retained five
+failed requests out of 30: three of 20 tree-only reads and two of ten PNG reads.
+All five reported `screenshot_internal_error`, `captureStage=awaiting_callback`
+and capture elapsed times of 5,001–5,018 ms. Cleanup passed. The downloaded record
+is retained under `test-results/phone-control/ci-34748059571-api36/`; this failure
+has not been converted into a passing result.
+
+The [second Phone Control run](https://github.com/QuintonD/orchestrator-portal/actions/runs/34748596330)
+also failed on the older API 36 image. Native smoke again passed 44 assertions,
+and the CLI/MCP fixture-task equivalence check passed, but 12 of 30 independent
+observation requests failed. The retained safe log is
+`test-results/phone-control/ci-34748596330-api36-job.log`; the uploaded evidence
+directories are `native-1789289929612` and `integration-1789289972772`.
+Both runs also reported an `AssertionError` in the portal authentication and
+native projection stage. That error alone does not establish the same cause as
+the capture failures. These are two failed runs, not retries combined into a
+passing result.
+
+The [manual legacy compatibility workflow](../.github/workflows/phone-control-legacy-compatibility.yml)
+continues to run the native and integration suites against the `android-36`
+Google APIs package. It has no expected-failure exception: either suite failing
+fails the job, and a failed read is never retried into a passing benchmark sample.
+The owner [CI emulator runner](android-emulator-ci.md) verifies the pinned emulator
+binary, creates a fresh disposable AVD, checks service readiness and retains
+bounded diagnostics alongside the test results. `sdkmanager` can update the image
+package in the future, so the recorded image fingerprint identifies each actual
+run; the package name alone does not reproduce the historical build.
+
+The release manifest requires the successful, same-commit `Phone Control`
+workflow. A result from `Phone Control legacy compatibility` cannot replace it.
+Release descriptions must disclose that the older recorded image is not qualified.
+The native implementation continues to fail closed on all platforms: a failed
+capture clears the current observation, returns neither tree nor pixels, and
+grants no authority to act from that observation. Authenticated Stop remains
+available. No framework workaround, platform-wide blacklist, capture retry or
+weakened assertion is introduced by this separation.
 
 ## Confirmed upstream defect and supported remedy
 

@@ -6,6 +6,22 @@ Requires Android 14 / API 34 or newer; targets API 36. This component is alpha
 origin notice in [ATTRIBUTION.md](ATTRIBUTION.md). The existing portal Android app
 remains a separate application. No application runtime dependencies are added.
 
+API 34 is the installation minimum, not a reliability guarantee for every device
+or firmware build. Release qualification requires strict native and integration
+checks on Google APIs images for API 34, API 35 and Android 16 QPR2 / SDK 36.1.
+The older Android 16 Google image `BE2A.250530.026.F3/13894323` is not release
+qualified: native smoke passed, but five of 30 independent captures failed while
+waiting for a framework callback. Its framework has the confirmed weak-consumer
+lifetime defect described in the
+[capture investigation](../../docs/phone-control-capture-investigation.md).
+OEM backports are unknown; the application does not blacklist an entire SDK level.
+
+The manual [legacy compatibility workflow](../../.github/workflows/phone-control-legacy-compatibility.yml)
+keeps that image family under the same strict assertions. A failure stays failed
+and cannot satisfy the required release workflow. A capture failure clears the
+current observation, withholds tree and pixels, and grants no action authority.
+Authenticated Stop remains available. No capture retry hides a failed sample.
+
 ## Build and install
 
 Install Android SDK platform 36 and JDK 17 or 21, set `ANDROID_HOME` and
@@ -275,8 +291,9 @@ The ATD run therefore does not establish screenshot fidelity or visual QA.
 Regular API 34 Google APIs revision 14 subsequently passed the native pixel
 guard, 30/30 integration reads and visual inspection of the complete fixture.
 Its full biometric, large-font layout and actual in-flight Stop checks also
-passed. See [native QA evidence](QA.md) for the retained failures, test-helper
-fixes and the separate unresolved API 36 capture-reliability gate.
+passed. See [native QA evidence](QA.md) for the retained failures and test-helper
+fixes, and the [capture investigation](../../docs/phone-control-capture-investigation.md)
+for the known older API 36 image failure and current qualification scope.
 
 For a host integration probe, add `-e hostProbe true` before the instrumentation
 component. The **test runner only** writes a token to app-private

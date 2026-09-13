@@ -76,12 +76,24 @@ input is unavailable. The existing gateway client still supports its documented
 Android versions. Platform APIs do not promise access to every app or protected
 screen. [Android AccessibilityService reference](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService)
 
-Emulator acceptance currently distinguishes Android 14, Android 16 and Android
-16 QPR2 (SDK 36.1). The QPR2 image passed the bounded capture gate after an
-upstream callback-lifetime fix; the earlier Android 16 failures remain recorded.
-Do not infer universal Android 14+ reliability from the minimum install SDK.
-See the [capture investigation](phone-control-capture-investigation.md) for the
-exact upstream commit, image identity, measurements and remaining uncertainty.
+The required release matrix covers Google APIs images for API 34, API 35 and
+Android 16 QPR2 (SDK 36.1), with strict native and integration checks. This names
+the qualification gate; actual results belong in the
+[readiness record](android-phone-control-readiness.md). The older Android 16
+Google image `BE2A.250530.026.F3/13894323` is not release qualified: native smoke
+passed 44 assertions, but five of 30 independent capture requests failed while
+waiting for a callback. Its framework contains the confirmed weak-consumer
+lifetime defect. The patched QPR2 image passed the earlier bounded capture gate.
+
+The separate [legacy compatibility workflow](../.github/workflows/phone-control-legacy-compatibility.yml)
+runs manually with the same strict assertions; failed captures remain failed
+checks. It cannot substitute for the required `Phone Control` release workflow.
+Minimum SDK 34 does not promise universal Android 14+ reliability, and the app
+does not blacklist SDK 36: individual firmware fixes and OEM backports matter
+and remain unverified. Failed capture clears the current observation, withholds
+tree and pixels, and creates no action authority. Authenticated Stop remains
+available. See the [capture investigation](phone-control-capture-investigation.md)
+for the upstream fix, exact image identity, retained failure trace and limits.
 
 Use the companion's build and setup instructions and the broker's README for the
 exact commands supported by the checked-out revision. The connection sequence is:

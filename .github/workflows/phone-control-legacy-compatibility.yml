@@ -1,0 +1,49 @@
+name: Phone Control legacy compatibility
+
+# The older API 36 Google image is outside release qualification. Keep its
+# regressions visible: this manual workflow fails whenever either strict suite fails.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-api-36:
+    name: Legacy API 36 native and integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'system-images;android-36;google_apis;x86_64'
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/phone-android-build.mjs
+      - name: Release build-daemon memory before emulator QA
+        run: ./gradlew --stop
+        working-directory: apps/phone-android
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Strict legacy image compatibility checks
+        run: node scripts/android-emulator-ci.mjs --image 36 --test tests/phone-control/native.mjs --test tests/phone-control/integration.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: phone-control-legacy-compatibility-api-36
+          path: |
+            apps/phone-android/app/build/outputs/apk/debug/*.apk
+            apps/phone-android/app/build/reports/lint-results-debug.html
+            apps/phone-android/app/build/reports/tests/
+            test-results/phone-control/**/results.json
+            test-results/phone-control/**/fixture.png
