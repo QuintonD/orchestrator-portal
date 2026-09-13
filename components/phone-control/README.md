@@ -61,8 +61,10 @@ node components/phone-control/bin/phone-control.mjs init
 
 The default directory is `$HOME/.orchestrator-phone-control`. Initialization prints
 only the config and admin-token **file paths**, never the token. POSIX files use
-0600 and directories 0700. Windows setup removes inherited access and grants the
-current account access, then verifies the owner and ACL. Configuration loading
+0600 and directories 0700. Windows setup removes inherited access, grants the
+current account access and explicitly assigns it ownership, including when an
+elevated token defaults new objects to the Administrators group. It then verifies
+the owner and ACL. Configuration loading
 refuses accessible private files, symlinks and invalid ciphertext.
 
 Initialization also creates the private Ed25519 signing key `broker-signing.pem`

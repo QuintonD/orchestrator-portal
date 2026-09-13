@@ -20,6 +20,9 @@ export function securePath(path, directory = false) {
   if (process.platform === 'win32') {
     const sid = windowsIdentity(); requireThat(sid, 'private_permissions_unavailable', 500);
     execFileSync('icacls.exe', [path, '/inheritance:r', '/grant:r', `*${sid}:${directory ? '(OI)(CI)' : ''}F`], { stdio: 'ignore', windowsHide: true });
+    // Elevated Windows tokens can create objects owned by Administrators.
+    // Permission grants do not change that owner; keep assertPrivate's exact-user check.
+    execFileSync('icacls.exe', [path, '/setowner', `*${sid}`], { stdio: 'ignore', windowsHide: true });
   } else chmodSync(path, directory ? 0o700 : 0o600);
 }
 export function assertPrivate(path) {

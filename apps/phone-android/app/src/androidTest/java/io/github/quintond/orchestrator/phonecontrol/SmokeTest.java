@@ -40,12 +40,14 @@ public final class SmokeTest extends Instrumentation {
     }
     @Override public void onStart() {
         Bundle result = new Bundle();
+        String stage = "configuration";
         try {
             if (documentProbe && (hostProbe || liveAgents || biometricProbe || !getTargetContext().getPackageName().endsWith(".debug")
                     || !documentRun.matches("[a-f0-9]{32}") || !Set.of(17, 29, 43).contains(documentSeed)))
                 throw new IllegalArgumentException("documentProbe requires a bounded debug-only document case");
             if (liveAgents && (!hostProbe || biometricProbe || !getTargetContext().getPackageName().endsWith(".debug")))
                 throw new IllegalArgumentException("liveAgents requires a debug hostProbe without biometricProbe");
+            stage = "accessibility_setup";
             getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
             // am instrument restarts the target process; explicitly rebind on this disposable test device.
             shell("settings put secure enabled_accessibility_services null");
@@ -56,6 +58,7 @@ public final class SmokeTest extends Instrumentation {
             while (PhoneService.instance == null && System.currentTimeMillis() < until) Thread.sleep(100);
             require(PhoneService.instance != null, "Accessibility service must be enabled on the disposable emulator");
             PhoneService service = PhoneService.instance;
+            stage = "session_setup";
             runOnMainSync(() -> {
                 try {
                     service.stopSession("Disposable fixture QA setup");
@@ -68,18 +71,22 @@ public final class SmokeTest extends Instrumentation {
                     token = service.pairingToken();
                 } catch (ApiException failed) { throw new IllegalStateException(failed.code); }
             });
+            stage = "describe";
             JSONObject described = call("describe", Json.object()).getJSONObject("result");
             require(described.getInt("protocolVersion") == 1 && !described.has("token"), "Describe is safe and versioned");
             if (documentProbe) {
+                stage = "document_probe";
                 new DocumentProbe(this, service, documentRun, documentSeed).run();
                 service.stopSession("Document probe complete");
                 result.putString("stream", "PHONE_DOCUMENT_COMPLETE " + documentSeed + " " + assertions + "\n");
                 finish(android.app.Activity.RESULT_OK, result);
                 return;
             }
+            stage = "fixture_launch";
             launch(fixture + "/io.github.quintond.orchestrator.phonefixture.FixtureActivity");
             Thread.sleep(1500);
             if (biometricProbe) {
+                stage = "biometric_probe";
                 require(service.biometricAvailable(), "Enroll an emulator strong fingerprint before running biometricProbe");
                 BiometricProbe probe = new BiometricProbe(this, service);
                 if (probeMode.equals("layout")) probe.layout();
@@ -94,6 +101,7 @@ public final class SmokeTest extends Instrumentation {
                 return;
             }
             if (hostProbe) {
+                stage = "host_probe";
                 java.io.File tokenFile = new java.io.File(getTargetContext().getFilesDir(), "phone-qa-token");
                 java.io.File stopFile = new java.io.File(getTargetContext().getFilesDir(), "phone-qa-stop");
                 java.nio.file.Files.deleteIfExists(stopFile.toPath());
@@ -111,8 +119,10 @@ public final class SmokeTest extends Instrumentation {
                 finish(android.app.Activity.RESULT_OK, result);
                 return;
             }
+            stage = "initial_observation";
             JSONObject observation = initialObservation();
             require(!observation.has("blockedReason") && observation.getJSONArray("nodes").length() > 0, "Real active-window observation available: " + observation.optString("blockedReason"));
+            stage = "native_assertions";
             require(!observation.has("screenshot"), "Screenshot omitted by default");
             require(!service.policy.screenshots(), "Screenshot disclosure starts disabled in this test session");
             JSONObject pixelDenial = call("observe", Json.object("allowedPackages", new JSONArray().put(fixture), "includeScreenshot", true));
@@ -186,6 +196,9 @@ public final class SmokeTest extends Instrumentation {
             finish(android.app.Activity.RESULT_OK, result);
         } catch (Throwable failed) {
             if (PhoneService.instance != null) PhoneService.instance.stopSession("Native fixture QA failed");
+            // Fixed source-owned labels distinguish startup failures without exporting
+            // exception text, active-app names, credentials or observation content.
+            result.putString("phone_qa_failure_stage", stage);
             result.putString("stream", "FAIL after " + assertions + " assertions: " + failed.getClass().getSimpleName() + ": " + failed.getMessage() + "\n");
             finish(android.app.Activity.RESULT_CANCELED, result);
         } finally { token = null; }

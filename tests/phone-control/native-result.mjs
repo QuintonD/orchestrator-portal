@@ -4,6 +4,8 @@ export function parseNativeResult(output, exitCode) {
   const statusCodes = [];
   const assertionCounts = [];
   const assertionFailures = [];
+  const failureStages = [];
+  const safeStages = new Set(["configuration", "accessibility_setup", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]);
   const safeClasses = new Set(["AssertionError", "IllegalStateException", "JSONException", "ApiException", "IOException", "SocketTimeoutException", "InterruptedException", "NullPointerException", "IllegalArgumentException", "RuntimeException", "SecurityException", "Exception", "Error"]);
   const safeCodes = ["screenshot_rate_limited", "screenshot_secure_window", "screenshot_invalid_window", "screenshot_invalid_display", "screenshot_access_denied", "screenshot_geometry_changed", "screenshot_too_large", "screenshot_timeout", "screenshot_internal_error", "screenshot_unavailable", "sensitive_window", "observation_blocked", "observation_expired", "consent_unavailable", "invalid_request", "forbidden"];
   const failureKinds = new Set();
@@ -24,6 +26,11 @@ export function parseNativeResult(output, exitCode) {
     }
     if (/^(?:Error: )?INSTRUMENTATION_(?:FAILED|ABORTED):/.test(line)
       || /^INSTRUMENTATION_(?:RESULT|STATUS): (?:shortMsg|Error)=/.test(line)) failureKinds.add("framework_failure");
+    const stage = /^INSTRUMENTATION_RESULT: phone_qa_failure_stage=(.*)$/.exec(line);
+    if (stage) {
+      failureKinds.add("reported_failure_stage");
+      if (safeStages.has(stage[1]) && failureStages.length < 32) failureStages.push(stage[1]);
+    }
     const stream = /^INSTRUMENTATION_RESULT: stream=(.*)$/.exec(line);
     if (stream) resultStream = !terminalSeen;
     else if (/^INSTRUMENTATION_/.test(line)) resultStream = false;
@@ -52,6 +59,7 @@ export function parseNativeResult(output, exitCode) {
       statusCodes: statusCodes.filter(Number.isSafeInteger).slice(0, 32),
       assertionCounts: assertionCounts.slice(0, 32),
       assertionFailures: assertionFailures.slice(0, 32),
+      failureStages,
       failureKinds: [...failureKinds],
     },
   };

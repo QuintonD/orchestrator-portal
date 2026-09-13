@@ -60,3 +60,28 @@ test("state differences expose only the fixed category and no window details", (
   const unknown = parseNativeResult("INSTRUMENTATION_RESULT: stream=FAIL after 2 assertions: AssertionError: stateDifference=private_window_value\nINSTRUMENTATION_CODE: 0\n", 0);
   assert.equal(unknown.diagnostics.assertionFailures[0].stateDifference, undefined);
 });
+
+test("failure stages identify only fixed harness phases and cannot turn a failure into success", () => {
+  for (const stage of ["configuration", "accessibility_setup", "session_setup", "describe", "fixture_launch", "initial_observation", "native_assertions", "document_probe", "biometric_probe", "host_probe"]) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=${stage}\n${success}`, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.failureStages, [stage]);
+    assert.ok(result.diagnostics.failureKinds.includes("reported_failure_stage"));
+  }
+});
+
+test("unknown, injected and excessive stage diagnostics never export private text", () => {
+  const secret = "synthetic-private-window-or-token";
+  for (const stage of [secret, `fixture_launch ${secret}`, `fixture_launch=${secret}`, ""]) {
+    const result = parseNativeResult(`INSTRUMENTATION_RESULT: phone_qa_failure_stage=${stage}\n${success}`, 0);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.diagnostics.failureStages, []);
+    assert.ok(!JSON.stringify(result).includes(secret));
+  }
+  const incidental = parseNativeResult(`Untrusted prefix INSTRUMENTATION_RESULT: phone_qa_failure_stage=fixture_launch\n${success}`, 0);
+  assert.equal(incidental.passed, true);
+  assert.deepEqual(incidental.diagnostics.failureStages, []);
+  const repeated = parseNativeResult(`${"INSTRUMENTATION_RESULT: phone_qa_failure_stage=fixture_launch\n".repeat(100)}${success}`, 0);
+  assert.equal(repeated.passed, false);
+  assert.equal(repeated.diagnostics.failureStages.length, 32);
+});

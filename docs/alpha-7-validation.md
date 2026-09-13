@@ -144,6 +144,22 @@ failures remain recorded, including `release-emulator-5588-1789285789040`,
 `test-results/android/`. The completed run is recovery evidence, not a first-pass
 fresh-install success.
 
+## Hosted CI follow-up
+
+The first PR run exposed an elevated Windows ownership error: newly created
+private paths could belong to the Administrators group even after receiving a
+current-user ACL. Setup now assigns the current account as owner explicitly;
+loading still rejects foreign ownership and broad explicit grants. The component
+suite passed 122 tests locally, including two Windows ACL regressions. The
+elevated-token branch still requires the hosted Windows result.
+
+That run also failed Android 14 native startup, Android 16 screenshot reliability
+(five missing callbacks in 30 reads), and Android 16 QPR1 emulator startup before
+instrumentation. These remain failures pending diagnosis. Native diagnostics now
+report only fixed, allowlisted harness phases; eight parser tests cover injected,
+unknown and excessive stage values, and the Android test APK build passed. The
+additional diagnostics do not change assertions or retry device actions.
+
 ## Release gates
 
 The PR and release manifest must record the final whole-workspace/browser results,
