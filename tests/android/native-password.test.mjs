@@ -32,6 +32,13 @@ test("password fill accepts the complete native mask without disclosing text", a
   assert.deepEqual(await ui.find(selector), { x: 110, y: 50, bounds: [10, 20, 210, 80] });
 });
 
+test("password fill accepts an exact protected value without exporting it", async () => {
+  const { ui, counts } = fixture({ displayed: value => value });
+  await ui.fillPassword(selector, password);
+  assert.equal(counts().writes, 1);
+  assert.deepEqual(await ui.find(selector), { x: 110, y: 50, bounds: [10, 20, 210, 80] });
+});
+
 test("password fill reacquires and replaces a partial entry within its existing attempt limit", async () => {
   const { ui, counts } = fixture({ displayed: (value, attempt) => "\u2022".repeat(value.length - (attempt === 1 ? 1 : 0)) });
   await ui.fillPassword(selector, password);
@@ -72,10 +79,10 @@ test("ordinary fill still verifies exact plaintext and replaces incorrect same-l
   assert.equal(counts().selections, 2);
 });
 
-test("password fill rejects wrong mask length and visible text after bounded attempts", { timeout: 25000, concurrency: true }, async t => {
+test("password fill rejects wrong mask length and incorrect visible text after bounded attempts", { timeout: 25000, concurrency: true }, async t => {
   await Promise.all([
     ["wrong mask length", value => "\u2022".repeat(value.length - 1)],
-    ["unmasked password", value => value],
+    ["partial visible password", value => value.slice(0, -1)],
     ["same-length non-mask", value => "x".repeat(value.length)],
   ].map(([name, displayed]) => t.test(name, async () => {
     const { ui, counts } = fixture({ displayed });
