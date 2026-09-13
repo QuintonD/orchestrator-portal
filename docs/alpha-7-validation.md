@@ -194,6 +194,16 @@ independent HTTP adversarial cases passed. The actual Google download also
 matched the decoded size and checksum using the corrected helper. Original
 pre-start failures remain in `ci-launcher-34749110937-attempt2`.
 
+The following hosted run verified the pinned download on all three images but
+stopped in the combined extraction/version stage before creating an emulator.
+An owned Ubuntu 24.04 reproduction showed plain `-version` failing on a GUI audio
+library dependency, while `-no-window -version` succeeded with the same binary.
+The probe now selects headless mode and records separate extraction/version
+stages with typed command failure details. Its Linux suite passed 25 tests;
+Windows passed 22 with three Linux-only skips. The original hosted diagnostics
+do not prove the exact failed subcommand; the setup reproduction and the next
+required native CI run provide distinct evidence.
+
 The second hosted gateway Docker job also failed before building project code
 because Docker Hub returned HTTP 502 for the BuildKit image manifest. The first
 run passed. This infrastructure failure remains recorded; the final source must
@@ -220,8 +230,20 @@ test-fixture failures remain in the UUID review evidence. An HTTP-origin shell
 confirmed the differing browser API availability; the full application still
 enforces its existing CSP and the native gateway rejects non-loopback HTTP.
 These checks do not establish native LAN HTTP support or WebView acceptance.
+The subsequent hosted full browser run on `301fc530` passed 163 cases, with the
+three existing desktop-only mobile exclusions retained.
 
 ## Release gates
+
+An independent pre-publication audit reproduced acceptance of an incomplete
+gateway upgrade report marked successful. The actual harness performed its
+checks, but the manifest gate did not require the complete report. The gate now
+requires all eleven original checks, typed record-preservation results, an
+emulator target, no cleanup error, all four baseline/candidate artifact hashes
+and the three harness source hashes. The harness snapshots those bytes before
+use and rejects changes before declaring success. All 96 release/evidence tests
+passed, including 36 new acceptance and refusal cases. Earlier upgrade records
+without this binding remain historical; publication requires a fresh full run.
 
 The PR and release manifest must record the final whole-workspace/browser results,
 signed companion and gateway upgrade proofs, native acceptance, clean source

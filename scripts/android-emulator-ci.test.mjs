@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, waitForReady } from './android-emulator-ci.mjs';
+import { avdConfiguration, below, diagnosticsSummary, downloadPinnedArchive, emulatorPin, executeCiCommand, hasDevices, parseOptions, runLifecycle, snapshotReady, verifyPinnedEmulator, waitForReady } from './android-emulator-ci.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -119,6 +119,22 @@ test('pinned archive rejects a short decoded body despite successful HTTP transf
 test('pinned archive cancellation stops an incomplete response and cannot validate it', async (t) => {
   const { archive, pin } = await archiveServer(t, (_request, response) => { response.writeHead(200); response.write(archiveFixture.subarray(0, 10)); });
   await assert.rejects(downloadPinnedArchive(pin, archive, { signal: AbortSignal.timeout(100) }), /abort|timeout/iu);
+});
+const versionOutput = `Android emulator version ${emulatorPin.version} (build_id ${emulatorPin.build}) (CL:N/A)\n`;
+test('version verification selects headless QEMU and still requires the pinned binary identity', async () => {
+  const command = async (binary, argv, options) => {
+    assert.equal(binary, '/owned/runtime/emulator'); assert.equal(options.allowFailure, true);
+    return argv.length === 2 && argv[0] === '-no-window' && argv[1] === '-version' ? { ok: true, exitCode: 0, stdout: versionOutput } : { ok: false, exitCode: 127, stdout: '', stderr: 'GUI-only audio dependency unavailable' };
+  };
+  assert.deepEqual(await verifyPinnedEmulator('/owned/runtime/emulator', command), { version: emulatorPin.version, build: emulatorPin.build });
+  for (const stdout of ['', versionOutput.replace(emulatorPin.version, '36.6.10.0'), versionOutput.replace(emulatorPin.build, '15507666')]) await assert.rejects(verifyPinnedEmulator('/owned/runtime/emulator', async () => ({ ok: true, exitCode: 0, stdout })), /pinned_emulator_version_mismatch/u);
+});
+test('failed or timed-out version commands cannot pass using their printed version and retain only typed failure facts', async () => {
+  for (const result of [{ exitCode: 127, timedOut: false }, { exitCode: null, timedOut: true }, { exitCode: 0, timedOut: true }]) {
+    await assert.rejects(verifyPinnedEmulator('/owned/runtime/emulator', async () => ({ ok: false, stdout: versionOutput, stderr: 'private arbitrary error text', ...result })), (error) => {
+      assert.equal(error.code, 'pinned_emulator_version_command_failed'); assert.equal(error.exitCode, result.exitCode); assert.equal(error.timedOut, result.timedOut); assert.equal(JSON.stringify(error).includes('private'), false); return true;
+    });
+  }
 });
 async function requireProcessesGone(result) {
   const pids = ['parent', 'child'].map((name) => Number(result.stdout.match(new RegExp(`${name}-ready:(\\d+)`))?.[1]));

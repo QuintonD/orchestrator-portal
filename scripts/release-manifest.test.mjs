@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
-import { brokerFiles, companionHarnessFiles, desktopTargets, releaseAssets, validateInventory, validateWorkflow, unpackBrokerArchive, validateBrokerSource, parseBadging, validateAndroid, validateCompanionUpgrade, requiredCompanionAssertions } from "./release-manifest.mjs";
+import { createHash } from "node:crypto";
+import { runInNewContext } from "node:vm";
+import { brokerFiles, companionHarnessFiles, gatewayHarnessFiles, desktopTargets, releaseAssets, validateInventory, validateWorkflow, unpackBrokerArchive, validateBrokerSource, parseBadging, validateAndroid, validateGatewayUpgrade, requiredGatewayChecks, validateCompanionUpgrade, requiredCompanionAssertions } from "./release-manifest.mjs";
 
 const commit = "a".repeat(40);
 const expected = { applicationId: "io.github.quintond.orchestrator.phonecontrol", version: "0.1.0-alpha.2", versionCode: 2, commit };
@@ -75,6 +77,91 @@ test("APK gate binds clean source, application, increasing versions and retained
   assert.throws(() => validateAndroid(candidate, { ...baseline, versionCode: 2 }, expected));
   assert.throws(() => validateAndroid(candidate, { ...baseline, debuggable: true }, expected));
 });
+const gatewayOptions = {
+  version: "0.1.0-alpha.7", previousVersion: "0.1.0-alpha.6",
+  artifacts: { "orchestrator-0.1.0-alpha.7.apk": "1".repeat(64), "orchestrator-0.1.0-alpha.7-win32-x64.zip": "2".repeat(64), "orchestrator-0.1.0-alpha.6.apk": "3".repeat(64), "orchestrator-0.1.0-alpha.6-win32-x64.zip": "4".repeat(64) },
+  harnessSources: gatewayHarnessFiles.map(path => ({ path, sha256: "5".repeat(64) })),
+};
+function gatewayProof() {
+  return { ...structuredClone(gatewayOptions), target: "win32-x64", serial: "emulator-5586", passed: true,
+    checks: requiredGatewayChecks(gatewayOptions.previousVersion), recordPreservation: { preservedRecords: 8, migratedCompass: true, refreshedReports: 1 } };
+}
+test("complete gateway proof binds eleven actual harness checks, records and all four artifacts", async () => {
+  const harness = await readFile(new URL("../tests/release-upgrade.mjs", import.meta.url), "utf8");
+  const literal = harness.match(/evidence\.checks = (\[[^\r\n]+\]);/)[1];
+  const actual = JSON.parse(JSON.stringify(runInNewContext(literal, { previousVersion: gatewayOptions.previousVersion })));
+  assert.equal(actual.length, 11); assert.deepEqual(requiredGatewayChecks(gatewayOptions.previousVersion), actual);
+  assert.deepEqual(gatewayHarnessFiles, ["tests/release-upgrade.mjs", "tests/release-upgrade-records.mjs", "tests/android/native.mjs"]);
+  validateGatewayUpgrade(gatewayProof(), gatewayOptions);
+  const unchanged = gatewayProof(); unchanged.recordPreservation = { preservedRecords: 8, migratedCompass: false, refreshedReports: 0 };
+  validateGatewayUpgrade(unchanged, gatewayOptions);
+  const midnightRefresh = gatewayProof(); midnightRefresh.recordPreservation.refreshedReports = 2;
+  validateGatewayUpgrade(midnightRefresh, gatewayOptions);
+});
+for (const [name, mutate] of [
+  ["incomplete claimed success", value => { delete value.checks; delete value.recordPreservation; }],
+  ["failed outcome", value => { value.passed = false; }],
+  ["nonboolean outcome", value => { value.passed = "true"; }],
+  ["cleanup error", value => { value.cleanupError = "unconfirmed"; }],
+  ["unknown evidence field", value => { value.continuation = {}; }],
+  ["physical target", value => { value.serial = "physical-example"; }],
+  ["unknown desktop target", value => { value.target = "../other"; }],
+  ["wrong version", value => { value.version = "0.1.0-alpha.6"; }],
+  ["wrong baseline version", value => { value.previousVersion = "0.1.0-alpha.5"; }],
+  ["missing check", value => { value.checks.pop(); }],
+  ["duplicated check", value => { value.checks.push(value.checks[0]); }],
+  ["reordered checks", value => { value.checks.reverse(); }],
+  ["substituted check", value => { value.checks[0] = "claimed complete"; }],
+  ["missing records", value => { delete value.recordPreservation; }],
+  ["empty retained records", value => { value.recordPreservation.preservedRecords = 0; }],
+  ["coerced record count", value => { value.recordPreservation.preservedRecords = "8"; }],
+  ["fractional record count", value => { value.recordPreservation.preservedRecords = 1.5; }],
+  ["unknown record field", value => { value.recordPreservation.extra = true; }],
+  ["coerced migration flag", value => { value.recordPreservation.migratedCompass = 1; }],
+  ["migration without refresh", value => { value.recordPreservation.refreshedReports = 0; }],
+  ["unbounded refresh", value => { value.recordPreservation.refreshedReports = 3; }],
+  ["coerced refresh count", value => { value.recordPreservation.refreshedReports = "1"; }],
+  ["negative refresh count", value => { value.recordPreservation.refreshedReports = -1; }],
+  ["missing source binding", value => { delete value.harnessSources; }],
+  ["changed harness source", value => { value.harnessSources[0].sha256 = "6".repeat(64); }],
+  ["changed native helper source", value => { value.harnessSources[2].sha256 = "6".repeat(64); }],
+  ["missing native helper", value => { value.harnessSources.pop(); }],
+  ["unknown source binding", value => { value.harnessSources.push({ path: "other.mjs", sha256: "6".repeat(64) }); }],
+  ["extra artifact", value => { value.artifacts["other.zip"] = "6".repeat(64); }],
+]) test(`gateway proof rejects ${name}`, () => { const value = gatewayProof(); mutate(value); assert.throws(() => validateGatewayUpgrade(value, gatewayOptions)); });
+for (const name of Object.keys(gatewayOptions.artifacts)) test(`gateway proof rejects missing or substituted ${name}`, () => {
+  const changed = gatewayProof(); changed.artifacts[name] = "6".repeat(64);
+  assert.throws(() => validateGatewayUpgrade(changed, gatewayOptions));
+  delete changed.artifacts[name]; assert.throws(() => validateGatewayUpgrade(changed, gatewayOptions));
+});
+test("gateway proof requires independently supplied complete artifact and source identities", () => {
+  const options = structuredClone(gatewayOptions); delete options.artifacts["orchestrator-0.1.0-alpha.6-win32-x64.zip"];
+  assert.throws(() => validateGatewayUpgrade(gatewayProof(), options));
+  options.artifacts = gatewayOptions.artifacts; options.harnessSources[0].sha256 = "invalid";
+  assert.throws(() => validateGatewayUpgrade(gatewayProof(), options));
+});
+test("gateway harness refuses changed input bytes or helper sources before recording success", async () => {
+  const source = await readFile(new URL("../tests/release-upgrade.mjs", import.meta.url), "utf8");
+  // Exercise the actual input-binding code with synthetic reads, without loading
+  // the harness's emulator, browser, signing or application operations.
+  const capture = source.slice(source.indexOf("const sha = "), source.indexOf("const sums = "));
+  const verify = source.slice(source.indexOf("  assert.deepEqual(await snapshotArtifacts()"), source.indexOf("  evidence.passed = true;"));
+  assert.ok(capture.includes("const initialArtifacts")); assert.ok(verify.includes("evidence.artifacts = initialArtifacts"));
+  const paths = { previousArchive: "old.zip", nextArchive: "new.zip", previousApk: "old.apk", nextApk: "new.apk" };
+  const names = [...Object.values(paths), ...gatewayHarnessFiles];
+  for (const changed of [undefined, ...names]) {
+    const files = new Map(names.map(name => [name, Buffer.from(`synthetic ${name}`)]));
+    const evidence = {};
+    const result = runInNewContext(`(async () => { ${capture}\n await mutate(); ${verify}\n })()`, {
+      ...paths, version: gatewayOptions.version, path: { basename: name => name }, createHash, assert, evidence,
+      readFile: async name => { assert.ok(files.has(name)); return files.get(name); },
+      mutate: async () => { if (changed) files.set(changed, Buffer.from("changed bytes")); },
+    });
+    if (changed) { await assert.rejects(result, /changed during QA/); assert.equal(evidence.artifacts, undefined); }
+    else { await result; assert.equal(Object.keys(evidence.artifacts).length, 4); }
+  }
+});
+
 test("full in-place companion upgrade accepts exact inspected clean candidate and retained baseline", () => validateCompanionUpgrade(proof(), baseline, candidate, tooling));
 for (const [name, mutate] of [
   ["failed run", value => { value.status = "failed"; }],

@@ -81,6 +81,14 @@ export async function downloadPinnedArchive(pin, archive, { signal, onResponse =
   if (size !== pin.bytes || sha256 !== pin.sha256) throw new CiError('pinned_emulator_checksum_mismatch');
   return { ...metadata, receivedBytes: size, sha256 };
 }
+export async function verifyPinnedEmulator(binary, command) {
+  // The GUI version command selects a different QEMU binary and can require
+  // desktop audio libraries that the headless CI launch does not use.
+  const result = await command(binary, ['-no-window', '-version'], { allowFailure: true });
+  if (!result.ok) { const error = new CiError('pinned_emulator_version_command_failed'); error.exitCode = result.exitCode; error.timedOut = result.timedOut; throw error; }
+  if (!result.stdout.includes(`Android emulator version ${emulatorPin.version} (build_id ${emulatorPin.build})`)) throw new CiError('pinned_emulator_version_mismatch');
+  return { version: emulatorPin.version, build: emulatorPin.build };
+}
 export async function runLifecycle(operations, tests, { signal } = {}) {
   let failure;
   try {
@@ -112,7 +120,7 @@ export function executeCiCommand(tool, argv, { cwd, env, timeout = 15000, input,
     child.on('close', (code) => {
       clearTimeout(timer); clearTimeout(escalationTimer); signal?.removeEventListener('abort', cancel); if (processGroup) terminate('SIGKILL');
       const ok = code === 0 && !failed && !timedOut;
-      if (!ok && !allowFailure) { const fault = new CiError('ci_command_failed'); fault.exitCode = code; reject(fault); }
+      if (!ok && !allowFailure) { const fault = new CiError('ci_command_failed'); fault.exitCode = code; fault.timedOut = timedOut; reject(fault); }
       else resolve({ ok, stdout: Buffer.concat(stdout).toString('utf8').trim(), stderr: Buffer.concat(stderr).toString('utf8').trim(), exitCode: code, timedOut });
     });
     signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel();
@@ -159,8 +167,8 @@ export async function main(args = process.argv.slice(2)) {
         evidence.stage = 'extract_pinned_emulator'; await save();
         const runtime = path.join(work, 'runtime'); await mkdir(runtime); await command('unzip', ['-q', archive, '-d', runtime], { timeout: 60000 });
         const binary = path.join(runtime, 'emulator/emulator');
-        const version = await command(binary, ['-version']);
-        if (!version.stdout.includes(`Android emulator version ${emulatorPin.version} (build_id ${emulatorPin.build})`)) throw new CiError('pinned_emulator_version_mismatch');
+        evidence.stage = 'verify_pinned_emulator'; await save();
+        evidence.emulatorVerification = await verifyPinnedEmulator(binary, command);
         evidence.stage = 'create_owned_avd'; await save();
         await command(path.join(sdk, 'cmdline-tools/latest/bin/avdmanager'), ['create', 'avd', '--name', options.name, '--package', `system-images;android-${options.image};google_apis;x86_64`, '--device', 'pixel_7', '--path', avdPath], { input: 'no\n', timeout: 60000 });
         if (!below(work, await realpath(avdPath))) throw new CiError('unowned_avd_path');
@@ -210,7 +218,11 @@ export async function main(args = process.argv.slice(2)) {
       },
     }, options.tests, { signal: abort.signal });
     evidence.status = 'passed';
-  } catch (error) { evidence.status = 'failed'; evidence.failure = error instanceof CiError ? error.code : abort.signal.aborted ? 'ci_cancelled' : 'ci_setup_failed'; process.exitCode = 1; }
+  } catch (error) {
+    evidence.status = 'failed'; evidence.failure = error instanceof CiError ? error.code : abort.signal.aborted ? 'ci_cancelled' : 'ci_setup_failed';
+    if (error instanceof CiError && Object.hasOwn(error, 'exitCode')) evidence.commandFailure = { exitCode: Number.isInteger(error.exitCode) ? error.exitCode : null, timedOut: error.timedOut === true };
+    process.exitCode = 1;
+  }
   finally { evidence.finishedAt = new Date().toISOString(); await save(); process.removeListener('SIGTERM', cancel); process.removeListener('SIGINT', cancel); }
   console.log(JSON.stringify({ status: evidence.status, failure: evidence.failure, tests: evidence.tests, cleanup: evidence.cleanup, results: path.relative(root, path.join(output, 'results.json')) }));
 }

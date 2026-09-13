@@ -24,7 +24,9 @@ directory without overwriting the SDK emulator. Its Linux archive is pinned to
 331232577 bytes and SHA-256
 `1eade4cf2df6ea8eeead4902c635897ba12aaa32aac4389eaae0fdb498a5b830`, verified against
 [Google's emulator archive](https://developer.android.com/studio/emulator_archive).
-It also checks the executable's reported version and build ID before launch.
+It also checks the executable's reported version and build ID before launch,
+using `-no-window -version` so verification selects the same headless runtime
+as the actual CI launch. A nonzero or timed-out version command still fails.
 The size and checksum apply to the decoded ZIP. HTTP `Content-Length` is
 informational because Google can gzip the transfer or omit that header. The
 runner records only the HTTP status, advertised length and a fixed encoding
@@ -64,6 +66,17 @@ original guard incorrectly compared those different lengths. Local HTTP tests
 now cover gzip and chunked delivery, failed or partial HTTP responses, incorrect
 checksums, short or oversized decoded bodies, and cancellation. Exact decoded
 size and SHA-256 checks remain mandatory.
+
+The following CI run verified the download on all three images but failed in
+the combined extraction/version stage, again before creating an AVD. An owned
+Ubuntu 24.04 reproduction showed that plain `-version` selected the GUI QEMU
+binary and failed on an unavailable PulseAudio library; `-no-window -version`
+reported the pinned version and exited successfully using the same archive.
+The runner now records extraction and version verification as separate stages,
+with only the exit code and timeout flag for a failed setup command. The prior
+CI artifact did not retain the exact subcommand or library error, so that
+reproduction explains the fixed setup dependency without claiming a native
+test failure or a successful emulator boot.
 
 `test-results/phone-control/emulator-ci-<image>-<run-id>-<attempt>/results.json`
 contains typed readiness samples, stage, elapsed time, test exit codes, cleanup

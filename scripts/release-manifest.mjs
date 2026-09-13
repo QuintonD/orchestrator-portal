@@ -12,6 +12,7 @@ export const desktopTargets = ["win32-x64", "win32-arm64", "darwin-x64", "darwin
 // alpha 1 build. It was not separately published. Update deliberately per release.
 export const previousCompanionVersion = "0.1.0-alpha.1";
 export const companionHarnessFiles = ["tests/phone-control/upgrade.mjs", "tests/phone-control/upgrade-evidence.mjs", "tests/phone-control/upgrade/UpgradeProbe.java"];
+export const gatewayHarnessFiles = ["tests/release-upgrade.mjs", "tests/release-upgrade-records.mjs", "tests/android/native.mjs"];
 export const brokerFiles = ["ATTRIBUTION.md", "LICENSE", "NOTICE", "README.md", "package.json", "bin/phone-control.mjs", "src/broker.mjs", "src/client.mjs", "src/client.d.mts", "src/mcp.mjs", "src/pilot.mjs", "src/pilot.d.mts", "src/security.mjs", "src/validation.mjs", "src/response-proof.mjs", "src/task.mjs", "src/task.d.mts", "deployment/Dockerfile", "deployment/host.mjs", "deployment/guest.mjs", "deployment/protocol.mjs"].sort();
 export const requiredCompanionAssertions = [
   "emulator_boot_completed", "target_is_emulator", "supported_android_version", "evidence_directory_not_reused",
@@ -100,6 +101,31 @@ export function validateAndroid(candidate, baseline, expected) {
   assert.ok(candidate.versionCode > baseline.versionCode, "Android versionCode must increase");
   assert.ok(Number(candidate.versionName.split(".").at(-1)) > Number(baseline.versionName.split(".").at(-1)), "Displayed alpha version must increase");
   assert.deepEqual(candidate.source, { commit: expected.commit, dirty: false, variant: "Release" }, "APK must embed this clean release commit");
+}
+export function requiredGatewayChecks(previousVersion) {
+  assert.match(previousVersion, alpha);
+  return ["published input checksums", "old desktop launcher and login", "encrypted connection/message and custom assistant/report/watch/project/knowledge/layout retained", "workspace backup and unchanged master key", "SQLite integrity", "existing desktop session and theme", "exactly one Compass; precise shipped mandate migration and linked local refresh verified", `signed APK installed over ${previousVersion} without clearing or uninstalling`, "increasing versionCode and retained firstInstallTime", "phone origin and session retained", "non-debuggable APK"];
+}
+export function validateGatewayUpgrade(proof, { version, previousVersion, artifacts, harnessSources }) {
+  assert.match(version, alpha); assert.match(previousVersion, alpha);
+  assert.deepEqual(Object.keys(proof).sort(), ["version", "previousVersion", "target", "serial", "passed", "checks", "recordPreservation", "artifacts", "harnessSources"].sort(), "Only a complete gateway upgrade record without cleanup errors is accepted");
+  assert.equal(proof.passed, true); assert.equal(proof.version, version); assert.equal(proof.previousVersion, previousVersion);
+  assert.ok(desktopTargets.includes(proof.target)); assert.match(proof.serial, /^emulator-\d+$/);
+  assert.deepEqual(proof.checks, requiredGatewayChecks(previousVersion), "Every gateway upgrade check must be present in the original order");
+  const records = proof.recordPreservation;
+  assert.deepEqual(Object.keys(records).sort(), ["preservedRecords", "migratedCompass", "refreshedReports"].sort());
+  assert.ok(Number.isSafeInteger(records.preservedRecords) && records.preservedRecords > 0);
+  assert.equal(typeof records.migratedCompass, "boolean");
+  assert.ok(Number.isSafeInteger(records.refreshedReports) && records.refreshedReports >= 0 && records.refreshedReports <= 2);
+  assert.ok(!records.migratedCompass || records.refreshedReports > 0, "A migrated Compass must have a verified report refresh");
+  const extension = proof.target.startsWith("win32") ? "zip" : "tar.gz";
+  const names = [version, previousVersion].flatMap(value => [`orchestrator-${value}.apk`, `orchestrator-${value}-${proof.target}.${extension}`]).sort();
+  assert.deepEqual(Object.keys(artifacts).sort(), names, "Independently inspect all four upgrade artifacts");
+  for (const hash of Object.values(artifacts)) assert.match(hash, digest);
+  assert.deepEqual(proof.artifacts, artifacts, "The upgrade must use the exact current and prior desktop archives and APKs");
+  assert.deepEqual(harnessSources?.map(item => item.path), gatewayHarnessFiles);
+  for (const item of harnessSources) { assert.deepEqual(Object.keys(item).sort(), ["path", "sha256"]); assert.match(item.sha256, digest); }
+  assert.deepEqual(proof.harnessSources, harnessSources, "Gateway upgrade harness sources must match the clean release source");
 }
 export function validateCompanionUpgrade(proof, baseline, candidate, tooling) {
   assert.equal(proof.kind, "signed-companion-in-place-upgrade"); assert.equal(proof.status, "passed");
@@ -233,12 +259,19 @@ export async function main(args = process.argv.slice(2)) {
   validateAndroid(currentPhone, priorPhone, { applicationId: "io.github.quintond.orchestrator.phonecontrol", version: companionVersion, versionCode: Number(phoneGradle.match(/versionCode (\d+)/)[1]), commit });
   assert.equal(priorPhone.versionName, previousCompanionVersion);
   const upgrade = JSON.parse(await readFile(upgradeResults, "utf8"));
-  assert.equal(upgrade.passed, true); assert.equal(upgrade.version, version); assert.equal(upgrade.previousVersion, previousVersion);
-  assert.equal(upgrade.artifacts[apk.name], apk.sha256);
+  assert.ok(desktopTargets.includes(upgrade.target), "Upgrade must identify a supported desktop target");
   const testedDesktop = artifacts.find(item => desktopTargets.includes(upgrade.target) && item.name.includes(`-${upgrade.target}.`));
   assert.ok(testedDesktop, "Upgrade must identify a current native desktop artifact");
-  assert.equal(upgrade.artifacts[testedDesktop.name], testedDesktop.sha256);
-  assert.equal(upgrade.artifacts[path.basename(previousApk)], priorAndroid.sha256);
+  const previousDesktop = `orchestrator-${previousVersion}-${upgrade.target}.${upgrade.target.startsWith("win32") ? "zip" : "tar.gz"}`;
+  const priorDesktopHash = sha256(await readFile(path.resolve("test-results/release-assets", previousDesktop)));
+  const baselineSums = (await readFile("test-results/release-assets/SHA256SUMS.txt", "utf8")).split(/\r?\n/);
+  for (const [name, hash] of [[previousDesktop, priorDesktopHash], [path.basename(previousApk), priorAndroid.sha256]]) {
+    assert.deepEqual(baselineSums.filter(line => line.trim().split(/\s+/)[1] === name), [`${hash}  ${name}`], "Retained upgrade baselines must match their published checksum record");
+  }
+  validateGatewayUpgrade(upgrade, { version, previousVersion,
+    artifacts: { [apk.name]: apk.sha256, [testedDesktop.name]: testedDesktop.sha256, [path.basename(previousApk)]: priorAndroid.sha256, [previousDesktop]: priorDesktopHash },
+    harnessSources: await Promise.all(gatewayHarnessFiles.map(async name => ({ path: name, sha256: sha256(await readFile(name)) }))),
+  });
   const companionProofBytes = await readFile(companionUpgradeResults);
   const companionUpgrade = JSON.parse(companionProofBytes);
   const tooling = {
