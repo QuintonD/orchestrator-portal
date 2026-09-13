@@ -130,7 +130,7 @@ try {
   await device.shell(`am start -n ${pkg}/.MainActivity`);
   if (!retryPath) { await ui.fill({ desc: "Gateway address" }, url); await ui.tap({ text: "Connect to gateway" }); }
   await ui.wait({ text: "Unlock Orchestrator" });
-  await ui.fill({ clazz: "android.widget.EditText" }, password); await ui.hideKeyboard(); await ui.tap({ text: "Continue" });
+  await ui.fillPassword({ clazz: "android.widget.EditText" }, password); await ui.hideKeyboard(); await ui.tap({ text: "Continue" });
   await ui.wait({ text: "Portal", clazz: "android.widget.TextView" });
   await device.screenshot({ path: path.join(output, "android-before.png") });
   await ui.background(pkg); run("shell", "am", "force-stop", pkg);

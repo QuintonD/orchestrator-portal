@@ -1,9 +1,10 @@
 import { readEmulatorEvidence } from "./device-evidence.mjs";
 import { recoveryEvidence, recoverySummary, captureWarningCount } from "./capture-recovery-evidence.mjs";
+import { CLOCK_SAMPLE_TIMEOUT_MS, CLOCK_SAMPLE_MAX_BYTES, sampleClock, observationClockEvidence } from "./clock-evidence.mjs";
 // A real disposable Android device boundary, reached through the standalone CLI,
 // MCP and portal. Secrets stay in memory/private test files and never in output.
 import assert from "node:assert/strict";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, join, sep } from "node:path";
@@ -37,6 +38,8 @@ const captureRecoveries = [];
 const captureWarningSamples = [];
 const nativeMemory = [];
 const powerSamples = [];
+const clockSamples = [];
+let initialObservationClock;
 const phaseTimings = [];
 const harnessStarted = performance.now();
 const probeTiming = { startedMs: null, readyMs: null, exitedMs: null };
@@ -67,6 +70,12 @@ function record(name) { results.push({ name, passed: true }); phaseTimings.push(
 function samplePower(phase) {
   try { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), ...parsePowerEvidence(execFileSync("adb", ["-s", serial, "shell", "dumpsys", "power"], { encoding: "utf8", windowsHide: true, timeout: 3000, stdio: ["ignore", "pipe", "pipe"] })) }); }
   catch { powerSamples.push({ phase, elapsedMs: Math.round(performance.now() - harnessStarted), wakefulness: null, powered: null }); }
+}
+function sampleDeviceClock(phase) {
+  clockSamples.push({ phase, ...sampleClock(() => spawnSync("adb", ["-s", serial, "shell", "date", "+%s%3N"], {
+    encoding: "utf8", windowsHide: true, timeout: CLOCK_SAMPLE_TIMEOUT_MS, maxBuffer: CLOCK_SAMPLE_MAX_BYTES,
+    killSignal: "SIGKILL", stdio: ["ignore", "pipe", "pipe"],
+  })) });
 }
 function sampleCaptureWarnings(phase) {
   try {
@@ -179,6 +188,7 @@ try {
   probeTiming.readyMs = Math.round(performance.now() - harnessStarted);
   samplePower("probe_ready");
   stage = "initialize standalone broker";
+  sampleDeviceClock("probe_ready");
   await run(["init", "--dir", privateDir, "--port", "4421"]);
   const brokerPublicKey = readFileSync(join(privateDir, "broker-public.pem"), "utf8");
   process.env.PHONE_CONTROL_BROKER_PUBLIC_KEY = brokerPublicKey;
@@ -210,11 +220,19 @@ try {
   const capabilities = await run(["describe", ...args]); assert.equal(capabilities.status, "observed");
   const cliTask = (await run(["tasks-create", ...args], { deviceId: "emulator", sessionId: session.id, ttlSeconds: 60, maxActions: 2, label: "CLI fixture task" })).task;
   stage = "CLI native observation and mutation";
-  const startRead = performance.now(); const before = await run(["observe", ...args]); timings.push(performance.now() - startRead);
+  const readHostStartedAtMs = Date.now(); const startRead = performance.now();
+  const before = await run(["observe", ...args]);
+  const readFinishedMs = performance.now(); const readHostFinishedAtMs = Date.now();
+  timings.push(readFinishedMs - startRead);
+  initialObservationClock = observationClockEvidence(before.result?.capturedAt, {
+    hostStartedAtMs: readHostStartedAtMs, hostFinishedAtMs: readHostFinishedAtMs,
+    monotonicStartedMs: startRead, monotonicFinishedMs: readFinishedMs,
+  });
   assert.equal(before.status, "observed"); assert.equal(before.result.screenshot, undefined);
   const initial = count(before.result); const actionId = randomUUID();
   const actionArgs = ["fixture-increment", ...args, "--task", cliTask.id, "--observation", before.result.observationId, "--request-id", actionId];
   stage = "CLI fixture action";
+  sampleDeviceClock("before_cli_fixture_action");
   const acted = await run(actionArgs); assert.equal(acted.status, "completed");
   stage = "CLI fixture replay";
   const replayed = await run(actionArgs); assert.equal(replayed.status, "completed");
@@ -445,7 +463,7 @@ try {
     serial, apiLevel, platform, fixture, passed: results.every((item) => item.passed) && cleanup.every((item) => item.passed), results, cleanup, cliObservationWallMs: timings,
     httpObservation: { attempts: observationAttempts, treeOnly: { samplesMs: observationSamples, p50Ms: percentile(0.5), p95Ms: percentile(0.95) }, screenshots: { samplesMs: screenshotSamples, p50Ms: screenshotPercentile(0.5), p95Ms: screenshotPercentile(0.95) }, failedAttempts: observationAttempts.filter((attempt) => !attempt.observed).length, definition: "Successful owner HTTP transport plus broker and native observation, separated by pixel opt-in; failed attempts retained separately; excludes model reasoning and inter-sample delay" },
       captureRecovery: { sampledRequests: recoverySummary(observationAttempts), reportedRecoveries: captureRecoveries, warningSamples: captureWarningSamples, warningLimit: "Fixed-message counts from the sampled companion PID; log loss and other capture requests prevent per-request causal attribution. Raw logs are discarded." },
-      nativeMemory, powerSamples, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
+      nativeMemory, powerSamples, clockDiagnostics: { samples: clockSamples, initialObservation: initialObservationClock ?? null, purpose: "Read-only clock intervals; never change deadlines or authorize retries. Observation capture timing also includes read latency." }, phaseTimings, hostProbe: { ...probeTiming, ...parseHostProbeEvidence(nativeOutput, instrument?.exitCode) }, isolatedSource: { enabled: isolatedMode, ...(isolatedResult ? { sourceReported: isolatedResult, independentlyVerifiedByOwner: results.some((item) => item.passed && item.name.startsWith("Confined source SDK")) } : {}) },
     stopWallMs: stopWallMs ?? null,
     limits: ["Emulator and signed synthetic fixture only", "Two identities and CLI/MCP task equivalence; no model reasoning or parity test", "No real user accounts or external effects", "Hardware biometric and Astra model parity not established"],
   }, null, 2)); } catch { console.error("FAIL cleanup: write safe QA evidence"); process.exitCode = 1; }
