@@ -45,7 +45,7 @@
     "phone:test:isolation": "node --test components/phone-control/test/isolation-container.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "concurrently": "10.0.5",
