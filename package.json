@@ -35,7 +35,7 @@
     "test:upgrade": "node tests/release-upgrade.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "concurrently": "10.0.5",
     "cross-env": "10.1.0",
     "typescript": "7.0.2"
