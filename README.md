@@ -15,20 +15,21 @@
 
 Follow assistant conversations, review reports and their evidence, and see which decisions need your attention. Orchestrator runs on your computer, with a browser interface and an Android companion. Connected runtimes keep control of execution and permissions.
 
-**Alpha software.** Alpha 6 includes the living ecosystem avatar, source-driven motion, optional sound, and the original artwork in desktop packages. Desktop and signed Android downloads share the same release. [Compare the builds](docs/releases.md) before downloading.
+**Alpha software.** Alpha 7 adds optional Android phone control with explicit app and screenshot permissions, authenticated task execution, and an isolated source-code environment. Phone control remains experimental; physical-device acceptance is pending. Desktop and signed Android downloads share the same release. [Compare the builds](docs/releases.md) before downloading.
 
 ## Download
 
 Desktop bundles include the runtime: no Node.js, Git, or build tools needed.
 
-| Platform | Download alpha 5 | Setup |
+| Platform | Download alpha 7 | Setup |
 | --- | --- | --- |
-| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
-| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
-| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
-| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/orchestrator-0.1.0-alpha.6.apk) | [Phone setup](docs/android.md) |
+| Windows | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-win32-x64.zip) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-win32-arm64.zip) | [Windows guide](docs/desktop.md) |
+| macOS | [Apple silicon](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-darwin-arm64.tar.gz) &middot; [Intel](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-darwin-x64.tar.gz) | [Mac guide](docs/desktop.md) |
+| Linux | [Intel / AMD](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-linux-x64.tar.gz) &middot; [ARM64](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7-linux-arm64.tar.gz) | [Linux guide](docs/desktop.md) |
+| Android | [Signed alpha APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-0.1.0-alpha.7.apk) | [Phone setup](docs/android.md) |
+| Optional phone piloting | [Separate companion APK](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/phone-control-0.1.0-alpha.2.apk) &middot; [Standalone broker](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/orchestrator-phone-control-0.1.0-alpha.1.tgz) | [Control setup and limits](docs/android-phone-control.md) |
 
-**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.6/SHA256SUMS.txt) &middot; [Historical QA snapshots](docs/releases.md#android-qa-snapshots)
+**[Browse all releases, release notes, and assets](https://github.com/QuintonD/orchestrator-portal/releases)** &middot; [Checksums](https://github.com/QuintonD/orchestrator-portal/releases/download/v0.1.0-alpha.7/SHA256SUMS.txt) &middot; [Historical QA snapshots](docs/releases.md#android-qa-snapshots)
 
 Desktop bundles are portable and unsigned. The Android app connects to the gateway on your computer; it does not run assistants on your phone. There is no stable release or automatic updater yet.
 
@@ -89,4 +90,4 @@ Assistant responses remain **claimed**; a timeout can remain **unknown**. Source
 | Product direction and research | [Product direction](docs/product-direction.md) and [research index](docs/README.md#research-dossier) |
 | Private vulnerability reporting | [Security policy](SECURITY.md) |
 
-Apache-2.0 licensed. See [LICENSE](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md), and our [code of conduct](CODE_OF_CONDUCT.md).
+The portal is Apache-2.0 licensed. The separate [Phone Control components](docs/android-phone-control.md) use AGPL-3.0-only with attribution preservation; see the [licensing boundaries](docs/phone-control-licensing.md). See [LICENSE](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md), and our [code of conduct](CODE_OF_CONDUCT.md).

@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Required origin notice: see ATTRIBUTION.md.
+plugins { id 'com.android.application' }
+android {
+    namespace 'io.github.quintond.orchestrator.phonefixture'
+    compileSdk 36
+    defaultConfig { applicationId 'io.github.quintond.orchestrator.phonefixture'; minSdk 34; targetSdk 36; versionCode 1; versionName '0.1.0-alpha.1' }
+    buildTypes { debug { applicationIdSuffix '.debug' } }
+    sourceSets { main { res.srcDir "../shared-res" } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { abortOnError true; warningsAsErrors true; disable 'AndroidGradlePluginVersion' }
+}

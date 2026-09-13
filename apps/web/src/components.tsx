@@ -21,6 +21,7 @@ import {
   Orbit,
   FileCheck2,
   Activity,
+  Smartphone,
 } from "lucide-react";
 import { cx } from "./lib.js";
 import { EcosystemDock } from "./ecosystem-presence.js";
@@ -38,6 +39,7 @@ export const routes = [
   { path: "/brain", label: "Knowledge", icon: BrainCircuit },
   { path: "/insights", label: "Insights", icon: ChartNoAxesCombined },
   { path: "/connections", label: "Connections", icon: Cable },
+  { path: "/phone-control", label: "Phone control", icon: Smartphone },
   { path: "/setup", label: "Get started", icon: Check },
   { path: "/settings", label: "Settings", icon: Settings2 },
 ] as const;

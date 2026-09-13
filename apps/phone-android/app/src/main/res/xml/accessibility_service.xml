@@ -1,0 +1,9 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only; required origin notice: see ATTRIBUTION.md. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_description"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged|typeWindowContentChanged|typeViewTextChanged|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canRetrieveWindowContent="true" android:canPerformGestures="true" android:canTakeScreenshot="true"
+    android:isAccessibilityTool="false" android:notificationTimeout="0"
+    android:settingsActivity="io.github.quintond.orchestrator.phonecontrol.MainActivity" />

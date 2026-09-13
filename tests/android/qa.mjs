@@ -13,7 +13,13 @@ assert.match(serial, /^emulator-\d+$/, "QA clears the app on an emulator; physic
 const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
 assert.ok(sdk, "Set ANDROID_HOME to your Android SDK");
 const adb = path.join(sdk, "platform-tools", process.platform === "win32" ? "adb.exe" : "adb");
-const adbRun = (...args) => execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8" });
+const adbRun = (...args) => execFileSync(adb, ["-s", serial, ...args], { encoding: "utf8", timeout: 20000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+const initialDisplay = {
+  size: adbRun("shell", "wm", "size").match(/Override size: (\d+x\d+)/)?.[1] ?? "reset",
+  density: adbRun("shell", "wm", "density").match(/Override density: (\d+)/)?.[1] ?? "reset",
+  fontScale: adbRun("shell", "settings", "get", "system", "font_scale").trim(),
+};
+assert.match(initialDisplay.fontScale, /^\d+(?:\.\d+)?$/);
 const pkg = "io.github.quintond.orchestrator.debug";
 const output = path.resolve("test-results/android", `${serial}-${Date.now()}`);
 await mkdir(output, { recursive: true });
@@ -25,7 +31,9 @@ const ui = nativeControls(() => device);
 async function connectDevice() {
   const devices = await android.devices({ omitDriverInstall: true });
   await Promise.all(devices.filter(item => item.serial() !== serial).map(item => item.close()));
-  return devices.find(item => item.serial() === serial);
+  const selected = devices.find(item => item.serial() === serial);
+  selected?.setDefaultTimeout(15000);
+  return selected;
 }
 async function gateway(port, demo) {
   const child = spawn(process.execPath, ["apps/server/dist/server.js"], {
@@ -49,7 +57,11 @@ async function shot(name) {
 const nativeWait = ui.wait;
 const nativeTap = ui.tap;
 const nativeKey = ui.key;
-const nativeFillAddress = value => ui.fill({ desc: "Gateway address" }, value);
+const nativeFillAddress = async value => {
+  await ui.fill({ desc: "Gateway address" }, value);
+  // On narrow emulator profiles the keyboard covers the native Connect button.
+  await ui.hideKeyboard();
+};
 async function step(name, run) {
   await run(); results.push(name); console.log(`PASS ${name}`);
 }
@@ -57,14 +69,28 @@ async function attach(port = 4460) {
   // Playwright caches the first page for a WebView socket; replacing the native view keeps its PID.
   await device.close();
   device = await connectDevice();
+  let diagnostic = "waiting_for_webview";
   await expect.poll(async () => {
+    let timer;
     try {
-      const candidate = await (await device.webView({ pkg }, { timeout: 1500 })).page();
-      if (candidate.isClosed() || !candidate.url().startsWith(`http://127.0.0.1:${port}/`)) return false;
+      const view = await device.webView({ pkg }, { timeout: 1500 });
+      // A devtools socket may survive the WebView target. page() itself has no timeout.
+      const candidate = await Promise.race([view.page(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("empty_webview_target")), 5000); })]);
+      if (candidate.isClosed() || !candidate.url().startsWith(`http://127.0.0.1:${port}/`)) {
+        diagnostic = candidate.isClosed() ? "closed_target" : "unexpected_origin";
+        await device.close(); device = await connectDevice();
+        return false;
+      }
       page = candidate;
       return true;
-    } catch { return false; }
-  }, { timeout: 45000 }).toBe(true);
+    } catch (error) {
+      diagnostic = error.message === "empty_webview_target" ? "empty_target" : "connection_failed";
+      await device.close().catch(() => {}); device = await connectDevice();
+      return false;
+    } finally { clearTimeout(timer); }
+  }, { timeout: 45000, message: `Attach the selected gateway WebView on ${port}` }).toBe(true).catch((error) => {
+    console.error(JSON.stringify({ webViewAttach: diagnostic, port })); throw error;
+  });
   // Hosted software rendering needs a larger input-acknowledgement budget;
   // the explicit next-state assertions retain their independent deadlines.
   page.setDefaultTimeout(process.env.CI ? 30000 : 12000);
@@ -79,9 +105,10 @@ async function displayProfile(largeText) {
   await ui.background(pkg);
   await device.shell(`am force-stop ${pkg}`);
   await device.close();
-  adbRun("shell", "settings", "put", "system", "font_scale", largeText ? "1.3" : "1.0");
-  adbRun("shell", "wm", "size", largeText ? "900x1600" : "reset");
-  adbRun("shell", "wm", "density", largeText ? "400" : "reset");
+  // The host may supply a deliberate low-resolution/density profile for software rendering.
+  adbRun("shell", "settings", "put", "system", "font_scale", largeText ? "1.3" : initialDisplay.fontScale);
+  adbRun("shell", "wm", "size", largeText ? "900x1600" : initialDisplay.size);
+  adbRun("shell", "wm", "density", largeText ? "400" : initialDisplay.density);
   device = await connectDevice();
   await device.shell(`am start -n ${pkg}/io.github.quintond.orchestrator.MainActivity`);
   await attach(4461);
@@ -90,11 +117,12 @@ async function displayProfile(largeText) {
 async function navigate(name) {
   const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
   const mobile = page.getByRole("navigation", { name: "Mobile navigation", exact: true }).getByRole("button", { name, exact: true });
-  if (await mobile.isVisible()) await mobile.click();
+  // Native coordinates remain reliable after density changes; tapWeb first hit-tests the DOM target.
+  if (await mobile.isVisible()) await ui.tapWeb(page, mobile);
   else if (await page.getByRole("button", { name: "Open navigation", exact: true }).isVisible()) {
-    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
-    await page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }).click();
-  } else await page.getByRole("navigation", { name: "Primary navigation", exact: true }).getByRole("button", { name, exact: true }).click();
+    await ui.tapWeb(page, page.getByRole("button", { name: "Open navigation", exact: true }));
+    await ui.tapWeb(page, page.getByRole("complementary", { name: "All navigation" }).getByRole("button", { name: label }));
+  } else await ui.tapWeb(page, page.getByRole("navigation", { name: "Primary navigation", exact: true }).getByRole("button", { name, exact: true }));
 }
 try {
   assert.equal(adbRun("shell", "getprop", "ro.kernel.qemu").trim(), "1");
@@ -357,9 +385,21 @@ try {
     await expect(dialog).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Add connection", exact: true })).toBeFocused();
   });
+  await step("Phone control preview is reachable in WebView without device authority", async () => {
+    await navigate("Connections");
+    await ui.tapWeb(page, page.getByRole("button", { name: "Open phone control", exact: true }));
+    await expect(page.getByRole("heading", { level: 1, name: "Phone control", exact: true })).toBeVisible();
+    await expect(page.getByText("Synthetic preview", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop phone access", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Observe now", exact: true })).toBeDisabled();
+    await noOverflow();
+    await shot("21-phone-control-preview");
+    await nativeKey("Back");
+    await expect(page.getByRole("heading", { level: 1, name: "Connections", exact: true })).toBeVisible();
+  });
   await step("Large text, narrow screen and all routes remain reachable", async () => {
     await displayProfile(true);
-    for (const name of ["Portal", "Conversations", "Work", "Team", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Settings"]) {
+    for (const name of ["Portal", "Conversations", "Work", "Team", "Reports", "Councils", "Activity", "Attention", "Knowledge", "Insights", "Connections", "Phone control", "Settings"]) {
       const label = new RegExp(`^${name}(?:\\s*\\d+)?$`);
       if (!["Portal", "Work", "Team", "Reports", "Conversations"].includes(name)) {
         await ui.tapWeb(page, page.getByRole("button", { name: "Open navigation", exact: true }));
@@ -441,8 +481,8 @@ try {
 } finally {
   await writeFile(path.join(output, "results.json"), JSON.stringify({ serial, passed: results, webview: page ? await page.evaluate(() => navigator.userAgent).catch(() => "unavailable") : "unavailable" }, null, 2));
   if (device) {
-    await device.shell("wm size reset").catch(() => {}); await device.shell("wm density reset").catch(() => {});
-    await device.shell("settings put system font_scale 1.0").catch(() => {});
+    await device.shell(`wm size ${initialDisplay.size}`).catch(() => {}); await device.shell(`wm density ${initialDisplay.density}`).catch(() => {});
+    await device.shell(`settings put system font_scale ${initialDisplay.fontScale}`).catch(() => {});
     await device.shell("settings put system user_rotation 0").catch(() => {});
     await device.shell("settings put system accelerometer_rotation 1").catch(() => {});
     await device.close();

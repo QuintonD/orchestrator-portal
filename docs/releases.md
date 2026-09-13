@@ -1,11 +1,12 @@
 # Releases and upgrades
 
-**Orchestrator is still alpha.** [Alpha 6](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.6) includes the living ecosystem avatar and restores its original PNG in desktop packages. Each distribution contains six desktop bundles and a signed APK from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
+**Orchestrator is still alpha.** [Alpha 7](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.7) adds optional Android phone control, authenticated task execution and an isolated source-code environment. The separate Phone Control companion remains experimental; emulator evidence does not establish physical-device acceptance. This distribution contains six desktop bundles, signed gateway and companion APKs, and the standalone broker package from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
 
 ## Which version to use
 
 | Version | Status |
 | --- | --- |
+| `0.1.0-alpha.7` | Optional Phone Control companion and scoped broker; task reservations, screenshot grants, signed responses and confined source programs |
 | `0.1.0-alpha.6` | Original artwork included in desktop packages; packaged image MIME and byte checks |
 | `0.1.0-alpha.5` | Living ecosystem avatar and optional sound; desktop packages omitted the original comparison PNG; upgrade baseline for alpha 6 |
 | `0.1.0-alpha.4` | Previous alpha: subscription/local model API connections and mobile connection-name layout fix; upgrade baseline for alpha 5 |
@@ -25,8 +26,8 @@ The owner confirmed that the product remains alpha. The corrective commit and th
 ## Upgrade without losing your workspace
 
 1. Stop the existing gateway. Back up its entire workspace directory, including the database and encryption key. Keep any externally supplied master key.
-2. Extract the alpha 6 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
-3. Install the signed alpha 6 APK over the signed alpha 5 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances from 7 to 8. See [Android setup](android.md).
+2. Extract the alpha 7 desktop archive into a new program directory. Launch it with the same workspace path and configuration. The default desktop data directory is independent of the program folder. See [desktop upgrades](desktop.md#workspace-files-and-upgrades).
+3. Install the signed alpha 7 APK over the signed alpha 6 app. Do not uninstall or clear app data. The application ID and signing identity are retained; Android `versionCode` advances from 8 to 9. See [Android setup](android.md).
 4. Check your records, connections and settings before retiring the previous program. Rollback means restoring the stopped pre-upgrade workspace backup with its matching key and previous program; database downgrade compatibility is not promised.
 
 Updating only the phone cannot upgrade the gateway's features. There is no automatic updater. A source installation must keep its existing `ORCHESTRATOR_DATA_DIR`; switching launch methods without specifying that path can open a different, empty workspace.
@@ -42,10 +43,23 @@ The two old QA snapshots are retained with their original tags and assets for re
 - Remain on `0.1.0-alpha.N` until the owner explicitly changes release stage. Debug variants add `-qa`; commit hashes identify snapshots, not maturity levels.
 - Every release is a new immutable tag on reviewed `main`, with an increasing Android version code and the original signed application identity.
 - Run `npm run release:check`, local functional/security/browser checks, native Android QA, desktop packaging/smoke, and `npm run test:upgrade` against the prior published desktop archive and signed APK. Record exact evidence and limitations in the PR and release.
-- After merge, build a fresh signed APK from the released commit. Obtain all six desktop archives from the successful Desktop gateway workflow for that same commit. Verify checksums and native smoke results. Stage the complete asset set in a draft release; publish only once every platform and upgrade check passes.
-- Attach `SHA256SUMS.txt`, the signed APK, all six desktop archives, and a release manifest mapping artifacts to the commit and CI runs. Never substitute an older APK or use a debug snapshot as the signed distribution.
+- After merge, build fresh signed gateway and Phone Control companion APKs from the clean released commit. Obtain all six desktop archives from the successful Desktop gateway workflow for that commit. The separate Phone Control workflow must also pass on `main`, including container isolation, broker package checks and native emulator QA. The standalone broker archive must match its package QA artifact from that workflow and every allowlisted source file in the clean checkout.
+- Run a new complete companion in-place upgrade against the exact fresh release APK. Retain the signed pre-change companion alpha 1 baseline at `test-results/release-assets/phone-control-0.1.0-alpha.1.apk`; this baseline was not separately published. `previousCompanionVersion` in the manifest script names this explicit baseline. Preserve its signing identity, application ID, settings and installation identity. Continuation-only verifier records and earlier APK digests cannot satisfy the release gate.
+- Stage exactly nine distributions: six desktop archives, `orchestrator-0.1.0-alpha.7.apk`, `phone-control-0.1.0-alpha.2.apk`, and `orchestrator-phone-control-0.1.0-alpha.1.tgz`. Attach `SHA256SUMS.txt`, `SBOM.cdx.json` and a release manifest mapping those artifacts to source and CI runs. Keep upgrade evidence outside the asset staging directory. Unknown staged files and distribution extensions are rejected. Never substitute an older APK or use a debug snapshot as the signed distribution.
+- Keep the six CI-produced desktop `.sha256` sidecars in staging for the manifest gate. Publish an explicit list of the nine distributions and three metadata files; the staging sidecars are not additional release downloads. The gateway upgrade harness must use the exact CI archive and its sidecar at `dist/desktop/`, with the prior published desktop archive, APK and `SHA256SUMS.txt` retained at `test-results/release-assets/`.
 - Preserve historical tags/assets and annotate superseded release descriptions. Source merging, QA artifact creation and distribution publication are distinct steps; report completion only after downloadable assets exist.
 
-With the complete asset set staged, run `node scripts/release-manifest.mjs <assets-directory> <CI-run-id> <desktop-run-id> <upgrade-results.json>`. It checks the clean main commit, downloads the named workflow's desktop artifacts to compare bytes, verifies the APK's embedded commit/version/signature, and requires successful upgrade evidence matching the staged APK and native desktop archive before writing the manifest and checksums. Android build tools 35.0.0 and JDK tooling must be installed. Keep the generated release manifest with the release.
+With the complete asset set staged in a clean release checkout, generate its SBOM and then run the manifest gate:
 
-See [alpha 6 validation](alpha-6-validation.md) for this release's evidence and [alpha 5 validation](alpha-5-validation.md) for the previous release.
+```text
+node scripts/release-sbom.mjs <assets-directory>
+node scripts/release-manifest.mjs <assets-directory> <CI-run-id> <desktop-run-id> <gateway-upgrade-results.json> <phone-control-run-id> <companion-upgrade-results.json>
+```
+
+The gate checks the clean fetched `main` commit and all three successful workflow identities. It downloads desktop and broker package QA artifacts to compare bytes; checks both APKs against the fresh local release builds, embedded source commit, version and retained signing identities; and requires complete upgrade evidence for the exact staged artifacts. Companion proof must show the same installation and settings snapshot, retained permissions, and rejection of the old active authority after the update. It must contain the original full-run assertion sequence, hashes of the retained probe APK and current fixture APK, and harness/probe source hashes matching the clean checkout. Canonical APK legal bytes are checked by the release build's `verifyReleaseArtifact` task; the manifest separately checks all broker archive files, including its legal notices, declarations and isolated deployment sources. It verifies SBOM source/artifact/file digests before writing the manifest and checksums. Android build tools 35.0.0 and JDK tooling must be installed, with `ANDROID_HOME` and `JAVA_HOME` set. Keep the generated manifest and SBOM with the release.
+
+Gateway proof must contain the original eleven checks, its typed record-preservation result, an emulator serial, no cleanup error, all four current/prior desktop and APK hashes, and source hashes for the upgrade harness and both local helpers. The harness records input hashes before extraction or installation and refuses changes before completion. Older records without source hashes remain historical evidence; run the harness again after merge. The companion upgrade harness currently runs on Windows and also requires Android build tools 36.0.0, platform 36 and a freshly built debug fixture APK. Build that fixture before the final signed companion build, and retain the generated upgrade probe beside its results. Run `npm ci` before SBOM generation so installed dependency metadata matches the lockfile.
+
+Run `npm run release:test` for the release gate's inventory, version, source-binding, archive-path and invalid-proof checks. These tests supplement the full post-merge artifact and upgrade gate; they do not establish physical-device acceptance or independent task-outcome verification.
+
+See [alpha 7 validation](alpha-7-validation.md) for this release's evidence and [alpha 6 validation](alpha-6-validation.md) for the previous release.

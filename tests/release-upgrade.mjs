@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { chromium, _android as android, expect } from "@playwright/test";
 import { nativeControls } from "./android/native.mjs";
+import { verifyUpgradeRecords } from "./release-upgrade-records.mjs";
 
 const metadata = JSON.parse(await readFile("package.json", "utf8"));
 const version = metadata.version;
@@ -36,6 +37,10 @@ if (retryPath) {
   run("shell", "am", "force-stop", pkg);
 } else assert.ok(!run("shell", "pm", "list", "packages", pkg).split(/\r?\n/).includes(`package:${pkg}`), "Use a fresh emulator; failed pre-upgrade fixtures may be retried explicitly without clearing data");
 const sha = async (file) => createHash("sha256").update(await readFile(file)).digest("hex");
+const snapshotArtifacts = async () => Object.fromEntries(await Promise.all([previousArchive, nextArchive, previousApk, nextApk].map(async file => [file === nextApk ? `orchestrator-${version}.apk` : path.basename(file), await sha(file)])));
+const snapshotHarness = async () => Promise.all(["tests/release-upgrade.mjs", "tests/release-upgrade-records.mjs", "tests/android/native.mjs"].map(async file => ({ path: file, sha256: await sha(file) })));
+// Bind bytes before extraction or installation, then refuse changes during QA.
+const initialArtifacts = await snapshotArtifacts(); const initialHarness = await snapshotHarness();
 const sums = await readFile(path.join(assets, "SHA256SUMS.txt"), "utf8");
 for (const file of [previousArchive, previousApk]) assert.ok(sums.includes(`${await sha(file)}  ${path.basename(file)}`), "published baseline checksum");
 assert.equal(await sha(nextArchive), (await readFile(`${nextArchive}.sha256`, "utf8")).split(" ")[0]);
@@ -53,7 +58,9 @@ const url = "http://127.0.0.1:4482";
 const env = { ...process.env, ORCHESTRATOR_DATA_DIR: data, ORCHESTRATOR_PORT: "4482", ORCHESTRATOR_ALLOWED_ORIGINS: url };
 for (const key of ["ORCHESTRATOR_MASTER_KEY", "ORCHESTRATOR_DEMO", "NODE_OPTIONS", "NODE_PATH"]) delete env[key];
 let child, browser, device;
-const evidence = { version, previousVersion, target, serial, passed: false, checks: [] };
+const evidence = { version, previousVersion, target, serial, passed: false, checks: [],
+  harnessSources: initialHarness,
+};
 async function start(bundle) {
   const entry = path.join(bundle, process.platform === "win32" ? "Orchestrator.cmd" : process.platform === "darwin" ? "Orchestrator.command" : "orchestrator");
   child = process.platform === "win32"
@@ -103,7 +110,7 @@ try {
   const layout = JSON.parse(db.prepare("SELECT config_json FROM dashboard_layouts").get().config_json);
   layout.widgets.reverse(); layout.widgets[0].visible = !layout.widgets[0].visible;
   db.prepare("UPDATE dashboard_layouts SET config_json=?").run(JSON.stringify(layout));
-  const tables = ["users", "connectors", "messages", "knowledge_documents", "projects", "dashboard_layouts", "alpha_records"];
+  const tables = ["users", "connectors", "messages", "knowledge_documents", "projects", "attention_items", "dashboard_layouts", "alpha_records"];
   db.close();
   const key = await readFile(path.join(data, "master.key"));
   await start(oldBundle);
@@ -136,6 +143,7 @@ try {
   const before = Object.fromEntries(tables.map(table => [table, baseline.prepare(`SELECT * FROM ${table}`).all()]));
   baseline.close();
   await cp(data, path.join(output, "backup"), { recursive: true });
+  const candidateStartedAt = new Date().toISOString();
   await start(newBundle);
   assert.equal((await (await fetch(`${url}/healthz`)).json()).version, version);
   assert.equal((await api("/api/auth/status")).authenticated, true, "existing gateway session");
@@ -164,14 +172,21 @@ try {
   assert.deepEqual(await readFile(path.join(data, "master.key")), key);
   const upgraded = new DatabaseSync(path.join(data, "orchestrator.db"));
   assert.equal(upgraded.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
-  for (const table of tables) {
-    const after = upgraded.prepare(`SELECT * FROM ${table}`).all();
-    for (const row of before[table]) assert.ok(after.some(candidate => JSON.stringify(candidate) === JSON.stringify(row)), `${table}: original record preserved byte-for-byte`);
-  }
+  const after = Object.fromEntries(tables.map(table => [table, upgraded.prepare(`SELECT * FROM ${table}`).all()]));
+  const oldCatalog = await import(pathToFileURL(path.join(oldBundle, "packages/contracts/dist/index.js")));
+  const currentCatalog = await import(pathToFileURL(path.join(newBundle, "packages/contracts/dist/index.js")));
+  const { defaultMandatesV1 } = await import(pathToFileURL(path.join(newBundle, "apps/server/dist/defaults-v1.js")));
+  evidence.recordPreservation = verifyUpgradeRecords(before, after, { open: value => vault.open(value),
+    oldTemplate: oldCatalog.assistantTemplates.find(template => template.id === "workspace-brief"),
+    currentTemplate: currentCatalog.assistantTemplates.find(template => template.id === "workspace-brief"),
+    modelGuidanceVersion: currentCatalog.modelGuidanceVersion, legacyMandateSha256: defaultMandatesV1["workspace-brief"],
+    startedAt: candidateStartedAt, finishedAt: new Date().toISOString() });
   assert.equal(vault.open(upgraded.prepare("SELECT body_encrypted FROM messages WHERE id='message-fixture'").get().body_encrypted), "Preserve this conversation");
   upgraded.close();
-  evidence.checks = ["published input checksums", "old desktop launcher and login", "encrypted connection/message and custom assistant/report/watch/project/knowledge/layout retained", "workspace backup and unchanged master key", "SQLite integrity", "existing desktop session and theme", "exactly one Compass", `signed APK installed over ${previousVersion} without clearing or uninstalling`, "increasing versionCode and retained firstInstallTime", "phone origin and session retained", "non-debuggable APK"];
-  evidence.artifacts = Object.fromEntries(await Promise.all([previousArchive, nextArchive, previousApk, nextApk].map(async file => [file === nextApk ? `orchestrator-${version}.apk` : path.basename(file), await sha(file)])));
+  evidence.checks = ["published input checksums", "old desktop launcher and login", "encrypted connection/message and custom assistant/report/watch/project/knowledge/layout retained", "workspace backup and unchanged master key", "SQLite integrity", "existing desktop session and theme", "exactly one Compass; precise shipped mandate migration and linked local refresh verified", `signed APK installed over ${previousVersion} without clearing or uninstalling`, "increasing versionCode and retained firstInstallTime", "phone origin and session retained", "non-debuggable APK"];
+  assert.deepEqual(await snapshotArtifacts(), initialArtifacts, "Upgrade artifact bytes changed during QA");
+  assert.deepEqual(await snapshotHarness(), initialHarness, "Upgrade harness sources changed during QA");
+  evidence.artifacts = initialArtifacts;
   evidence.passed = true;
   console.log("PASS", evidence.checks.join("; "));
 } finally {

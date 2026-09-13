@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Required origin notice: see ATTRIBUTION.md.
+plugins { id 'com.android.application' }
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+if (releaseRequested && (!System.getenv('PHONE_ANDROID_KEYSTORE') || !System.getenv('PHONE_ANDROID_KEY_PASSWORD'))) {
+    throw new GradleException('Phone release requires PHONE_ANDROID_KEYSTORE and PHONE_ANDROID_KEY_PASSWORD; use a stable dedicated signing key.')
+}
+android {
+    namespace 'io.github.quintond.orchestrator.phonecontrol'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'io.github.quintond.orchestrator.phonecontrol'
+        minSdk 34
+        targetSdk 36
+        versionCode 2
+        versionName '0.1.0-alpha.2'
+        testInstrumentationRunner 'io.github.quintond.orchestrator.phonecontrol.SmokeTest'
+    }
+    signingConfigs {
+        phone {
+            if (System.getenv('PHONE_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('PHONE_ANDROID_KEYSTORE'))
+                storePassword System.getenv('PHONE_ANDROID_KEY_PASSWORD')
+                keyAlias System.getenv('PHONE_ANDROID_KEY_ALIAS') ?: 'phone-control'
+                keyPassword System.getenv('PHONE_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-qa' }
+        release { signingConfig signingConfigs.phone; minifyEnabled false; debuggable false }
+    }
+    sourceSets {
+        main { assets.srcDir "$buildDir/generated/legal"; assets.srcDir "$buildDir/generated/releaseIdentity"; res.srcDir "../shared-res" }
+        androidTest.java.srcDir 'src/qa/java'
+        testDebug.java.srcDir 'src/qa/java'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint {
+        abortOnError true
+        warningsAsErrors true
+        disable 'AndroidGradlePluginVersion'
+    }
+}
+tasks.register('prepareLegalAssets', Copy) {
+    from(rootProject.projectDir) { include 'LICENSE', 'NOTICE', 'ATTRIBUTION.md', 'THIRD_PARTY_NOTICES.md' }
+    into("$buildDir/generated/legal")
+}
+tasks.named('preBuild').configure { dependsOn('prepareLegalAssets') }
+['Debug', 'Release'].each { variant ->
+    tasks.register("verify${variant}Artifact") {
+        dependsOn("assemble${variant}")
+        doLast {
+            def apk = file("$buildDir/outputs/apk/${variant.toLowerCase()}/app-${variant.toLowerCase()}.apk")
+            new java.util.zip.ZipFile(apk).withCloseable { zip ->
+                ['LICENSE', 'NOTICE', 'ATTRIBUTION.md'].each { name ->
+                    def entry = zip.getEntry("assets/$name")
+                    if (entry == null || !java.util.Arrays.equals(zip.getInputStream(entry).bytes, new File(rootProject.projectDir, name).bytes)) {
+                        throw new GradleException("Packaged $name is missing or differs from canonical source")
+                    }
+                }
+                def identity = file("$buildDir/generated/releaseIdentity/release-identity.json")
+                def entry = zip.getEntry('assets/release-identity.json')
+                if (project.hasProperty('requireReleaseIdentity') && (!identity.exists() || entry == null)) throw new GradleException('Release identity is required')
+                if (identity.exists() && (entry == null || !java.util.Arrays.equals(zip.getInputStream(entry).bytes, identity.bytes))) throw new GradleException('Packaged release identity differs from generated source')
+            }
+            logger.lifecycle("Verified ${variant.toLowerCase()} APK legal notices and available release identity")
+        }
+    }
+}
+dependencies { testImplementation 'junit:junit:4.13.2' }

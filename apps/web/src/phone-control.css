@@ -1,0 +1,48 @@
+.phone-control { display: grid; gap: 24px; }
+.phone-control .page-header { margin-bottom: 0; }
+.phone-control .card { display: grid; align-content: start; gap: 18px; min-width: 0; }
+.phone-status { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line-strong); padding-bottom: 18px; }
+.phone-status span { margin-left: auto; color: var(--ink-soft); font-size: 13px; }
+.phone-grid, .phone-pilot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.phone-setup, .phone-scope-form { border: 1px solid var(--line-strong); border-radius: 10px; padding: 18px; }
+.phone-setup summary, .phone-scope-form summary { font-weight: 500; }
+.phone-setup ol { padding-left: 24px; display: grid; gap: 12px; }
+.phone-setup p, .phone-scope-form form { margin-top: 16px; }
+.phone-control fieldset { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 16px; }
+.phone-label { display: grid; gap: 8px; font-size: 13px; }
+.phone-label input, .phone-label select, .phone-label textarea { width: 100%; min-width: 0; padding: 10px 12px; }
+.phone-label textarea { resize: vertical; }
+.phone-control .phone-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border: 1px solid var(--line); padding: 12px; border-radius: 8px; }
+.phone-methods legend { padding: 0 6px; color: var(--ink-soft); font-size: 13px; }
+.phone-check { display: flex; align-items: center; gap: 9px; font-size: 13px; overflow-wrap: anywhere; }
+.phone-check input { width: 17px; height: 17px; flex: 0 0 17px; accent-color: var(--ink); }
+.phone-scope { display: grid; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+.phone-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.phone-danger { border: 1px solid var(--danger); color: var(--danger); background: var(--danger-soft); }
+.phone-grants { display: grid; gap: 16px; }
+.phone-grant { display: flex; align-items: start; gap: 18px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 18px; }
+.phone-grant p { font-size: 13px; color: var(--ink-soft); margin-top: 5px; }
+.phone-secret { display: grid; gap: 16px; background: var(--surface-muted); padding: 20px; border-radius: 10px; }
+.phone-evidence { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.phone-screen { display: block; max-height: 600px; max-width: 100%; height: auto; margin: 0 auto; cursor: crosshair; border: 1px solid var(--line-strong); border-radius: 8px; }
+.phone-evidence figcaption { margin-top: 10px; font-size: 12px; color: var(--ink-soft); }
+.phone-empty { display: grid; align-items: center; min-height: 180px; padding: 24px; text-align: center; background: var(--surface-muted); border-radius: 10px; color: var(--ink-soft); }
+.phone-action-form { display: grid; gap: 16px; align-content: start; border-left: 1px solid var(--line); padding-left: 24px; }
+.phone-action-form > p { font-size: 13px; color: var(--ink-soft); }
+.phone-coordinates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.phone-tree, .phone-receipts, .phone-apps { list-style: none; padding: 0; display: grid; gap: 12px; margin: 16px 0 0; }
+.phone-tree { max-height: 350px; overflow: auto; }
+.phone-tree li { display: grid; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; overflow-wrap: anywhere; }
+.phone-tree small, .phone-receipts small { color: var(--ink-soft); overflow-wrap: anywhere; }
+.phone-receipts li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.phone-receipts li > div { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.phone-receipts time { color: var(--ink-soft); font-size: 12px; margin-left: auto; }
+.phone-receipts p { font-size: 13px; margin-top: 8px; }
+.phone-apps li { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+@media (max-width: 800px) {
+  .phone-grid, .phone-pilot { grid-template-columns: 1fr; }
+  .phone-action-form { border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; }
+  .phone-status span { margin-left: 0; }
+  .phone-grant { flex-direction: column; }
+}
+@media (max-width: 400px) { .phone-control .phone-methods { grid-template-columns: 1fr; } }

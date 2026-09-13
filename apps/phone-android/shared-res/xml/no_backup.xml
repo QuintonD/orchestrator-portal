@@ -1,0 +1,5 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only; required origin notice: see ATTRIBUTION.md. -->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true"><exclude domain="root" path="." /><exclude domain="sharedpref" path="." /></cloud-backup>
+    <device-transfer><exclude domain="root" path="." /><exclude domain="sharedpref" path="." /></device-transfer>
+</data-extraction-rules>

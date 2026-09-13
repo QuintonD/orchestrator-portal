@@ -1,0 +1,2 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only; required origin notice: see ATTRIBUTION.md. -->
+<resources><item type="id" name="increment" /><item type="id" name="count" /><item type="id" name="gesture_pad" /><item type="id" name="gesture_status" /><item type="id" name="scroll_document" /><item type="id" name="semantic_check" /><item type="id" name="lifecycle_status" /><item type="id" name="lifecycle_check" /><item type="id" name="lifecycle_clicks" /><item type="id" name="lifecycle_input" /></resources>
