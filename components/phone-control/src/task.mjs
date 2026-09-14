@@ -79,6 +79,7 @@ export class SourcePhoneTask {
     } finally { this.#busy = false; }
   }
   observe(options = {}) { return this.#exclusive(() => this.#pilot.observe({ ...options, signal: this.signal }), true); }
+  readDocument(resourceId, options = {}) { return this.#exclusive(() => this.#pilot.readDocument(resourceId, { ...options, signal: this.signal }), true); }
   waitFor(selector, options = {}) { return this.#exclusive(() => this.#pilot.waitFor(selector, { ...options, signal: this.signal }), true); }
   act(method, params) {
     requireThat(MUTATIONS.has(method) && method !== 'stop', 'invalid_action');

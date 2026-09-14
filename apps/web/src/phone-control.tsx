@@ -5,13 +5,15 @@ import { Card, PageHeader, StatusPill } from "./components.js";
 import { phoneRequestId } from "./phone-request-id.js";
 import "./phone-control.css";
 
-const methods = ["describe", "observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "stop", "fixture.increment", "node.click", "node.scroll"] as const;
+const methods = ["describe", "observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "stop", "fixture.increment", "node.click", "node.scroll", "document.read", "document.replace", "draft.create"] as const;
 type Method = typeof methods[number];
-const mutations: Method[] = ["app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "node.click", "node.scroll", "fixture.increment"];
+const mutations: Method[] = ["app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "node.click", "node.scroll", "fixture.increment", "document.replace", "draft.create"];
+type ResourceScope = { adapter: "android.document.v1"; resourceIds: string[]; effects: ("document.read" | "document.replace")[] } | { adapter: "android.folder-drafts.v1"; resourceIds: string[]; effects: "draft.create"[] };
+interface DocumentRead { resourceId: string; revision: string; text: string }
 interface Disclosure { screenshots: boolean }
-interface Scope { apps: string[]; operations: Method[]; disclosure?: Disclosure; expiresAt: string; revokedAt?: string }
-interface ScopeInput { apps: string[]; operations: Method[]; disclosure: Disclosure; ttlSeconds: number; label: string }
-interface PhoneTask { id: string; deviceId: string; sessionId: string; actorId?: string; label?: string; expiresAt: string; maxActions: number; actionsUsed: number; status: "active" | "completed" | "expired" | "revoked" | "interrupted"; outcome: "unverified" }
+interface Scope { apps: string[]; operations: Method[]; disclosure?: Disclosure; resourceScope?: ResourceScope; expiresAt: string; revokedAt?: string }
+interface ScopeInput { apps: string[]; operations: Method[]; disclosure: Disclosure; resourceScope?: ResourceScope; ttlSeconds: number; label: string }
+interface PhoneTask { id: string; deviceId: string; sessionId: string; actorId?: string; label?: string; resourceScope?: ResourceScope; expiresAt: string; maxActions: number; actionsUsed: number; status: "active" | "completed" | "expired" | "revoked" | "interrupted"; outcome: "unverified" }
 interface Session extends Scope { id: string; deviceId: string }
 interface Credential extends Scope { id: string; label: string; devices: string[]; sessionIds?: string[]; token?: string }
 interface Event { at: string; actorId: string; deviceId?: string; method?: string; status: string; code?: string }
@@ -49,6 +51,7 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
   const [stopping, setStopping] = useState(false);
   const [screenshot, setScreenshot] = useState(false);
   const [observation, setObservation] = useState<Observation | null>(null);
+  const [documentRead, setDocumentRead] = useState<DocumentRead | null>(null);
   const [description, setDescription] = useState<Description | null>(null);
   const [apps, setApps] = useState<{ packageName: string; label: string }[]>([]);
   const [receipts, setReceipts] = useState<(Receipt & { method: Method; at: string })[]>([]);
@@ -94,12 +97,13 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
   useEffect(() => { if (!selectedSession) { generation.current++; setObservation(null); setDescription(null); setApps([]); } }, [selectedSession?.id]);
   useEffect(() => { if (!selectedSession?.disclosure?.screenshots) { setScreenshot(false); setObservation((value) => { if (!value?.screenshot) return value; const { screenshot: _pixels, ...redacted } = value; return redacted; }); } }, [selectedSession?.disclosure?.screenshots]);
   useEffect(() => { if (observation && now - Date.parse(observation.capturedAt) >= 30000) setObservation(null); if (issued && !active(issued)) { setIssued(null); setRevealed(false); } }, [now, observation, issued]);
+  useEffect(() => { generation.current++; setDocumentRead(null); }, [deviceId, sessionId, manualTask?.id, selectedSession?.id, connected, storageReady]);
   async function create(kind: "sessions" | "credentials", scope: ScopeInput) {
     if (!connected || !storageReady || !deviceId || busy || kind === "credentials" && !selectedSession) return;
     setBusy(true); setIssued(null); setRevealed(false);
     try {
       if (kind === "sessions") {
-        const result = await api<{ session: Session }>("/api/phone-control/sessions", { method: "POST", body: JSON.stringify({ deviceId, apps: scope.apps, operations: scope.operations, disclosure: scope.disclosure, ttlSeconds: scope.ttlSeconds }) });
+        const result = await api<{ session: Session }>("/api/phone-control/sessions", { method: "POST", body: JSON.stringify({ deviceId, apps: scope.apps, operations: scope.operations, disclosure: scope.disclosure, ...(scope.resourceScope ? { resourceScope: scope.resourceScope } : {}), ttlSeconds: scope.ttlSeconds }) });
         setSessionId(result.session.id); notify("Broker scope saved. Enable a matching session in the phone companion before use.");
       } else {
         const result = await api<{ credential: Credential }>("/api/phone-control/credentials", { method: "POST", body: JSON.stringify({ devices: [deviceId], sessionIds: [selectedSession!.id], ...scope }) });
@@ -109,6 +113,7 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     } catch (error) { notify(errorText(error), "error"); await load(); } finally { setBusy(false); }
   }
   async function revoke(kind: "sessions" | "credentials", id: string) {
+    setDocumentRead(null);
     setStopping(true); generation.current++; setObservation(null); setDescription(null);
     try {
       const result = await api<{ revoked: boolean; stopStatus?: string }>(`/api/phone-control/${kind}/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -119,7 +124,7 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
   }
   async function stop() {
     if (!connected || !deviceId || stopping) return;
-    setStopping(true); generation.current++; setObservation(null); setDescription(null);
+    setStopping(true); generation.current++; setObservation(null); setDescription(null); setDocumentRead(null);
     try {
       const result = await api<{ revoked: boolean; stopStatus: string }>(`/api/phone-control/devices/${encodeURIComponent(deviceId)}/stop`, { method: "POST", body: "{}" });
       if (result.stopStatus === "completed") { trackPending(null); ownerTask.current = null; }
@@ -137,12 +142,13 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     setBusy(true);
     // Any dispatched mutation invalidates the screen used to prepare it, even on transport failure.
     if (mutations.includes(method) || method === "observe") setObservation(null);
+    if (method.startsWith("document.")) setDocumentRead(null);
     let id: string | undefined;
     let dispatched = false;
     try {
       id = phoneRequestId();
       let taskId: string | undefined;
-      if (mutations.includes(method)) {
+      if (mutations.includes(method) || method === "document.read") {
         if (!manualTask) { notify("Reserve manual control, then observe the phone before preparing an action.", "error"); return; }
         taskId = manualTask.id;
         if (requestGeneration !== generation.current) return;
@@ -158,9 +164,10 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
         if (method === "observe") { setObservation(result.result as Observation); setNow(Date.now()); }
         if (method === "describe") setDescription(result.result as Description);
         if (method === "apps.list") setApps((result.result as { apps: typeof apps }).apps);
+        if (method === "document.read") setDocumentRead(result.result as DocumentRead);
       }
       if (result.error) notify(result.error.details?.captureRecovery ? failedRecoveryMessage : `${result.error.code}: ${result.error.message}`, "error");
-      else if (result.status === "completed") notify("Dispatch completed. Observe the phone again to inspect the result; the outcome is not verified.");
+      else if (result.status === "completed") notify(method === "draft.create" ? "The phone reports that the new draft file was created and its bytes checked. No draft text is retained in receipts." : method === "document.replace" ? "Replacement receipt received. Read the selected document again to inspect its content; the outcome remains unverified." : "Dispatch completed. Observe the phone again to inspect the result; the outcome is not verified.");
       if (mutations.includes(method)) await load();
     } catch (error) {
       if (!id) { notify(errorText(error), "error"); return; }
@@ -174,9 +181,9 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     if (!canCall) return;
     setBusy(true); generation.current++; setObservation(null);
     try {
-      const result = await api<{ task: PhoneTask }>("/api/phone-control/tasks", { method: "POST", body: JSON.stringify({ deviceId, sessionId, ttlSeconds: 180, maxActions: 30, label: "Owner manual control" }) });
+      const result = await api<{ task: PhoneTask }>("/api/phone-control/tasks", { method: "POST", body: JSON.stringify({ deviceId, sessionId, ttlSeconds: 180, maxActions: 30, label: "Owner manual control", ...(selectedSession?.resourceScope ? { resourceScope: selectedSession.resourceScope } : {}) }) });
       ownerTask.current = result.task;
-      notify("Manual control reserved. Observe the phone before preparing an action.");
+      notify(selectedSession?.resourceScope?.adapter === "android.folder-drafts.v1" ? "Folder control reserved. Review the full draft, then approve creation on the phone." : selectedSession?.resourceScope ? "Document control reserved. Read a selected document before preparing a replacement." : "Manual control reserved. Observe the phone before preparing an action.");
     } catch (error) { notify(errorText(error), "error"); }
     finally { setBusy(false); await load(); }
   }
@@ -186,7 +193,7 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     setBusy(true);
     try {
       await api(`/api/phone-control/tasks/${encodeURIComponent(held.id)}`, { method: "DELETE" });
-      ownerTask.current = null; setObservation(null);
+      ownerTask.current = null; setObservation(null); setDocumentRead(null);
       notify("Manual control reservation ended. The task outcome remains unverified.");
     } catch (error) { notify(errorText(error), "error"); }
     finally { setBusy(false); await load(); }
@@ -218,7 +225,7 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
         {selectedDevice && connected && <p className="form-note">Phone connection: {selectedDevice.connection === "recently_observed" ? `last observed ${relativeTime(selectedDevice.lastSeenAt ?? null)}` : "unknown; check capabilities to contact the device"}.</p>}
         {selectedDevice?.actionState === "unknown" && <p className="notice" role="alert">A prior action has an unknown outcome. Further actions are blocked until a phone stop is acknowledged. Use Stop phone access and inspect the phone.</p>}
         <label className="phone-label">Broker session<select disabled={!connected || busy} value={sessionId} onChange={(event) => setSessionId(event.target.value)}><option value="">Choose a session</option>{sessions.filter(active).map((item) => <option key={item.id} value={item.id}>{item.id.slice(0, 12)} · expires {relativeTime(item.expiresAt)}</option>)}</select></label>
-        {selectedSession && <div className="phone-scope"><p>Apps: {selectedSession.apps.join(", ")}</p><p>Operations: {selectedSession.operations.join(", ")}</p><p>Expires: <time dateTime={selectedSession.expiresAt}>{new Date(selectedSession.expiresAt).toLocaleString()}</time></p><button className="button phone-danger" disabled={stopping} onClick={() => revoke("sessions", selectedSession.id)}>Revoke selected session</button></div>}
+        {selectedSession && <div className="phone-scope">{selectedSession.resourceScope ? <p style={{ overflowWrap: "anywhere" }}>{selectedSession.resourceScope.adapter === "android.folder-drafts.v1" ? "Draft folders" : "Selected documents"}: {selectedSession.resourceScope.resourceIds.join(", ")}</p> : <p>Apps: {selectedSession.apps.join(", ")}</p>}<p>Operations: {selectedSession.operations.join(", ")}</p><p>Expires: <time dateTime={selectedSession.expiresAt}>{new Date(selectedSession.expiresAt).toLocaleString()}</time></p><button className="button phone-danger" disabled={stopping} onClick={() => revoke("sessions", selectedSession.id)}>Revoke selected session</button></div>}
         <ScopeForm kind="sessions" disabled={!connected || !storageReady || !deviceId || busy} submit={(scope) => create("sessions", scope)} />
       </Card>
       <Card title="Phone capabilities">
@@ -231,26 +238,26 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
     <Card title="Phone tasks">
       <p>One workflow controls the phone at a time. Task status refreshes every five seconds while this page is visible. Action counts record dispatch attempts; they do not prove the task succeeded.</p>
       <p>Manual actions reserve control for up to three minutes and 30 actions. Stop phone access remains available during any reservation and requires fresh phone consent before work resumes.</p>
-      <button className="button button--secondary" disabled={!canCall || localUnknown || Boolean(manualTask) || !selectedSession?.operations.some((method) => mutations.includes(method))} onClick={reserveManualControl}>Reserve manual control</button>
+      <button className="button button--secondary" disabled={!canCall || localUnknown || Boolean(manualTask) || !selectedSession?.operations.some((method) => mutations.includes(method) || method === "document.read")} onClick={reserveManualControl}>Reserve manual control</button>
       {localUnknown && <p className="notice" role="alert">This browser has an unacknowledged phone action or unavailable recovery metadata. Further actions are blocked even if the broker reports ready. Stop phone access, inspect the phone, and establish fresh consent before resuming.</p>}
-      {state?.tasks?.filter((task) => task.deviceId === deviceId).slice(-20).reverse().map((task) => <div className="phone-grant" key={task.id}><div><h3>{task.label ?? "Phone task"}</h3><p>{task.status === "completed" ? "Control reservation ended" : task.status} · {task.actionsUsed}/{task.maxActions} actions</p><p>Owner: {task.actorId ? state.credentials.find((credential) => credential.id === task.actorId)?.label ?? (task.actorId === "owner" ? "You" : task.actorId) : "Source runtime"}</p><p>Expires {new Date(task.expiresAt).toLocaleTimeString()} · Outcome unverified</p></div></div>)}
+      {state?.tasks?.filter((task) => task.deviceId === deviceId).slice(-20).reverse().map((task) => <div className="phone-grant" key={task.id}><div><h3>{task.label ?? "Phone task"}</h3>{task.resourceScope && <p style={{ overflowWrap: "anywhere" }}>{task.resourceScope.adapter === "android.folder-drafts.v1" ? "Draft folders" : "Documents"}: {task.resourceScope.resourceIds.join(", ")} / Effects: {task.resourceScope.effects.join(", ")}</p>}<p>{task.status === "completed" ? "Control reservation ended" : task.status} · {task.actionsUsed}/{task.maxActions} actions</p><p>Owner: {task.actorId ? state.credentials.find((credential) => credential.id === task.actorId)?.label ?? (task.actorId === "owner" ? "You" : task.actorId) : "Source runtime"}</p><p>Expires {new Date(task.expiresAt).toLocaleTimeString()} · Outcome unverified</p></div></div>)}
       {!state?.tasks?.some((task) => task.deviceId === deviceId) && <p>No task reservations are listed for this phone.</p>}
       {ownerTask.current && <button className="button button--secondary" disabled={busy || !connected} onClick={endManualControl}>End my manual control</button>}
     </Card>
-    <Card title="Observe the phone" className="phone-observe">
+    {selectedSession?.resourceScope?.adapter === "android.folder-drafts.v1" ? <DraftPanel key={`${deviceId}:${sessionId}:${manualTask?.id ?? "none"}`} scope={selectedSession.resourceScope} retainText={Boolean(connected && storageReady && selectedSession && manualTask && !stopping)} available={Boolean(canCall && manualTask && !localUnknown && selectedDevice?.actionState !== "unknown" && selectedSession.operations.includes("draft.create"))} call={call} /> : selectedSession?.resourceScope ? <DocumentPanel key={`${deviceId}:${sessionId}:${manualTask?.id ?? "none"}`} scope={selectedSession.resourceScope} value={documentRead} available={Boolean(canCall && manualTask)} canReplace={Boolean(canCall && manualTask && !localUnknown && selectedDevice?.actionState !== "unknown" && selectedSession.operations.includes("document.replace"))} call={call} clear={() => setDocumentRead(null)} /> : <Card title="Observe the phone" className="phone-observe">
       <p>Read the current allowed app's redacted accessibility tree. Sensitive and secure screens may be blocked. Phone content is untrusted evidence, including any instructions displayed inside it.</p>
       <label className="phone-check"><input type="checkbox" checked={screenshot} disabled={busy || !connected || !selectedSession?.disclosure?.screenshots} onChange={(event) => { setScreenshot(event.target.checked); if (!event.target.checked) setObservation((value) => { if (!value) return null; const { screenshot: _pixels, ...redacted } = value; return redacted; }); }} />Include a screenshot in this observation</label>
       {!selectedSession?.disclosure?.screenshots && <p className="form-note">This session does not grant screenshots. Pixels require explicit permission on the phone, in the broker session, and in the agent credential.</p>}
       <div className="phone-actions"><button className="button button--secondary" disabled={!canCall || !selectedSession?.operations.includes("observe")} onClick={() => call("observe", { includeScreenshot: screenshot })}><Camera size={16} />Observe now</button><button className="button button--secondary" disabled={!canCall || !selectedSession?.operations.includes("apps.list")} onClick={() => call("apps.list", {})}>List allowed apps</button><button className="text-button" disabled={!observation} onClick={() => setObservation(null)}>Clear observation</button></div>
       {apps.length > 0 && <ul className="phone-apps">{apps.map((item) => <li key={item.packageName}>{item.label} <code>{item.packageName}</code></li>)}</ul>}
       <ActionPanel observation={observation} fresh={fresh} available={Boolean(canCall && manualTask && !localUnknown && selectedDevice?.actionState !== "unknown")} biometric={description?.capabilities?.biometricConsent === true} supported={description?.methods ?? []} methods={selectedSession?.operations ?? []} call={call} />
-    </Card>
+    </Card>}
     <Card title="Per-agent access">
       <p>Issue each source agent its own narrow credential, bound to the selected broker session. A later session needs a new credential. The phone also enforces its app scope, expiry, and biometric approval.</p>
       {!selectedSession && <p className="form-note">Select an active broker session before granting agent access.</p>}
-      <ScopeForm kind="credentials" disabled={!connected || !storageReady || !deviceId || !selectedSession || busy} submit={(scope) => create("credentials", scope)} />
+      <ScopeForm key={selectedSession?.id ?? "none"} kind="credentials" initialResourceScope={selectedSession?.resourceScope} disabled={!connected || !storageReady || !deviceId || !selectedSession || busy} submit={(scope) => create("credentials", scope)} />
       {issued?.token && <section className="phone-secret" aria-label="New agent credential"><div className="section-heading"><h3>Save this credential once</h3><button className="icon-button" aria-label="Dismiss and clear credential" onClick={() => { setIssued(null); setRevealed(false); }}><X size={18} /></button></div><p>This scoped agent token is shown only now. Store it in the agent's private configuration on the computer.</p><label className="phone-label">New agent token<input readOnly type={revealed ? "text" : "password"} autoComplete="off" value={issued.token} /></label><div className="phone-actions"><button className="button button--secondary" onClick={async () => { try { await navigator.clipboard.writeText(issued.token!); notify("Agent credential copied. Store it securely."); } catch { notify("Clipboard unavailable. Reveal and copy the token manually.", "error"); } }}><Copy size={16} />Copy agent token</button><button className="text-button" onClick={() => setRevealed(!revealed)}>{revealed ? "Hide token" : "Reveal token"}</button></div></section>}
-      <div className="phone-grants">{state?.credentials.map((item) => <div className="phone-grant" key={item.id}><div><h3>{item.label}</h3><p>Devices: {item.devices.join(", ")}</p><p>Sessions: {item.sessionIds?.join(", ") ?? "Any matching active session (legacy grant)"}</p><p>Apps: {item.apps.join(", ")}</p><p>Operations: {item.operations.join(", ")}</p><p>{item.revokedAt ? "Revoked" : `Expires ${new Date(item.expiresAt).toLocaleString()}`}</p></div><button className="button phone-danger" disabled={!connected || stopping || !active(item)} onClick={() => revoke("credentials", item.id)}>Revoke {item.label}</button></div>)}</div>
+      <div className="phone-grants">{state?.credentials.map((item) => <div className="phone-grant" key={item.id}><div><h3>{item.label}</h3><p>Devices: {item.devices.join(", ")}</p><p>Sessions: {item.sessionIds?.join(", ") ?? "Any matching active session (legacy grant)"}</p>{item.resourceScope ? <p style={{ overflowWrap: "anywhere" }}>{item.resourceScope.adapter === "android.folder-drafts.v1" ? "Draft folders" : "Selected documents"}: {item.resourceScope.resourceIds.join(", ")}</p> : <p>Apps: {item.apps.join(", ")}</p>}<p>Operations: {item.operations.join(", ")}</p><p>{item.revokedAt ? "Revoked" : `Expires ${new Date(item.expiresAt).toLocaleString()}`}</p></div><button className="button phone-danger" disabled={!connected || stopping || !active(item)} onClick={() => revoke("credentials", item.id)}>Revoke {item.label}</button></div>)}</div>
       {!state?.credentials.length && <p className="form-note">No agent credentials are listed.</p>}
     </Card>
     <Card title="Action receipts">
@@ -262,8 +269,12 @@ export function PhoneControlPage({ notify }: { notify: Notify }) {
   </div>;
 }
 
-function ScopeForm({ kind, disabled, submit }: { kind: "sessions" | "credentials"; disabled: boolean; submit(scope: ScopeInput): Promise<void> }) {
+function ScopeForm({ kind, disabled, initialResourceScope, submit }: { kind: "sessions" | "credentials"; disabled: boolean; initialResourceScope?: ResourceScope | undefined; submit(scope: ScopeInput): Promise<void> }) {
   const [apps, setApps] = useState("");
+  const [mode, setMode] = useState(initialResourceScope?.adapter === "android.document.v1" ? "documents" : initialResourceScope || kind === "sessions" ? "folders" : "apps");
+  const documentMode = mode === "documents";
+  const [resourceIds, setResourceIds] = useState(initialResourceScope?.resourceIds.join("\n") ?? "");
+  const [replace, setReplace] = useState(false);
   const [operations, setOperations] = useState<Method[]>(["describe", "observe", "apps.list"]);
   const [minutes, setMinutes] = useState(10);
   const [label, setLabel] = useState("");
@@ -271,6 +282,19 @@ function ScopeForm({ kind, disabled, submit }: { kind: "sessions" | "credentials
   const [error, setError] = useState("");
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (mode === "folders") {
+      const handles = resourceIds.split(/[\s,]+/).filter(Boolean);
+      if (!handles.length || handles.length > 32 || new Set(handles).size !== handles.length || handles.some((id) => !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))) { setError("Enter distinct folder UUID handles copied from the phone companion."); return; }
+      if (initialResourceScope && (initialResourceScope.adapter !== "android.folder-drafts.v1" || handles.some((id) => !initialResourceScope.resourceIds.includes(id)))) { setError("Choose folders allowed by the selected session."); return; }
+      setError(""); await submit({ apps: [], operations: ["describe", "stop", "draft.create"], disclosure: { screenshots: false }, resourceScope: { adapter: "android.folder-drafts.v1", resourceIds: handles, effects: ["draft.create"] }, ttlSeconds: minutes * 60, label }); return;
+    }
+    if (documentMode) {
+      const handles = resourceIds.split(/[\s,]+/).filter(Boolean);
+      if (!handles.length || handles.length > 32 || new Set(handles).size !== handles.length || handles.some((id) => !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id))) { setError("Enter up to 32 distinct document handles copied from the phone companion. Names, paths and account labels do not grant access."); return; }
+      if (initialResourceScope && (handles.some((id) => !initialResourceScope.resourceIds.includes(id)) || replace && !(initialResourceScope.effects as string[]).includes("document.replace"))) { setError("Choose documents and effects allowed by the selected session."); return; }
+      const effects: ("document.read" | "document.replace")[] = replace ? ["document.read", "document.replace"] : ["document.read"];
+      setError(""); await submit({ apps: [], operations: ["describe", "stop", ...effects], disclosure: { screenshots: false }, resourceScope: { adapter: "android.document.v1", resourceIds: handles, effects }, ttlSeconds: minutes * 60, label }); return;
+    }
     const packages = [...new Set(apps.split(/[\s,]+/).filter(Boolean))];
     if (!packages.length || packages.length > 32 || packages.some((name) => !/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/.test(name))) { setError("Enter exact Android package names, separated by spaces or commas. Wildcards are not allowed."); return; }
     if (!operations.length) { setError("Choose at least one operation."); return; }
@@ -278,14 +302,68 @@ function ScopeForm({ kind, disabled, submit }: { kind: "sessions" | "credentials
   }
   return <details className="phone-scope-form"><summary>{kind === "sessions" ? "Create a scoped broker session" : "Issue an agent credential"}</summary><form onSubmit={save}><fieldset disabled={disabled}>
     {kind === "credentials" && <label className="phone-label">Agent label<input required maxLength={80} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Research agent" /></label>}
-    <label className="phone-label">{kind === "sessions" ? "Session allowed packages" : "Agent allowed packages"}<textarea required rows={2} maxLength={6500} value={apps} onChange={(event) => setApps(event.target.value)} placeholder="org.example.notes" /></label>
+    <label className="phone-label">{kind === "sessions" ? "Session access type" : "Agent access type"}<select value={mode} disabled={kind === "credentials"} onChange={(event) => { setMode(event.target.value); setError(""); }}><option value="folders">Draft folders (default)</option><option value="documents">Advanced: selected text documents</option><option value="apps">Legacy: app screen and gestures</option></select></label>
+    {mode === "folders" ? <><p className="form-note">Choose a folder in the phone companion, then copy its opaque folder handle here.</p><label className="phone-label">{kind === "sessions" ? "Session folder handles" : "Agent folder handles"}<textarea required rows={2} maxLength={3200} value={resourceIds} onChange={(event) => setResourceIds(event.target.value)} /></label><p><strong>Enforced: create new plaintext draft files only.</strong> Every creation requires full text review and strong biometric approval on the phone. The phone generates the filename. This grant exposes no existing-file read, overwrite or delete operation; send, screenshots and app control are unavailable.</p><p className="form-note">These are .draft.txt files, not email-app drafts. A folder provider may sync them downstream. Use an owner-trusted provider; Android grants the companion broader folder access, which this adapter narrows.</p></> : documentMode ? <><p className="form-note">Select each text document in the phone companion's Android file picker, then copy its document handle here. A grant covers that file and the selected effects. Account restrictions and draft-without-send workflows are not supported.</p><label className="phone-label">{kind === "sessions" ? "Session document handles" : "Agent document handles"}<textarea required rows={2} maxLength={3200} value={resourceIds} onChange={(event) => setResourceIds(event.target.value)} /></label><label className="phone-check"><input type="checkbox" checked={replace} disabled={Boolean(initialResourceScope && !(initialResourceScope.effects as string[]).includes("document.replace"))} onChange={(event) => setReplace(event.target.checked)} />{kind === "sessions" ? "Allow replacing selected document text" : "Allow this agent to replace selected document text"}</label><p className="form-note">Reading is included. Replacements require phone approval and the exact revision read beforehand. Screen observation, screenshots and gestures are unavailable in document sessions.</p></> : <label className="phone-label">{kind === "sessions" ? "Session allowed packages" : "Agent allowed packages"}<textarea required rows={2} maxLength={6500} value={apps} onChange={(event) => setApps(event.target.value)} placeholder="org.example.notes" /></label>}
     <label className="phone-label">{kind === "sessions" ? "Session duration in minutes" : "Credential duration in minutes"}<input type="number" required min={1} max={kind === "sessions" ? 60 : 1440} value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} /></label>
-    <label className="phone-check"><input type="checkbox" checked={screenshots} onChange={(event) => setScreenshots(event.target.checked)} />{kind === "sessions" ? "Allow screenshots in this session" : "Allow this agent to receive screenshots"}</label>
-    <fieldset className="phone-methods"><legend>Allowed operations</legend>{methods.map((item) => <label className="phone-check" key={item}><input type="checkbox" checked={operations.includes(item)} onChange={(event) => setOperations((current) => event.target.checked ? [...current, item] : current.filter((value) => value !== item))} />{item}{item === "fixture.increment" ? " · fixture counter only" : mutations.includes(item) ? " · phone approval" : ""}</label>)}</fieldset>
-    <p className="form-note">The observe operation shares screen text from these apps. Screenshots require separate opt-in. Create a new narrower scope and revoke the old one to change access.</p>
+    {mode === "apps" && <><label className="phone-check"><input type="checkbox" checked={screenshots} onChange={(event) => setScreenshots(event.target.checked)} />{kind === "sessions" ? "Allow screenshots in this session" : "Allow this agent to receive screenshots"}</label>
+    <fieldset className="phone-methods"><legend>Allowed operations</legend>{methods.filter((item) => !item.startsWith("document.") && item !== "draft.create").map((item) => <label className="phone-check" key={item}><input type="checkbox" checked={operations.includes(item)} onChange={(event) => setOperations((current) => event.target.checked ? [...current, item] : current.filter((value) => value !== item))} />{item}{item === "fixture.increment" ? " · fixture counter only" : mutations.includes(item) ? " · phone approval" : ""}</label>)}</fieldset>
+    <p className="form-note">The observe operation shares screen text from these apps. Screenshots require separate opt-in. App gestures cannot enforce a document, account or draft-without-send restriction. Create a new narrower scope and revoke the old one to change access.</p></>}
     {error && <p className="form-error" role="alert">{error}</p>}
     <button className="button button--primary">{kind === "sessions" ? "Create broker session" : "Create scoped agent token"}</button>
   </fieldset></form></details>;
+}
+
+function DraftPanel({ scope, retainText, available, call }: { scope: ResourceScope; retainText: boolean; available: boolean; call(method: Method, params: Record<string, unknown>): Promise<void> }) {
+  const [resourceId, setResourceId] = useState(scope.resourceIds[0] ?? "");
+  const [text, setText] = useState("");
+  const [reviewed, setReviewed] = useState(false);
+  useEffect(() => { if (!retainText) { setText(""); setReviewed(false); } }, [retainText]);
+  const bounded = text.length <= 2000 && !/[\u0000\uD800-\uDFFF]/u.test(text) && new TextEncoder().encode(text).byteLength <= 8192;
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    if (!available || !reviewed || !bounded || !scope.resourceIds.includes(resourceId)) return;
+    const params = { resourceId, text }; setText(""); setReviewed(false); await call("draft.create", params);
+  }
+  return <Card title="Create a plaintext draft" className="phone-observe">
+    <p>Creates one new .draft.txt file with a phone-generated UUID filename in an owner-selected folder. This grant exposes no existing-file read, overwrite or delete operation. No send or app control is granted. Folder providers may sync files; these are not email-app drafts. Use an owner-trusted provider; Android grants the companion broader folder access, which this adapter narrows.</p>
+    <p className="form-note">Up to 2,000 characters and 8,192 UTF-8 bytes. Review the full text here and approve it with strong biometrics on the phone. An unknown outcome blocks another creation; inspect the folder and Stop access before recovery.</p>
+    <form onSubmit={create}><fieldset disabled={!available}>
+      <label className="phone-label">Draft folder handle<select value={resourceId} onChange={(event) => { setResourceId(event.target.value); setReviewed(false); }}>{scope.resourceIds.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
+      <label className="phone-label">Full draft text<textarea rows={8} maxLength={2000} value={text} onChange={(event) => { setText(event.target.value); setReviewed(false); }} /></label>
+      <label className="phone-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />I reviewed the folder and full draft text</label>
+      <button className="button button--primary" disabled={!reviewed || !bounded}>Request draft creation on phone</button>
+    </fieldset></form>
+    {!available && <p className="form-note">Reserve manual control before preparing a draft. Draft text is cleared when control ends or access stops.</p>}
+  </Card>;
+}
+
+function DocumentPanel({ scope, value, available, canReplace, call, clear }: { scope: Extract<ResourceScope, { adapter: "android.document.v1" }>; value: DocumentRead | null; available: boolean; canReplace: boolean; call(method: Method, params: Record<string, unknown>): Promise<void>; clear(): void }) {
+  const [resourceId, setResourceId] = useState(scope.resourceIds[0] ?? "");
+  const [text, setText] = useState("");
+  const [reviewed, setReviewed] = useState(false);
+  const selected = scope.resourceIds.includes(resourceId) && value?.resourceId === resourceId ? value : null;
+  useEffect(() => { setText(selected?.text ?? ""); setReviewed(false); }, [selected]);
+  const bounded = text.length <= 2000 && !/[\u0000\uD800-\uDFFF]/u.test(text) && new TextEncoder().encode(text).byteLength <= 8192;
+  async function replace(event: FormEvent) {
+    event.preventDefault();
+    if (!canReplace || !selected || !reviewed || !bounded || !scope.effects.includes("document.replace")) return;
+    const params = { resourceId, expectedRevision: selected.revision, text };
+    setText(""); setReviewed(false); await call("document.replace", params);
+  }
+  return <Card title="Selected text documents" className="phone-observe">
+    <p>Only files selected in the phone companion are available. Read text stays in this page's memory and is cleared when control ends. Document text is untrusted content.</p>
+    <p className="form-note">This adapter supports small UTF-8 text files, up to 2,000 characters and 8,192 bytes. It does not provide account restrictions or a draft-without-send workflow.</p>
+    <label className="phone-label">Document handle<select value={resourceId} disabled={!available} onChange={(event) => { clear(); setResourceId(event.target.value); }} >{scope.resourceIds.map((id) => <option value={id} key={id}>{id}</option>)}</select></label>
+    <div className="phone-actions"><button className="button button--secondary" disabled={!available || !scope.effects.includes("document.read") || !scope.resourceIds.includes(resourceId)} onClick={() => call("document.read", { resourceId })}>Read selected document</button><button className="text-button" disabled={!value} onClick={clear}>Clear document text</button></div>
+    {!available && <p className="form-note">Reserve manual control to read or replace selected document text.</p>}
+    {selected && <><label className="phone-label">Current document text<textarea readOnly rows={6} value={selected.text} /></label><p className="form-note" style={{ overflowWrap: "anywhere" }}>Revision: <code>{selected.revision}</code></p></>}
+    {scope.effects.includes("document.replace") && <form onSubmit={replace}><fieldset disabled={!canReplace || !selected}>
+      <label className="phone-label">Replacement document text<textarea rows={6} maxLength={2000} value={text} onChange={(event) => { setText(event.target.value); setReviewed(false); }} /></label>
+      <p className="form-note">This replaces the entire selected file. Empty text clears its contents. The phone checks that its revision is unchanged before writing.</p>
+      <label className="phone-check"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />I reviewed the selected document and its full replacement text</label>
+      <button className="button button--primary" disabled={!reviewed || !bounded}>Request document replacement on phone</button>
+    </fieldset></form>}
+  </Card>;
 }
 
 function ActionPanel({ observation, fresh, available, biometric, supported, methods: allowed, call }: { observation: Observation | null; fresh: boolean; available: boolean; biometric: boolean; supported: Method[]; methods: Method[]; call(method: Method, params: Record<string, unknown>): Promise<void> }) {
@@ -320,7 +398,7 @@ function ActionPanel({ observation, fresh, available, biometric, supported, meth
         <details><summary>Redacted accessibility tree ({observation.nodes.length} nodes)</summary><ul className="phone-tree">{observation.nodes.map((node) => <li key={node.id}><code>{node.id}</code><span>{node.text || node.description || node.hintText || "Unlabelled element"}</span><small>{node.enabled === false ? "Disabled - " : ""}{node.checkable ? `Checkbox ${node.checkedState ?? "unknown"} - ` : ""}{node.scrollable ? "Scrollable - " : ""}{node.editable ? "Editable · " : ""}{node.clickable ? "Clickable · " : ""}{node.bounds.left}, {node.bounds.top}–{node.bounds.right}, {node.bounds.bottom}</small></li>)}</ul></details></> : <p className="phone-empty">No screen content loaded. Choose a session and observe when ready.</p>}
     </div>
     <form className="phone-action-form" onSubmit={send}><h3>Prepare one action</h3><p>General app actions need biometric approval on the phone. The signed test fixture's counter can increment only with a separate local fixture grant. After dispatch, observe again.</p>
-      <label className="phone-label">Action<select value={method} onChange={(event) => setMethod(event.target.value as Method)}>{mutations.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+      <label className="phone-label">Action<select value={method} onChange={(event) => setMethod(event.target.value as Method)}>{mutations.filter((item) => !item.startsWith("document.") && item !== "draft.create").map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
       <fieldset disabled={!canSend}>
         {method === "fixture.increment" ? <p className="form-note">Adds one to the signed fixture's counter. It cannot tap, type, launch apps, or perform another operation.</p> : method === "app.launch" ? <label className="phone-label">App package to launch<input value={packageName} required maxLength={200} onChange={(event) => setPackageName(event.target.value)} placeholder="org.example.notes" /></label> : method === "node.scroll" ? <><label className="phone-label">Scroll direction<select value={direction} onChange={(event) => { setDirection(event.target.value); setNodeId(""); }}><option value="forward">Forward</option><option value="backward">Backward</option></select></label><label className="phone-label">Scrollable element<select required value={nodeId} onChange={(event) => setNodeId(event.target.value)}><option value="">Choose an observed scrollable element</option>{observation?.nodes.filter((node) => node.enabled === true && node.scrollable && node.actions?.includes(direction === "forward" ? "scrollForward" : "scrollBackward")).map((node) => <option key={node.id} value={node.id}>{node.text || node.description || node.resourceId || node.id}</option>)}</select></label></> : method === "node.click" ? <label className="phone-label">Clickable element<select value={nodeId} onChange={(event) => setNodeId(event.target.value)} required><option value="">Choose an observed clickable element</option>{observation?.nodes.filter((node) => node.clickable && node.enabled !== false).map((node) => <option key={node.id} value={node.id}>{node.text || node.description || node.id}</option>)}</select></label> : method === "type" ? <><label className="phone-label">Editable element<select value={nodeId} onChange={(event) => setNodeId(event.target.value)} required><option value="">Choose an observed editable element</option>{observation?.nodes.filter((node) => node.editable && node.enabled !== false).map((node) => <option key={node.id} value={node.id}>{node.text || node.description || node.id}</option>)}</select></label><label className="phone-label">Text to enter<textarea required maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} /></label></> : method === "key" ? <label className="phone-label">Navigation key<select value={key} onChange={(event) => setKey(event.target.value)}><option value="back">Back</option><option value="home">Home</option></select></label> : <>
           <div className="phone-coordinates"><label className="phone-label">X coordinate<input type="number" min={touchBounds.left} max={Math.max(touchBounds.left, touchBounds.right - 1)} required value={x} onChange={(event) => setX(Number(event.target.value))} /></label><label className="phone-label">Y coordinate<input type="number" min={touchBounds.top} max={Math.max(touchBounds.top, touchBounds.bottom - 1)} required value={y} onChange={(event) => setY(Number(event.target.value))} /></label></div>

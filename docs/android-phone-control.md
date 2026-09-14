@@ -1,9 +1,14 @@
 # Android phone control
 
-Status: alpha implementation and validation in progress, 13 September 2026. This is a
-separately privileged feature. The published alpha 6 phone app remains a gateway
+Status: alpha 8 source preparation, 14 September 2026; release qualification is pending. This is a
+separately privileged feature. The published alpha 7 gateway phone app remains a gateway
 client; installing it alone does not enable phone control. See the
 [readiness record](android-phone-control-readiness.md) before testing.
+
+Alpha 8 introduces [owner-selected resource permissions](phone-control-resource-permissions.md).
+New grants default to creating confirmed plaintext drafts in selected folders;
+exact-document grants remain an advanced option. These adapters have no generic
+screen-control fallback and make no claim of account enforcement.
 
 The intended result is a connected assistant that can inspect and operate a
 user-selected Android app using screenshots, UI elements, touch gestures, and

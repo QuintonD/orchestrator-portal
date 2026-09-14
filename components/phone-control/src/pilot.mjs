@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Required origin notice: see ATTRIBUTION.md.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 import { createClient, isDefiniteRejection } from './client.mjs';
-import { Fault, identifier, packageName, number, object, requireThat, validateCall, captureDetails, captureRecovery, MUTATIONS } from './validation.mjs';
+import { Fault, identifier, packageName, number, object, requireThat, validateCall, captureDetails, captureRecovery, MUTATIONS, documentText, documentRevision, validateResourceScope } from './validation.mjs';
 
 const selectorFields = ['resourceId', 'className', 'text', 'description', 'hintText', 'stateDescription', 'enabled', 'editable', 'clickable', 'scrollable', 'checkable', 'checkedState', 'selected', 'action'];
 const booleans = new Set(['enabled', 'editable', 'clickable', 'scrollable', 'checkable', 'selected']);
 const actions = ['click', 'longClick', 'scrollForward', 'scrollBackward', 'setText'];
 const transientReadErrors = new Set(['broker_unavailable', 'device_busy', 'screenshot_geometry_changed', 'screenshot_invalid_window', 'screenshot_invalid_display', 'screenshot_rate_limited', 'screenshot_timeout']);
-const errorCodes = new Set(['outcome_unknown', 'unauthorized', 'session_expired', 'scope_forbidden', 'operation_forbidden', 'app_forbidden', 'device_busy', 'device_outcome_unknown', 'stale_observation', 'observation_expired', 'out_of_bounds', 'node_unavailable', 'node_not_editable', 'node_not_clickable', 'node_not_scrollable', 'consent_denied', 'consent_timeout', 'consent_unavailable', 'biometric_unavailable', 'device_locked', 'secure_window', 'blocked_app', 'stopped', 'deadline_expired', 'rate_limited', 'persistence_unavailable', 'screenshot_rate_limited', 'screenshot_secure_window', 'screenshot_invalid_window', 'screenshot_invalid_display', 'screenshot_access_denied', 'screenshot_geometry_changed', 'screenshot_too_large', 'screenshot_timeout', 'screenshot_internal_error', 'screenshot_unavailable']);
+const errorCodes = new Set(['unsupported_document', 'stale_document', 'storage_unavailable','resource_scope_required', 'resource_scope_operation_forbidden', 'resource_forbidden', 'resource_scope_escalation', 'document_forbidden', 'document_changed', 'document_unavailable', 'document_invalid', 'document_too_large', 'document_read_only','outcome_unknown', 'unauthorized', 'session_expired', 'scope_forbidden', 'operation_forbidden', 'app_forbidden', 'device_busy', 'device_outcome_unknown', 'stale_observation', 'observation_expired', 'out_of_bounds', 'node_unavailable', 'node_not_editable', 'node_not_clickable', 'node_not_scrollable', 'consent_denied', 'consent_timeout', 'consent_unavailable', 'biometric_unavailable', 'device_locked', 'secure_window', 'blocked_app', 'stopped', 'deadline_expired', 'rate_limited', 'persistence_unavailable', 'screenshot_rate_limited', 'screenshot_secure_window', 'screenshot_invalid_window', 'screenshot_invalid_display', 'screenshot_access_denied', 'screenshot_geometry_changed', 'screenshot_too_large', 'screenshot_timeout', 'screenshot_internal_error', 'screenshot_unavailable']);
 function projectedError(value, fallback) {
   const code = errorCodes.has(value?.code) ? value.code : fallback;
   let details;
@@ -109,7 +109,7 @@ export class PhonePilot {
   #client(timeoutMs) { return createClient({ port: this.#port, secret: this.#secret, brokerPublicKey: this.#publicKey, fetchImpl: this.#fetch, timeoutMs }); }
   async #request(method, params, timeoutMs, { signal, requestId = randomUUID() } = {}) {
     const mutation = MUTATIONS.has(method) && method !== 'stop';
-    const input = { id: requestId, deviceId: this.#deviceId, sessionId: this.#sessionId, ...(mutation && this.#task ? { taskId: this.#task.id } : {}), method, params };
+    const input = { id: requestId, deviceId: this.#deviceId, sessionId: this.#sessionId, ...((mutation || method === 'document.read') && this.#task ? { taskId: this.#task.id } : {}), method, params };
     validateCall(input);
     if (method !== 'stop') {
       timeoutMs = Math.min(timeoutMs, this.#remaining(signal));
@@ -126,8 +126,16 @@ export class PhonePilot {
         result.error = projectedError(receipt.error, receipt.status === 'unknown' ? 'outcome_unknown' : 'request_rejected');
       } else {
         requireThat(receipt.error === undefined, 'receipt_invalid', 502);
-        if (receipt.status === 'observed') { requireThat(method === 'observe', 'receipt_invalid', 502); result.result = projectedView(receipt.result, params.includeScreenshot); }
-        else { requireThat(MUTATIONS.has(method) && ['dispatched', 'completed', 'stopped'].includes(receipt.result?.status), 'receipt_invalid', 502); result.result = { status: receipt.result.status }; }
+        if (receipt.status === 'observed') {
+          if (method === 'document.read') {
+            object(receipt.result, ['resourceId', 'revision', 'text']);
+            requireThat(receipt.result.resourceId === params.resourceId, 'receipt_invalid', 502);
+            documentText(receipt.result.text); documentRevision(receipt.result.revision);
+            requireThat(createHash('sha256').update(receipt.result.text).digest('hex') === receipt.result.revision, 'receipt_invalid', 502);
+            result.result = { resourceId: receipt.result.resourceId, revision: receipt.result.revision, text: receipt.result.text };
+          } else { requireThat(method === 'observe', 'receipt_invalid', 502); result.result = projectedView(receipt.result, params.includeScreenshot); }
+        }
+        else { requireThat(MUTATIONS.has(method) && ['dispatched', 'completed', 'stopped'].includes(receipt.result?.status), 'receipt_invalid', 502); if (['document.replace', 'draft.create'].includes(method)) requireThat(receipt.result.status === 'completed', 'receipt_invalid', 502); result.result = { status: receipt.result.status }; }
       }
       return result;
     } catch (failure) {
@@ -215,8 +223,8 @@ export class PhonePilot {
       this.#remaining(signal); requireThat(this.#task, 'task_required', 409);
       requireThat(this.#actions < this.#limits.maxActions, 'task_action_budget_exhausted', 409);
       const view = this.#view;
-      if (method !== 'app.launch') requireThat(view && Date.now() - Date.parse(view.capturedAt) <= 30_000, 'fresh_observation_required', 409);
-      const bound = method === 'app.launch' ? params : { ...params, observationId: view.observationId };
+      if (!['app.launch', 'document.replace', 'draft.create'].includes(method)) requireThat(view && Date.now() - Date.parse(view.capturedAt) <= 30_000, 'fresh_observation_required', 409);
+      const bound = ['app.launch', 'document.replace', 'draft.create'].includes(method) ? params : { ...params, observationId: view.observationId };
       validateCall({ id: requestId ?? 'validate', deviceId: this.#deviceId, sessionId: this.#sessionId, taskId: this.#task.id, method, params: bound });
       this.#view = undefined;
       try {
@@ -233,12 +241,29 @@ export class PhonePilot {
       }
     });
   }
-  acquireTask({ ttlSeconds = 300, maxActions = this.#limits.maxActions, label } = {}) {
-    number(ttlSeconds, 1, 300); number(maxActions, 1, 100);
+  readDocument(resourceId, { timeoutMs = 10_000, signal } = {}) {
+    identifier(resourceId); number(timeoutMs, 1, 30_000);
+    return this.#exclusive(async () => {
+      this.#remaining(signal); requireThat(this.#task, 'task_required', 409);
+      const combined = AbortSignal.any([this.#stopController.signal, ...(signal ? [signal] : [])]);
+      const receipt = await this.#request('document.read', { resourceId }, timeoutMs, { signal: combined });
+      this.#remaining(signal);
+      requireThat(receipt.status === 'observed', receipt.error?.code ?? 'observation_unconfirmed', 409);
+      return freeze(receipt.result);
+    });
+  }
+  replaceDocument(resourceId, expectedRevision, text, options = {}) {
+    return this.act('document.replace', { resourceId, expectedRevision, text }, options);
+  }
+  createDraft(resourceId, text, options) {
+    return this.act('draft.create', { resourceId, text }, options);
+  }
+  acquireTask({ ttlSeconds = 300, maxActions = this.#limits.maxActions, label, resourceScope } = {}) {
+    number(ttlSeconds, 1, 300); number(maxActions, 1, 100); if (resourceScope !== undefined) validateResourceScope(resourceScope);
     return this.#exclusive(async () => {
       requireThat(!this.#task && !this.#uncertain, 'task_already_bound', 409);
       this.#view = undefined;
-      const value = await this.#client(Math.min(10_000, this.#remaining()))('/v1/tasks', 'POST', { deviceId: this.#deviceId, sessionId: this.#sessionId, ttlSeconds, maxActions, ...(label === undefined ? {} : { label }) });
+      const value = await this.#client(Math.min(10_000, this.#remaining()))('/v1/tasks', 'POST', { deviceId: this.#deviceId, sessionId: this.#sessionId, ttlSeconds, maxActions, ...(resourceScope === undefined ? {} : { resourceScope }), ...(label === undefined ? {} : { label }) });
       this.#remaining();
       this.#task = this.#projectTask(value.task); return this.#task;
     });
@@ -248,7 +273,7 @@ export class PhonePilot {
     requireThat(['active', 'completed', 'expired', 'revoked', 'interrupted'].includes(task.status), 'task_response_invalid', 502);
     number(task.maxActions, 1, 100); number(task.actionsUsed, 0, task.maxActions);
     requireThat(Number.isFinite(Date.parse(task.expiresAt)), 'task_response_invalid', 502);
-    return freeze({ id: task.id, deviceId: task.deviceId, sessionId: task.sessionId, status: task.status, expiresAt: task.expiresAt, maxActions: task.maxActions, actionsUsed: task.actionsUsed });
+    return freeze({ ...(task.resourceScope === undefined ? {} : { resourceScope: validateResourceScope(task.resourceScope) }), id: task.id, deviceId: task.deviceId, sessionId: task.sessionId, status: task.status, expiresAt: task.expiresAt, maxActions: task.maxActions, actionsUsed: task.actionsUsed });
   }
   taskStatus() {
     requireThat(this.#task, 'task_required', 409);

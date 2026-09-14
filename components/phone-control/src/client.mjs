@@ -34,7 +34,7 @@ export function createClient({ port = 4421, secret, fetchImpl = fetch, timeoutMs
     const stop = method === 'POST' && (path === '/v1/call' && input?.method === 'stop' || /^\/v1\/devices\/[A-Za-z0-9_-]+\/stop$/u.test(path));
     if (!brokerPublicKey && !stop) throw unsent('broker_public_key_required');
     const body = input === undefined ? undefined : JSON.stringify(input); if (body) requireThat(Buffer.byteLength(body) <= MAX_BODY_BYTES, 'request_too_large', 413);
-    const nonce = randomUUID(); const read = method === 'GET' || path === '/v1/call' && ['observe', 'describe', 'apps.list'].includes(input?.method);
+    const nonce = randomUUID(); const read = method === 'GET' || path === '/v1/call' && ['observe', 'describe', 'apps.list', 'document.read'].includes(input?.method);
     const combined = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
     let response;
     try { response = await abortable(fetchImpl(`${origin}${path}`, { method, redirect: 'error', headers: { authorization: `Bearer ${secret}`, 'x-phone-request-nonce': nonce, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { body } : {}), signal: combined }), combined); }

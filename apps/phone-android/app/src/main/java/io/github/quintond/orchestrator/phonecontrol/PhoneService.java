@@ -88,9 +88,9 @@ public final class PhoneService extends AccessibilityService {
 
     synchronized void startSession() throws ApiException {
         stopSession("New session");
-        if (busy.get()) throw new ApiException("busy", "Wait for the previous action to settle");
+        if (busy.get() || DocumentPolicy.WORK.busy()) throw new ApiException("busy", "Wait for the previous action or provider operation to settle");
         if (!getSystemService(NotificationManager.class).areNotificationsEnabled()) throw new ApiException("notification_required", "Allow notifications before starting a visible session");
-        if (policy.apps().isEmpty() || policy.operations().isEmpty()) throw new ApiException("empty_policy", "Select at least one app and operation");
+        if ((policy.apps().isEmpty() && new DocumentPolicy(this).grants().isEmpty() && new FolderPolicy(this).grants().isEmpty()) || policy.operations().isEmpty()) throw new ApiException("empty_policy", "Select at least one app, draft folder, or document, and an operation");
         for (String app : policy.apps()) policy.requireApp(app);
         ledger.reset();
         byte[] secret = new byte[32];
@@ -112,6 +112,7 @@ public final class PhoneService extends AccessibilityService {
         expiryElapsed = 0;
         latest = null;
         status = reason;
+        DocumentPolicy.WORK.abandon();
         ConsentActivity.Pending pending = consent;
         if (pending != null) pending.cancel();
         CaptureCoordinator.Ticket capture = captures.current();
@@ -167,7 +168,7 @@ public final class PhoneService extends AccessibilityService {
             if (method.equals("stop")) {
                 Json.only(params);
                 stopSession("Stopped by paired host");
-                return Json.object("id", id, "result", Json.object("status", "stopped", "inFlightGestureMayFinish", busy.get()));
+                return Json.object("id", id, "result", Json.object("status", "stopped", "inFlightGestureMayFinish", busy.get() || DocumentPolicy.WORK.busy()));
             }
             if (method.equals("describe")) {
                 Json.only(params);
@@ -176,7 +177,7 @@ public final class PhoneService extends AccessibilityService {
             if (!Policy.OPERATIONS.contains(method)) throw new ApiException("unsupported_method", "Unsupported method");
             policy.requireOperation(method);
             mutation = Policy.MUTATIONS.contains(method);
-            if (!busy.compareAndSet(false, true)) throw new ApiException("busy", "An observation or action is in progress");
+            if (DocumentPolicy.WORK.busy() || !busy.compareAndSet(false, true)) throw new ApiException("busy", "An observation, action, or document provider operation is in progress");
             locked = true;
             if (mutation) {
                 hash = Policy.digest(Json.canonical(request));
@@ -188,6 +189,8 @@ public final class PhoneService extends AccessibilityService {
             JSONObject result = switch (method) {
                 case "apps.list" -> listApps(params);
                 case "observe" -> observe(params, sessionGeneration);
+                case "document.read", "document.replace" -> document(method, params, sessionGeneration);
+                case "draft.create" -> draft(params, sessionGeneration);
                 default -> mutate(method, params, sessionGeneration);
             };
             if (method.equals("observe")) completedReadRecovery = result.optJSONObject("captureRecovery");
@@ -221,12 +224,165 @@ public final class PhoneService extends AccessibilityService {
     private JSONObject describe() {
         Set<String> methods = policy.operations();
         methods.add("describe"); methods.add("stop");
-        return Json.object("protocolVersion", 1, "platform", "android", "appVersion", "0.1.0-alpha.2", "methods", new JSONArray(methods),
+        return Json.object("protocolVersion", 1, "platform", "android", "appVersion", "0.1.0-alpha.3", "methods", new JSONArray(methods),
                 "session", Json.object("expiresAt", expiresAt), "transport", "adb-loopback",
                 "capabilities", Json.object("windowScreenshot", true, "tree", true, "perActionConsent", "strong_biometric", "strongBiometricAvailable", biometricAvailable(), "fixtureAutomation", policy.operations().contains("fixture.increment")),
                 "limits", Json.object("sessionMs", Policy.SESSION_MS, "observationMs", Policy.OBSERVATION_MS, "maxNodes", Policy.MAX_NODES));
     }
     boolean biometricAvailable() { return getSystemService(BiometricManager.class).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS; }
+    private JSONObject document(String method, JSONObject params, long currentGeneration) throws Exception {
+        boolean replace = method.equals("document.replace");
+        if (replace) Json.only(params, "resourceId", "expectedRevision", "text", "deadlineAt");
+        else Json.only(params, "resourceId");
+        String resourceId = Json.string(params, "resourceId", 36);
+        if (!DocumentText.resourceId(resourceId)) throw new ApiException("invalid_request", "Invalid document resourceId");
+        String revision = replace ? Json.string(params, "expectedRevision", 64) : "";
+        if (replace && !revision.matches("[0-9a-f]{64}")) throw new ApiException("invalid_request", "Invalid document revision");
+        Object rawText = replace ? params.opt("text") : "";
+        if (!(rawText instanceof String text)) throw new ApiException("invalid_request", "Document text must be a string");
+        try { DocumentText.encode(text); } catch (java.nio.charset.CharacterCodingException invalid) { throw new ApiException("invalid_request", "Document must be valid UTF-8 within 2000 characters and 8192 bytes"); }
+        long remaining = 5000;
+        if (replace) {
+            double deadline = Json.number(params, "deadlineAt");
+            remaining = (long) deadline - System.currentTimeMillis();
+            if (deadline != Math.rint(deadline) || remaining <= 0 || remaining > 45_000) throw new ApiException("deadline_expired", "Action requires a deadline no more than 45 seconds away");
+        }
+        long until = SystemClock.elapsedRealtime() + remaining;
+        DocumentPolicy documents = new DocumentPolicy(this);
+        DocumentWork.Ticket<JSONObject> ticket = DocumentPolicy.WORK.start(job -> {
+            DocumentPolicy.Authority authority = () -> {
+                job.check(); requireGeneration(currentGeneration); policy.requireOperation(method);
+                if (SystemClock.elapsedRealtime() >= until) throw new ApiException("deadline_expired", "Document deadline expired");
+                documents.require(resourceId, replace);
+                job.check(); requireGeneration(currentGeneration);
+                if (SystemClock.elapsedRealtime() >= until) throw new ApiException("deadline_expired", "Document deadline expired");
+            };
+            authority.check();
+            DocumentPolicy.Grant grant = documents.require(resourceId, replace);
+            String before = documents.read(grant);
+            authority.check();
+            if (!replace) return Json.object("resourceId", resourceId, "revision", Policy.digest(before), "text", before);
+            if (!revision.equals(Policy.digest(before))) throw new ApiException("stale_document", "Document revision changed; read it again before requesting a new action");
+            if (!biometricAvailable()) throw new ApiException("consent_unavailable", "Enroll a strong biometric to authorize document replacement");
+            String review = "Document: " + grant.name + "\nResource: " + resourceId + "\nProvider: " + grant.provider
+                    + "\nPinned provider signer/version/update: " + grant.identity
+                    + "\nExact URI: " + grant.uri + "\nExpected revision: " + revision
+                    + "\n\nCurrent text (complete):\n" + before + "\n\nReplacement text (complete):\n" + text
+                    + "\n\nThis replaces the whole document. The provider is trusted to target this URI. Account identity and atomic protection against concurrent edits are unavailable.";
+            ConsentActivity.Pending pending = new ConsentActivity.Pending(method, grant.name, params.toString(), review);
+            consent = pending;
+            main.postDelayed(pending::cancel, Math.max(1, until - SystemClock.elapsedRealtime()));
+            main.post(() -> {
+                try { job.check(); requireGeneration(currentGeneration); startActivity(new Intent(this, ConsentActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("nonce", pending.nonce)); }
+                catch (Exception denied) { pending.cancel(); }
+            });
+            boolean authorized;
+            try { authorized = pending.result.get(Math.max(1, until - SystemClock.elapsedRealtime()), TimeUnit.MILLISECONDS); }
+            catch (Exception timeout) { authorized = false; }
+            finally { pending.cancel(); if (consent == pending) consent = null; }
+            if (!authorized) throw new ApiException("consent_denied", "Document replacement was denied or timed out");
+            authority.check();
+            if (!revision.equals(Policy.digest(documents.read(grant)))) throw new ApiException("stale_document", "Document changed during consent");
+            authority.check();
+            documents.replace(grant, revision, text, job, authority);
+            try {
+                authority.check();
+                if (!text.equals(documents.read(grant))) throw new ApiException("unknown_action_state", "Document did not read back as the authorized replacement");
+                authority.check();
+            } catch (Exception changed) { throw new ApiException("unknown_action_state", "Replacement may have changed content; current result could not be verified"); }
+            return Json.object("status", "completed");
+        });
+        try {
+            JSONObject result = ticket.result.get(Math.max(1, until - SystemClock.elapsedRealtime()), TimeUnit.MILLISECONDS);
+            // Serialize publication with the owner UI's Stop/revoke controls. Provider I/O remains off-main.
+            return onMain(() -> {
+                try { ticket.check(); requireGeneration(currentGeneration); policy.requireOperation(method); documents.requireLocal(resourceId, replace); }
+                catch (ApiException denied) {
+                    if (ticket.writeAttempted) throw new ApiException("unknown_action_state", "Document authority ended after the write attempt; outcome is unknown");
+                    throw denied;
+                }
+                return result;
+            });
+        }
+        catch (java.util.concurrent.ExecutionException failure) {
+            if (failure.getCause() instanceof ApiException denied) throw denied;
+            throw new ApiException(ticket.writeAttempted ? "unknown_action_state" : "document_unavailable", "Document operation could not be completed; do not retry writes automatically");
+        } catch (ApiException denied) { throw denied; }
+        catch (Exception timeout) {
+            ticket.abandon();
+            ConsentActivity.Pending pending = consent; if (pending != null) pending.cancel();
+            throw new ApiException(ticket.writeAttempted ? "unknown_action_state" : "document_unavailable", "Document operation ended; provider may still be settling. Do not retry writes automatically");
+        }
+    }
+    private JSONObject draft(JSONObject params, long currentGeneration) throws Exception {
+        String method = "draft.create";
+        Json.only(params, "resourceId", "text", "deadlineAt");
+        String resourceId = Json.string(params, "resourceId", 36);
+        if (!DocumentText.resourceId(resourceId)) throw new ApiException("invalid_request", "Invalid folder resourceId");
+        if (!(params.opt("text") instanceof String text)) throw new ApiException("invalid_request", "Draft text must be a string");
+        try { DocumentText.encode(text); } catch (java.nio.charset.CharacterCodingException invalid) { throw new ApiException("invalid_request", "Draft must be valid UTF-8 within 2000 characters and 8192 bytes"); }
+        double deadline = Json.number(params, "deadlineAt");
+        long remaining = (long) deadline - System.currentTimeMillis();
+        if (deadline != Math.rint(deadline) || remaining <= 0 || remaining > 45_000)
+            throw new ApiException("deadline_expired", "Action requires a deadline no more than 45 seconds away");
+        long until = SystemClock.elapsedRealtime() + remaining;
+        FolderPolicy folders = new FolderPolicy(this);
+        DocumentWork.Ticket<JSONObject> ticket = DocumentPolicy.WORK.start(job -> {
+            DocumentPolicy.Authority authority = () -> {
+                job.check(); requireGeneration(currentGeneration); policy.requireOperation(method);
+                if (SystemClock.elapsedRealtime() >= until) throw new ApiException("deadline_expired", "Document deadline expired");
+                folders.require(resourceId, true);
+                job.check(); requireGeneration(currentGeneration);
+                if (SystemClock.elapsedRealtime() >= until) throw new ApiException("deadline_expired", "Document deadline expired");
+            };
+            authority.check();
+            FolderPolicy.Grant grant = folders.require(resourceId, true);
+            String name = java.util.UUID.randomUUID().toString() + ".draft.txt";
+            if (!biometricAvailable()) throw new ApiException("consent_unavailable", "Enroll a strong biometric to authorize every draft creation");
+            String review = "Folder: " + grant.name + "\nResource: " + resourceId + "\nProvider: " + grant.provider
+                    + "\nPinned provider signer/version/update: " + grant.identity + "\nSelected folder URI: " + grant.uri
+                    + "\nNew filename: " + name + "\n\nDraft text (complete):\n" + text
+                    + "\n\nCreate one new plaintext draft file. The adapter does not read existing file content, replace, delete, or publish. "
+                    + "Android grants broader folder access. You trust this provider to create a separate file; a dishonest provider or concurrent writer can defeat these checks. "
+                    + "Provider synchronization or other apps may share or act on the draft independently. No account identity or isolation from provider automation is guaranteed.";
+            ConsentActivity.Pending pending = new ConsentActivity.Pending(method, grant.name, params.toString(), review);
+            consent = pending;
+            main.postDelayed(pending::cancel, Math.max(1, until - SystemClock.elapsedRealtime()));
+            main.post(() -> {
+                try { job.check(); requireGeneration(currentGeneration); startActivity(new Intent(this, ConsentActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("nonce", pending.nonce)); }
+                catch (Exception denied) { pending.cancel(); }
+            });
+            boolean authorized;
+            try { authorized = pending.result.get(Math.max(1, until - SystemClock.elapsedRealtime()), TimeUnit.MILLISECONDS); }
+            catch (Exception timeout) { authorized = false; }
+            finally { pending.cancel(); if (consent == pending) consent = null; }
+            if (!authorized) throw new ApiException("consent_denied", "Draft creation was denied or timed out");
+            authority.check();
+            folders.create(grant, name, text, job, authority);
+            return Json.object("status", "completed");
+        });
+        try {
+            JSONObject result = ticket.result.get(Math.max(1, until - SystemClock.elapsedRealtime()), TimeUnit.MILLISECONDS);
+            // Serialize publication with the owner UI's Stop/revoke controls. Provider I/O remains off-main.
+            return onMain(() -> {
+                try { ticket.check(); requireGeneration(currentGeneration); policy.requireOperation(method); folders.requireLocal(resourceId, true); }
+                catch (ApiException denied) {
+                    if (ticket.writeAttempted) throw new ApiException("unknown_action_state", "Document authority ended after the write attempt; outcome is unknown");
+                    throw denied;
+                }
+                return result;
+            });
+        }
+        catch (java.util.concurrent.ExecutionException failure) {
+            if (failure.getCause() instanceof ApiException denied) throw denied;
+            throw new ApiException(ticket.writeAttempted ? "unknown_action_state" : "document_unavailable", "Document operation could not be completed; do not retry writes automatically");
+        } catch (ApiException denied) { throw denied; }
+        catch (Exception timeout) {
+            ticket.abandon();
+            ConsentActivity.Pending pending = consent; if (pending != null) pending.cancel();
+            throw new ApiException(ticket.writeAttempted ? "unknown_action_state" : "document_unavailable", "Document operation ended; provider may still be settling. Do not retry writes automatically");
+        }
+    }
     private Set<String> scope(JSONObject params) throws ApiException {
         if (!(params.opt("allowedPackages") instanceof JSONArray names) || names.length() < 1 || names.length() > 32)
             throw new ApiException("invalid_request", "A bounded nonempty allowedPackages scope is required");

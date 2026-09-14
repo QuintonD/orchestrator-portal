@@ -5,10 +5,11 @@ import { randomUUID } from 'node:crypto';
 import { Fault, requireThat, object, identifier, packageName, number, string, validateGrant, validateCall, publicError, captureDetails, captureRecovery, METHODS, MUTATIONS, MAX_BODY_BYTES, MAX_NATIVE_BYTES } from './validation.mjs';
 import { digest, token, tokenMatches } from './security.mjs';
 import { requestHash, bodyHash, signHttpResponse } from './response-proof.mjs';
+import { RESOURCE_EFFECTS, validateResourceScope, intersectResourceScopes, narrowResourceScope, documentText, documentRevision } from './validation.mjs';
 
 const OBSERVATION_MS = 30_000;
 const SAFE_CAPTURE_ERRORS = new Set(['screenshot_rate_limited', 'screenshot_secure_window', 'screenshot_invalid_window', 'screenshot_invalid_display', 'screenshot_access_denied', 'screenshot_geometry_changed', 'screenshot_too_large', 'screenshot_timeout', 'screenshot_internal_error', 'screenshot_unavailable']);
-const SAFE_NATIVE_ERRORS = new Set(['invalid_request', 'unauthorized', 'forbidden', 'stale_observation', 'session_expired', 'deadline_expired', 'consent_unavailable', 'consent_denied', 'consent_timeout', 'busy', 'accessibility_unavailable', 'capture_unavailable', 'secure_window', 'blocked_app', 'replay_conflict', 'unknown_action_state', 'stopped', 'unsupported_method', 'out_of_bounds', 'node_unavailable', 'device_locked', 'biometric_unavailable', ...SAFE_CAPTURE_ERRORS]);
+const SAFE_NATIVE_ERRORS = new Set(['unsupported_document', 'document_unavailable', 'stale_document', 'storage_unavailable','invalid_request', 'unauthorized', 'forbidden', 'stale_observation', 'session_expired', 'deadline_expired', 'consent_unavailable', 'consent_denied', 'consent_timeout', 'busy', 'accessibility_unavailable', 'capture_unavailable', 'secure_window', 'blocked_app', 'replay_conflict', 'unknown_action_state', 'stopped', 'unsupported_method', 'out_of_bounds', 'node_unavailable', 'device_locked', 'biometric_unavailable', ...SAFE_CAPTURE_ERRORS]);
 const iso = (time) => new Date(time).toISOString();
 const publicCredential = ({ tokenHash: _secret, ...value }) => value;
 const intersect = (a, b) => a.filter((value) => b.includes(value));
@@ -65,6 +66,14 @@ function sanitizeDescription(raw) {
   const expires = typeof raw.session?.expiresAt === 'number' ? raw.session.expiresAt : Date.parse(raw.session?.expiresAt);
   return { protocolVersion: 1, platform: 'android', methods: raw.methods.filter((value) => METHODS.includes(value)), session: { ...(Number.isFinite(expires) ? { expiresAt: iso(expires) } : {}) }, capabilities: { screenshots: raw.capabilities?.windowScreenshot === true, gestures: raw.methods.includes('tap'), biometricConsent: raw.capabilities?.strongBiometricAvailable === true } };
 }
+function sanitizeDocument(raw, resourceId) {
+  try {
+    object(raw, ['resourceId', 'revision', 'text']);
+    requireThat(raw.resourceId === resourceId); documentText(raw.text); documentRevision(raw.revision);
+    requireThat(digest(raw.text) === raw.revision);
+    return { resourceId, revision: raw.revision, text: raw.text };
+  } catch { throw new Fault('native_response_invalid', 502); }
+}
 
 export class Broker {
   constructor({ config, state, save, fetchImpl = fetch, now = Date.now, timeoutMs = 45_000 }) {
@@ -117,17 +126,37 @@ export class Broker {
     requireThat(session && !session.revokedAt && Date.parse(session.expiresAt) > this.now(), 'session_expired', 403);
     requireThat(session.operations.includes(call.method), 'operation_forbidden', 403);
     if (!actor.admin) requireThat(actor.credential.devices.includes(call.deviceId) && actor.credential.operations.includes(call.method) && (!actor.credential.sessionIds || actor.credential.sessionIds.includes(call.sessionId)), 'scope_forbidden', 403);
-    const apps = actor.admin ? session.apps : intersect(session.apps, actor.credential.apps); requireThat(apps.length > 0, 'app_forbidden', 403);
+    const apps = actor.admin ? session.apps : intersect(session.apps, actor.credential.apps);
+    const restricted = session.resourceScope !== undefined || !actor.admin && actor.credential.resourceScope !== undefined;
+    let resourceScope;
+    if (call.method !== 'stop' && (restricted || RESOURCE_EFFECTS.includes(call.method))) {
+      resourceScope = this.resourceAuthority(actor, session);
+      requireThat(call.method === 'describe' || resourceScope.effects.includes(call.method), 'resource_scope_operation_forbidden', 403);
+      if (call.method !== 'describe') {
+        const task = this.requireTask(actor, call, { response: true });
+        resourceScope = intersectResourceScopes(resourceScope, task.resourceScope);
+        requireThat(resourceScope.resourceIds.includes(call.params.resourceId) && resourceScope.effects.includes(call.method), 'resource_forbidden', 403);
+      }
+    } else if (!restricted) requireThat(apps.length > 0, 'app_forbidden', 403);
     const disclosure = { screenshots: session.disclosure?.screenshots === true && (actor.admin || actor.credential.disclosure?.screenshots === true) };
     if (call.method === 'observe' && call.params?.includeScreenshot === true) requireThat(disclosure.screenshots, 'screenshot_forbidden', 403);
-    return { session, apps, disclosure };
+    return { session, apps, disclosure, resourceScope };
   }
   state(actor) {
     this.active(actor); this.prune(); const ids = actor.admin ? this.config.devices.map((device) => device.id) : actor.credential.devices;
     return {
       storageState: this.persistenceFailed ? 'unavailable' : 'ready',
       devices: this.config.devices.filter((device) => ids.includes(device.id)).map((device) => ({ id: device.id, label: device.label, busy: this.inflight.has(device.id) || this.stopping.has(device.id), actionState: this.data.uncertainDevices.includes(device.id) ? 'unknown' : 'ready', connection: this.lastSeen.has(device.id) && this.now() - this.lastSeen.get(device.id) <= 60_000 ? 'recently_observed' : 'unknown', ...(this.lastSeen.has(device.id) ? { lastSeenAt: iso(this.lastSeen.get(device.id)) } : {}) })),
-      sessions: this.data.sessions.filter((session) => ids.includes(session.deviceId) && (actor.admin || !actor.credential.sessionIds || actor.credential.sessionIds.includes(session.id))).map((session) => ({ ...session, disclosure: { screenshots: session.disclosure?.screenshots === true && (actor.admin || actor.credential.disclosure?.screenshots === true) }, ...(!actor.admin ? { apps: intersect(session.apps, actor.credential.apps), operations: intersect(session.operations, actor.credential.operations) } : {}) })).filter((session) => session.apps.length > 0 && session.operations.length > 0),
+      sessions: this.data.sessions.filter((session) => ids.includes(session.deviceId) && (actor.admin || !actor.credential.sessionIds || actor.credential.sessionIds.includes(session.id))).flatMap((session) => {
+        const value = { ...session, disclosure: { screenshots: session.disclosure?.screenshots === true && (actor.admin || actor.credential.disclosure?.screenshots === true) }, ...(!actor.admin ? { apps: intersect(session.apps, actor.credential.apps), operations: intersect(session.operations, actor.credential.operations) } : {}) };
+        if (session.resourceScope || !actor.admin && actor.credential.resourceScope) {
+          try { value.resourceScope = this.resourceAuthority(actor, session); }
+          catch { return []; }
+          value.disclosure.screenshots = false;
+          value.operations = value.operations.filter(method => ['describe', 'stop', ...value.resourceScope.effects].includes(method));
+        }
+        return (value.apps.length || value.resourceScope) && value.operations.length ? [value] : [];
+      }),
       credentials: this.data.credentials.filter((entry) => actor.admin || entry.id === actor.id).map(publicCredential),
       tasks: this.data.tasks.filter((task) => ids.includes(task.deviceId) && (actor.admin || task.actorId === actor.id)).map((task) => ({ ...this.publicTask(task), ...(actor.admin ? { actorId: task.actorId } : {}) })),
     };
@@ -135,7 +164,7 @@ export class Broker {
   createCredential(actor, input) {
     this.admin(actor); requireThat(!this.persistenceFailed, 'persistence_unavailable', 503); validateGrant(input); input.devices.forEach((id) => this.device(id)); requireThat(this.data.credentials.filter((entry) => Date.parse(entry.expiresAt) > this.now()).length < 256, 'credential_limit', 429);
     if (input.sessionIds) for (const id of input.sessionIds) requireThat(this.data.sessions.some((session) => session.id === id && input.devices.includes(session.deviceId) && !session.revokedAt && Date.parse(session.expiresAt) > this.now()), 'session_forbidden', 403);
-    const secret = token(); const credential = { id: randomUUID(), label: input.label, devices: [...input.devices], apps: [...input.apps], operations: [...input.operations], disclosure: { screenshots: input.disclosure?.screenshots === true }, ...(input.sessionIds ? { sessionIds: [...input.sessionIds] } : {}), createdAt: iso(this.now()), expiresAt: iso(this.now() + input.ttlSeconds * 1000), tokenHash: digest(secret) };
+    const secret = token(); const credential = { ...(input.resourceScope ? { resourceScope: validateResourceScope(input.resourceScope) } : {}), id: randomUUID(), label: input.label, devices: [...input.devices], apps: [...input.apps], operations: [...input.operations], disclosure: { screenshots: input.disclosure?.screenshots === true }, ...(input.sessionIds ? { sessionIds: [...input.sessionIds] } : {}), createdAt: iso(this.now()), expiresAt: iso(this.now() + input.ttlSeconds * 1000), tokenHash: digest(secret) };
     this.data.credentials = this.data.credentials.filter((entry) => Date.parse(entry.expiresAt) > this.now()); this.data.credentials.push(credential); this.audit(actor.id, 'credential_created');
     return { credential: { ...publicCredential(credential), token: secret } };
   }
@@ -153,7 +182,7 @@ export class Broker {
   }
   createSession(actor, input) {
     this.admin(actor); requireThat(!this.persistenceFailed, 'persistence_unavailable', 503); validateGrant(input, true); this.device(input.deviceId); requireThat(this.data.sessions.filter((entry) => Date.parse(entry.expiresAt) > this.now()).length < 256, 'session_limit', 429);
-    const session = { id: randomUUID(), deviceId: input.deviceId, apps: [...input.apps], operations: [...input.operations], disclosure: { screenshots: input.disclosure?.screenshots === true }, createdAt: iso(this.now()), expiresAt: iso(this.now() + input.ttlSeconds * 1000) };
+    const session = { ...(input.resourceScope ? { resourceScope: validateResourceScope(input.resourceScope) } : {}), id: randomUUID(), deviceId: input.deviceId, apps: [...input.apps], operations: [...input.operations], disclosure: { screenshots: input.disclosure?.screenshots === true }, createdAt: iso(this.now()), expiresAt: iso(this.now() + input.ttlSeconds * 1000) };
     this.data.sessions = this.data.sessions.filter((entry) => Date.parse(entry.expiresAt) > this.now()); this.data.sessions.push(session); this.audit(actor.id, 'session_created', { deviceId: input.deviceId }); return { session: { ...session } };
   }
   clearPrivateViews(actorId, deviceId) {
@@ -165,26 +194,33 @@ export class Broker {
     return { ...value, outcome: 'unverified' };
   }
   endTasks(matches, status) {
-    for (const task of this.data.tasks) if (task.status === 'active' && matches(task)) { task.status = status; task.endedAt = iso(this.now()); }
+    for (const task of this.data.tasks) if (task.status === 'active' && matches(task)) { task.status = status; task.endedAt = iso(this.now()); this.clearPrivateViews(task.actorId, task.deviceId); }
+  }
+  resourceAuthority(actor, session) {
+    requireThat(session.resourceScope, 'resource_scope_required', 403);
+    return actor.admin ? validateResourceScope(session.resourceScope) : intersectResourceScopes(session.resourceScope, actor.credential.resourceScope);
   }
   taskAuthority(actor, input) {
     this.active(actor); this.device(input.deviceId); requireThat(!this.persistenceFailed, 'persistence_unavailable', 503);
     const session = this.data.sessions.find((entry) => entry.id === input.sessionId && entry.deviceId === input.deviceId);
     requireThat(session && !session.revokedAt && Date.parse(session.expiresAt) > this.now(), 'session_expired', 403);
     if (!actor.admin) requireThat(actor.credential.devices.includes(input.deviceId) && (!actor.credential.sessionIds || actor.credential.sessionIds.includes(session.id)), 'scope_forbidden', 403);
-    requireThat((actor.admin ? session.apps : intersect(session.apps, actor.credential.apps)).length > 0, 'app_forbidden', 403);
-    requireThat(session.operations.some((method) => method !== 'stop' && MUTATIONS.has(method) && (actor.admin || actor.credential.operations.includes(method))), 'operation_forbidden', 403);
+    if (session.resourceScope || !actor.admin && actor.credential.resourceScope) this.resourceAuthority(actor, session);
+    else requireThat((actor.admin ? session.apps : intersect(session.apps, actor.credential.apps)).length > 0, 'app_forbidden', 403);
+    requireThat(session.operations.some((method) => method !== 'stop' && (MUTATIONS.has(method) || method === 'document.read' && session.resourceScope) && (actor.admin || actor.credential.operations.includes(method))), 'operation_forbidden', 403);
     return session;
   }
   createTask(actor, input) {
-    object(input, ['deviceId', 'sessionId', 'ttlSeconds', 'maxActions', 'label'], ['deviceId', 'sessionId', 'ttlSeconds', 'maxActions']);
+    object(input, ['deviceId', 'sessionId', 'ttlSeconds', 'maxActions', 'label', 'resourceScope'], ['deviceId', 'sessionId', 'ttlSeconds', 'maxActions']);
     identifier(input.deviceId); identifier(input.sessionId); number(input.ttlSeconds, 1, 300); number(input.maxActions, 1, 100); if (input.label !== undefined) string(input.label, 80);
     const session = this.taskAuthority(actor, input); this.prune();
+    const authority = session.resourceScope || !actor.admin && actor.credential.resourceScope ? this.resourceAuthority(actor, session) : undefined;
+    const resourceScope = input.resourceScope === undefined ? authority : narrowResourceScope(authority, input.resourceScope);
     requireThat(!this.data.uncertainDevices.includes(input.deviceId), 'device_outcome_unknown', 409);
     requireThat(!this.inflight.has(input.deviceId) && !this.stopping.has(input.deviceId), 'device_busy', 409);
     requireThat(!this.data.tasks.some((task) => task.deviceId === input.deviceId && task.status === 'active'), 'task_busy', 409);
     requireThat(this.data.tasks.length < 1024, 'task_capacity', 429);
-    const task = { id: randomUUID(), actorId: actor.id, deviceId: input.deviceId, sessionId: input.sessionId, status: 'active', createdAt: iso(this.now()), expiresAt: iso(Math.min(this.now() + input.ttlSeconds * 1000, Date.parse(session.expiresAt), actor.admin ? Infinity : Date.parse(actor.credential.expiresAt))), maxActions: input.maxActions, actionsUsed: 0, ...(input.label === undefined ? {} : { label: input.label }) };
+    const task = { ...(resourceScope ? { resourceScope } : {}), id: randomUUID(), actorId: actor.id, deviceId: input.deviceId, sessionId: input.sessionId, status: 'active', createdAt: iso(this.now()), expiresAt: iso(Math.min(this.now() + input.ttlSeconds * 1000, Date.parse(session.expiresAt), actor.admin ? Infinity : Date.parse(actor.credential.expiresAt))), maxActions: input.maxActions, actionsUsed: 0, ...(input.label === undefined ? {} : { label: input.label }) };
     this.data.tasks.push(task); this.clearPrivateViews(undefined, task.deviceId); this.audit(actor.id, 'task_created', { deviceId: task.deviceId });
     return { task: this.publicTask(task) };
   }
@@ -277,6 +313,9 @@ export class Broker {
     const key = `${actor.id}:${input.id}`; const fingerprint = digest(canonical(input)); const previous = this.data.receipts.find((entry) => entry.key === key);
     if (previous) {
       requireThat(previous.fingerprint === fingerprint, 'replay_conflict', 409);
+      // Phone-local revocation has no synchronous broker notification. A document
+      // response must never be redisclosed from cache after that authority changes.
+      requireThat(input.method !== 'document.read', 'document_read_requires_fresh_request', 409);
       if (previous.read) { const cached = this.readReceipts.get(key); requireThat(cached && cached.expiresAt > this.now(), 'observation_expired', 409); return cached.receipt; }
       return previous.receipt;
     }
@@ -324,28 +363,37 @@ export class Broker {
         try { recovery = captureRecovery(result.captureRecovery); }
         catch { throw new Fault('native_response_invalid', 502); }
       }
-      this.scope(actor, input); // Revocation and expiry also gate responses, including already captured private screens.
+      const currentScope = this.scope(actor, input); // Revocation and expiry also gate responses, including already captured private screens.
       if (mutation) this.requireTask(actor, input, { response: true });
       let projected;
       if (input.method === 'observe') {
         this.clearPrivateViews(actor.id, device.id);
-        projected = sanitizeObservation(result, apps, params.includeScreenshot, this.now());
+        projected = sanitizeObservation(result, currentScope.apps, params.includeScreenshot, this.now());
         this.observations.set(`${actor.id}:${session.id}:${projected.observationId}`, { receiptKey: key, actorId: actor.id, deviceId: device.id, expiresAt: Math.min(this.now() + OBSERVATION_MS, Date.parse(projected.capturedAt) + OBSERVATION_MS), result: projected });
-      } else if (input.method === 'describe') { projected = sanitizeDescription(result); projected.capabilities.screenshots &&= this.scope(actor, input).disclosure.screenshots; projected.capabilities.taskLeaseRequired = true; projected.methods = projected.methods.filter((method) => session.operations.includes(method) && (actor.admin || actor.credential.operations.includes(method))); }
+      } else if (input.method === 'document.read') { projected = sanitizeDocument(result, params.resourceId); }
+      else if (input.method === 'describe') { projected = sanitizeDescription(result); if (currentScope.resourceScope) { projected.capabilities.screenshots = false; projected.capabilities.gestures = false; projected.methods = projected.methods.filter(method => ['describe', 'stop', ...currentScope.resourceScope.effects].includes(method)); if (projected.methods.some(method => RESOURCE_EFFECTS.includes(method))) projected.capabilities.resourceAdapter = currentScope.resourceScope.adapter; } if (!currentScope.resourceScope) projected.methods = projected.methods.filter(method => !RESOURCE_EFFECTS.includes(method)); projected.capabilities.screenshots &&= this.scope(actor, input).disclosure.screenshots; projected.capabilities.taskLeaseRequired = true; projected.methods = projected.methods.filter((method) => session.operations.includes(method) && (actor.admin || actor.credential.operations.includes(method))); }
       else if (input.method === 'apps.list') {
         requireThat(Array.isArray(result?.apps) && result.apps.length <= 1000, 'native_response_invalid', 502);
         projected = { apps: result.apps.filter((app) => apps.includes(app.packageName)).map((app) => { packageName(app.packageName); string(app.label, 200); return { packageName: app.packageName, label: app.label }; }) };
       } else {
         requireThat(result && typeof result === 'object' && ['dispatched', 'completed', 'stopped'].includes(result.status), 'native_response_invalid', 502);
+        if (['document.replace', 'draft.create'].includes(input.method)) requireThat(result.status === 'completed', 'native_response_invalid', 502);
         projected = { status: result.status }; // Native text and arbitrary metadata never enter the receipt ledger.
       }
       entry.receipt = receipt(input.id, mutation ? 'completed' : 'observed', projected);
+      const privateReceipt = entry.receipt;
       entry.outcomeStatus = entry.receipt.status;
       entry.completedAt = iso(this.now());
-      if (!mutation) { this.readReceipts.set(key, { actorId: actor.id, deviceId: device.id, expiresAt: Math.min(this.now() + OBSERVATION_MS, input.method === 'observe' ? Date.parse(projected.capturedAt) + OBSERVATION_MS : Infinity), bytes: Buffer.byteLength(JSON.stringify(entry.receipt)), receipt: entry.receipt }); this.boundPrivateMemory(); entry.receipt = receipt(input.id, 'rejected', undefined, new Fault('observation_expired')); }
+      if (!mutation) {
+        if (input.method !== 'document.read') {
+          this.readReceipts.set(key, { actorId: actor.id, deviceId: device.id, expiresAt: Math.min(this.now() + OBSERVATION_MS, Date.parse(session.expiresAt), actor.admin ? Infinity : Date.parse(actor.credential.expiresAt), input.method === 'observe' ? Date.parse(projected.capturedAt) + OBSERVATION_MS : Infinity), bytes: Buffer.byteLength(JSON.stringify(entry.receipt)), receipt: entry.receipt });
+          this.boundPrivateMemory();
+        }
+        entry.receipt = receipt(input.id, 'rejected', undefined, new Fault('observation_expired'));
+      }
       if (input.method === 'stop') { for (const item of this.data.sessions) if (item.deviceId === device.id) item.revokedAt = iso(this.now()); }
       this.audit(actor.id, mutation ? 'completed' : 'observed', { deviceId: device.id, method: input.method });
-      return mutation ? entry.receipt : this.readReceipts.get(key).receipt;
+      return mutation ? entry.receipt : input.method === 'document.read' ? privateReceipt : this.readReceipts.get(key).receipt;
     } catch (error) {
       const knownRejection = !nativeCompleted && error instanceof Fault && error.status < 500 && error.code !== 'unknown_action_state';
       const safe = error instanceof Fault ? error : new Fault('outcome_unknown', 502);

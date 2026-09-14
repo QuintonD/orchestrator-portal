@@ -56,6 +56,8 @@ acceptance or behavior on every Android vendor build.
 
 ## Repeating the release check
 
+The record above is historical alpha 1-to-2 evidence. Alpha 8 preparation uses the published companion alpha 2 from the alpha 7 release as its baseline, and a fresh companion alpha 3 / code 3 candidate. Retain both historical proofs and run the complete harness again for the exact clean release artifacts.
+
 Use an explicitly selected, dedicated emulator with no newer production
 companion installed. Preserve the retained signed baseline and the dedicated
 phone signing identity. `scripts/phone-control-upgrade-build.mjs` uses a separate
@@ -65,7 +67,7 @@ pair. Never publish the key, password or owner instrumentation APK.
 
 ```sh
 node scripts/phone-control-upgrade-build.mjs <clean-release-checkout>
-node tests/phone-control/upgrade.mjs --serial emulator-5586 --baseline test-results/release-assets/phone-control-0.1.0-alpha.1.apk --candidate apps/phone-android/app/build/outputs/apk/release/app-release.apk --output test-results/phone-control/<new-evidence-directory>
+node tests/phone-control/upgrade.mjs --serial emulator-5586 --baseline test-results/release-assets/phone-control-0.1.0-alpha.2.apk --candidate apps/phone-android/app/build/outputs/apk/release/app-release.apk --output test-results/phone-control/<new-evidence-directory>
 node --test tests/phone-control/upgrade-evidence.test.mjs scripts/release-manifest.test.mjs
 ```
 

@@ -24,7 +24,7 @@ if (!/^emulator-\d+$/u.test(options['--serial'] ?? '') || !options['--baseline']
 const serial = options['--serial']; const output = resolve(options['--output']); mkdirSync(output, { recursive: true });
 const environment = phoneSigningEnvironment(); const sdk = environment.ANDROID_HOME; const buildTools = join(sdk, 'build-tools', '36.0.0');
 const adbTool = join(sdk, 'platform-tools', 'adb.exe'); const java = join(environment.JAVA_HOME, 'bin'); const androidJar = join(sdk, 'platforms', 'android-36', 'android.jar');
-const evidence = { kind: 'signed-companion-in-place-upgrade', serial, startedAt: new Date().toISOString(), baseline: {}, candidate: {}, assertions: [], status: 'running', limits: ['Emulator engineering evidence; not physical-device acceptance.', 'The signed baseline is established from a retained alpha 1 source snapshot, not a previous published companion release.'] };
+const evidence = { kind: 'signed-companion-in-place-upgrade', serial, startedAt: new Date().toISOString(), baseline: {}, candidate: {}, assertions: [], status: 'running', limits: ['Emulator engineering evidence; not physical-device acceptance.', 'This proof binds only the explicitly supplied signed baseline and candidate APKs; the release manifest checks the published upgrade baseline.'] };
 let seedProcess; let localPort;
 function checkpoint() { writeFileSync(join(output, 'results.json'), JSON.stringify(evidence, null, 2)); }
 function check(value, name) { evidence.assertions.push({ name, passed: Boolean(value) }); checkpoint(); if (!value) throw new Error(name); }

@@ -56,6 +56,78 @@ function mockBroker(fn: (url: string, init: RequestInit) => unknown = (url) => u
 }
 
 describe("standalone phone-control boundary", () => {
+  it("keeps document scopes strict and propagates selected handles through sessions, credentials and tasks", async () => {
+    const { app, headers } = await fixture();
+    const resourceScope = { adapter: "android.document.v1", resourceIds: ["document-one"], effects: ["document.read", "document.replace"] };
+    const grant = { apps: [], operations: ["describe", "stop", ...resourceScope.effects], disclosure: { screenshots: false }, resourceScope, ttlSeconds: 60 };
+    const docSession = { id: "session", deviceId: "phone", ...grant, expiresAt: scope.expiresAt };
+    const docCredential = { id: "agent", devices: ["phone"], sessionIds: ["session"], label: "Document agent", ...grant, expiresAt: scope.expiresAt };
+    const docTask = { id: "task", deviceId: "phone", sessionId: "session", resourceScope, status: "active", expiresAt: scope.expiresAt, maxActions: 2, actionsUsed: 0, outcome: "unverified" };
+    const forwarded: Record<string, unknown>[] = [];
+    const fetchMock = mockBroker((url, init) => {
+      if (init.body) forwarded.push(JSON.parse(String(init.body)));
+      if (url.endsWith("/sessions")) return { session: docSession };
+      if (url.endsWith("/credentials")) return { credential: { ...docCredential, token: agentToken } };
+      if (url.endsWith("/tasks")) return { task: docTask };
+      return url.endsWith("/audit") ? { events: [] } : { devices: [phone], sessions: [docSession], credentials: [docCredential], tasks: [docTask] };
+    });
+    const sessionResponse = await app.inject({ method: "POST", url: "/api/phone-control/sessions", headers, payload: { deviceId: "phone", ...grant } });
+    expect(sessionResponse.statusCode).toBe(200); expect(sessionResponse.json().session.resourceScope).toEqual(resourceScope);
+    const issued = await app.inject({ method: "POST", url: "/api/phone-control/credentials", headers, payload: { devices: ["phone"], sessionIds: ["session"], label: "Document agent", ...grant } });
+    expect(issued.statusCode).toBe(200); expect(issued.json().credential.resourceScope).toEqual(resourceScope);
+    const acquired = await app.inject({ method: "POST", url: "/api/phone-control/tasks", headers, payload: { deviceId: "phone", sessionId: "session", ttlSeconds: 60, maxActions: 2, resourceScope } });
+    expect(acquired.statusCode).toBe(200); expect(acquired.json().task.resourceScope).toEqual(resourceScope);
+    expect(forwarded).toHaveLength(3); expect(forwarded.every((body) => JSON.stringify(body.resourceScope) === JSON.stringify(resourceScope))).toBe(true);
+    expect((await app.inject({ url: "/api/phone-control/state", headers })).json()).toMatchObject({ sessions: [{ resourceScope }], credentials: [{ resourceScope }], tasks: [{ resourceScope }] });
+    fetchMock.mockClear();
+    for (const invalid of [
+      { ...grant, apps: ["org.example.notes"] }, { ...grant, disclosure: { screenshots: true } }, { ...grant, operations: ["observe"] },
+      { ...grant, resourceScope: { ...resourceScope, adapter: "account.label.v1" } }, { ...grant, resourceScope: { ...resourceScope, account: "personal" } },
+      { ...grant, resourceScope: { ...resourceScope, effects: ["document.replace"] } }, { ...grant, resourceScope: { ...resourceScope, resourceIds: ["same", "same"] } },
+      { apps: [], operations: ["observe"], ttlSeconds: 60 }, { apps: ["org.example.notes"], operations: ["document.read"], ttlSeconds: 60 },
+    ]) expect((await app.inject({ method: "POST", url: "/api/phone-control/sessions", headers, payload: { deviceId: "phone", ...invalid } })).statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("projects only bounded document text for the requested handle and refuses malformed signed results", async () => {
+    const { app, headers } = await fixture();
+    const input = { ...call, method: "document.read", taskId: "task", params: { resourceId: "document-one" } };
+    const text = "Untrusted document <script>content</script>\n😀";
+    const result = { resourceId: "document-one", text, revision: digest(text) };
+    const fetchMock = mockBroker(() => ({ id: call.id, status: "observed", result }));
+    const read = await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: input });
+    expect(read.json()).toEqual({ id: call.id, status: "observed", result }); expect(read.headers["cache-control"]).toBe("no-store"); expect(fetchMock).toHaveBeenCalledTimes(1);
+    for (const malformed of [
+      { ...result, resourceId: "other" }, { ...result, revision: "0".repeat(64) }, { ...result, revision: result.revision.toUpperCase() },
+      { ...result, text: "x".repeat(2001), revision: digest("x".repeat(2001)) }, { ...result, privateUri: "content://provider/private" },
+      { ...result, text: "\u0000", revision: digest("\u0000") }, { ...result, text: "\ud800", revision: digest("\ud800") },
+    ]) {
+      const mock = mockBroker(() => ({ id: call.id, status: "observed", result: malformed }));
+      const response = (await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: input })).json();
+      expect(response.status).toBe("unknown"); expect(response.result).toBeUndefined(); expect(mock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("requires document task binding and exact replacement revisions without retrying ambiguous writes", async () => {
+    const { app, headers } = await fixture();
+    const input = { ...call, method: "document.replace", taskId: "task", params: { resourceId: "document-one", expectedRevision: digest("original"), text: "" } };
+    let fetchMock = mockBroker(() => ({ id: call.id, status: "completed", result: { status: "completed" } }));
+    expect((await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: input })).json().status).toBe("completed");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1].body))).toEqual(input);
+    fetchMock.mockClear();
+    for (const invalid of [
+      { ...input, taskId: undefined }, { ...input, method: "document.read", taskId: undefined, params: { resourceId: "document-one" } },
+      { ...input, params: { ...input.params, expectedRevision: "current" } }, { ...input, params: { ...input.params, text: "x".repeat(2001) } },
+      { ...input, params: { ...input.params, text: "\u0000" } }, { ...input, params: { ...input.params, account: "personal" } },
+    ]) expect((await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: invalid })).statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+    for (const result of [{ status: "dispatched" }, { status: "completed", revision: digest("private") }]) {
+      fetchMock = mockBroker(() => ({ id: call.id, status: "completed", result }));
+      const response = (await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: input })).json();
+      expect(response.status).toBe("unknown"); expect(response.result).toBeUndefined(); expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("preserves strict capture recovery on signed observations and terminal guard errors", async () => {
     const { app, headers } = await fixture();
     const observe = () => app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { ...call, method: "observe", params: { includeScreenshot: false } } });
@@ -329,6 +401,36 @@ describe("standalone phone-control boundary", () => {
     }
   });
 
+  it("integrates selected-document reads and replacements through the real broker without storing document contents", async () => {
+    const { app, headers } = await fixture();
+    const modulePath = new URL("../../../components/phone-control/src/broker.mjs", import.meta.url).href;
+    const { Broker } = await import(/* @vite-ignore */ modulePath);
+    let text = "Private original document";
+    const resourceId = "selected-document";
+    const nativeFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const input = JSON.parse(String(init.body));
+      expect(input.params.resourceId).toBe(resourceId);
+      if (input.method === "document.replace") { expect(input.params.expectedRevision).toBe(digest(text)); text = input.params.text; }
+      return Response.json({ id: input.id, result: input.method === "document.read" ? { resourceId, revision: digest(text), text } : { status: "completed" } });
+    });
+    const broker = new Broker({ config: { devices: [{ ...phone, origin: "http://127.0.0.1:8837", token: "synthetic_native_token_1234567890" }] }, state: { credentials: [], sessions: [], receipts: [], audit: [] }, save: () => {}, fetchImpl: nativeFetch });
+    const owner = { id: "owner", admin: true };
+    const resourceScope = { adapter: "android.document.v1", resourceIds: [resourceId], effects: ["document.read", "document.replace"] };
+    const docSession = broker.createSession(owner, { deviceId: phone.id, apps: [], operations: ["document.read", "document.replace", "stop"], resourceScope, ttlSeconds: 60 }).session;
+    const reservation = broker.createTask(owner, { deviceId: phone.id, sessionId: docSession.id, resourceScope, ttlSeconds: 60, maxActions: 2 }).task;
+    mockBroker(async (_url, init) => broker.call(owner, JSON.parse(String(init.body))));
+    const invoke = (id: string, method: string, params: Record<string, unknown>) => app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: { id, deviceId: phone.id, sessionId: docSession.id, taskId: reservation.id, method, params } });
+    const read = await invoke("read-document", "document.read", { resourceId });
+    expect(read.json()).toMatchObject({ status: "observed", result: { resourceId, text, revision: digest(text) } });
+    const replaced = await invoke("replace-document", "document.replace", { resourceId, expectedRevision: read.json().result.revision, text: "Private replacement text" });
+    expect(replaced.json()).toEqual({ id: "replace-document", status: "completed" });
+    expect(nativeFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(nativeFetch.mock.calls[1]![1].body)).params.deadlineAt).toBeLessThanOrEqual(Date.parse(reservation.expiresAt));
+    const persisted = JSON.stringify(broker.data);
+    const audit = (await app.inject({ url: "/api/audit", headers })).body;
+    for (const secret of ["Private original document", "Private replacement text"]) { expect(persisted).not.toContain(secret); expect(audit).not.toContain(secret); }
+  });
+
   it("creates narrow scopes, shows a new agent token only on issuance and can revoke access", async () => {
     const { app, headers, cookie } = await fixture();
     const newCredential = { id: "agent", label: "Agent", devices: ["phone"], ...scope };
@@ -354,4 +456,36 @@ describe("standalone phone-control boundary", () => {
     const stop = await app.inject({ method: "POST", url: "/api/phone-control/devices/phone/stop", headers, payload: {} });
     expect(stop.statusCode).toBe(200); expect(stop.json()).toEqual({ revoked: true, stopStatus: "unknown" }); expect(fetchMock).toHaveBeenCalledTimes(61);
   });
+  it("enforces folder draft schemas and accepts only verified safe creation receipts", async () => {
+    const { app, headers } = await fixture();
+    const resourceId = "8c82feef-05f7-43a5-a337-c77b682ab7cd";
+    const resourceScope = { adapter: "android.folder-drafts.v1", resourceIds: [resourceId], effects: ["draft.create"] };
+    let result: unknown = { status: "completed" };
+    const upstream = mockBroker((url, init) => url.endsWith("/sessions") ? { session: { ...session, apps: [], operations: ["draft.create", "stop"], resourceScope } } : { id: "request", status: "completed", result });
+    const grant = { deviceId: "phone", apps: [], operations: ["draft.create", "stop"], resourceScope, ttlSeconds: 600 };
+    expect((await app.inject({ method: "POST", url: "/api/phone-control/sessions", headers, payload: grant })).statusCode).toBe(200);
+    for (const payload of [
+      { ...grant, apps: ["org.example.notes"] }, { ...grant, operations: ["draft.create", "document.read"] },
+      { ...grant, disclosure: { screenshots: true } }, { ...grant, resourceScope: { ...resourceScope, effects: ["draft.create", "document.replace"] } },
+      { ...grant, resourceScope: { ...resourceScope, resourceIds: ["content://private/tree"] } },
+      { ...grant, resourceScope: { ...resourceScope, resourceIds: [resourceId, resourceId] } },
+      { ...grant, resourceScope: undefined, apps: ["org.example.notes"] },
+    ]) expect((await app.inject({ method: "POST", url: "/api/phone-control/sessions", headers, payload })).statusCode).toBe(400);
+    const draft = { ...call, taskId: "task", method: "draft.create", params: { resourceId, text: "Private draft text" } };
+    for (const payload of [
+      { ...draft, taskId: undefined }, { ...draft, params: { ...draft.params, filename: "existing.txt" } },
+      { ...draft, params: { ...draft.params, uri: "content://private" } },
+      { ...draft, params: { ...draft.params, overwrite: true } },
+      ...["bad\u0000text", "\ud800", "x".repeat(2001)].map((text) => ({ ...draft, params: { resourceId, text } })),
+    ]) expect((await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload })).statusCode).toBe(400);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    expect((await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: draft })).json()).toEqual({ id: "request", status: "completed" });
+    for (const unsafe of [{ status: "dispatched" }, { status: "completed", text: "Private draft text" }, { status: "completed", uri: "content://private" }]) {
+      result = unsafe;
+      const receipt = (await app.inject({ method: "POST", url: "/api/phone-control/call", headers, payload: draft })).json();
+      expect(receipt.status).toBe("unknown"); expect(receipt.result).toBeUndefined();
+    }
+    expect((await app.inject({ url: "/api/audit", headers })).body).not.toContain("Private draft text");
+  });
+
 });
