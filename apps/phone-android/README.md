@@ -2,7 +2,7 @@
 
 An independent, native Java Android companion for a local computer-use broker.
 Requires Android 14 / API 34 or newer; targets API 36. This component is alpha
-(`0.1.0-alpha.2`) and has its own application identity and AGPL license with the
+(`0.1.0-alpha.3`) and has its own application identity and AGPL license with the
 origin notice in [ATTRIBUTION.md](ATTRIBUTION.md). The existing portal Android app
 remains a separate application. No application runtime dependencies are added.
 
@@ -24,6 +24,78 @@ Authenticated Stop remains available. Android 14/15 retain support with one
 bounded read-only recovery after an exact internal-error callback. The original
 failure remains visible; this is not a framework fix or an action retry. See
 [Android 14/15 recovery and caveats](../../docs/phone-control-android-14-15.md).
+
+## Owner-selected draft folders (default)
+
+Use **Select a folder for new drafts** before considering the advanced exact-file
+workflow. The Android folder picker and a separate provider trust dialog create
+an opaque local folder ID for `android.folder-drafts.v1`. Enable `draft.create`
+locally, then select this adapter and ID in the broker owner grant. Existing
+exact-file grants never widen automatically.
+
+`draft.create({resourceId, text, deadlineAt})` creates one native-generated UUID
+`.draft.txt` file after a complete folder/provider/filename/text review and strong
+biometric CryptoObject confirmation for every call. The broker supplies the
+deadline. The only success receipt is `{status: "completed"}` after matching
+readback. There is no folder read API, caller filename/URI/path, replacement,
+delete, publish, or generic action fallback. Text limits match the exact-document
+adapter below. At most 255 existing immediate children are supported, with a
+bounded metadata-only listing; their content is never read by this adapter.
+
+Android grants broader persistent folder/descendant read-write permission than
+this typed adapter exposes. The provider package, signing identity, installed
+version/update, tree URI, and folder name are pinned. Before opening a created
+file, the adapter checks a new ID, canonical same-tree URI, exact generated name
+and MIME type, immediate listing membership, and unchanged existing metadata.
+It opens `rw` without truncation and rejects nonempty, nonregular, or multiply
+linked descriptors. It never deletes a failed draft. Any uncertainty after
+`createDocument` begins reports `unknown_action_state`; do not replay it.
+
+These checks require a trusted provider: a dishonest provider can alias backing
+storage or lie about metadata, and concurrent writers can race validation.
+Provider sync or other applications can act on a draft independently. A draft
+extension is not a guarantee against publication by the surrounding system.
+Choose a dedicated trusted folder without publishing automation. See the
+[folder acceptance record](FOLDER_SCOPE_QA.md) for tested boundaries and limits.
+
+## Advanced: exact owner-selected plaintext documents
+
+`android.document.v1` is a separate resource adapter. In the companion, select
+one document using the Android picker and explicitly trust the displayed provider.
+Choose read-only or read-and-replace authority, enable the corresponding local
+operations, and copy the opaque resource ID into the broker's owner grant. The
+generic `describe` response never lists document handles, names, or provider URIs.
+
+- `document.read({resourceId})` returns `{resourceId, revision, text}`.
+- `document.replace({resourceId, expectedRevision, text, deadlineAt})` returns
+  `{status: "completed"}` only after a real strong-biometric CryptoObject consent,
+  an unchanged revision check, exact replacement, and matching readback.
+
+Documents must be valid UTF-8, at most 2,000 UTF-16 code units and 8,192 bytes,
+with no NUL characters. Revisions are lowercase SHA-256 of the exact UTF-8 text;
+line endings and Unicode are preserved. Empty text is supported. Only exact
+`text/plain`, nonvirtual, nonpartial SAF documents with ordinary seekable file
+descriptors and a `MANAGE_DOCUMENTS` protected provider are supported. The exact
+URI, provider package, signer, installed version/update identity, and display
+name are pinned locally. Caller paths, URIs, directories, and account scopes are
+rejected. The separate app/screen path is never a fallback for document requests.
+
+Provider trust is explicit: SAF cannot attest an account or guarantee atomic
+compare-and-swap. Concurrent edits can still race the final revision check;
+providers can have effects outside the URI contract. Each replacement review
+shows the complete previous and replacement text, exact URI, handle, and pinned
+provider identity. Once write access is attempted, failures report
+`unknown_action_state`; there are no automatic mutation retries. A matching local
+readback does not prove remote synchronization or absence of provider side effects.
+
+Provider I/O runs in one bounded off-main worker. A timed-out provider retains
+that slot until it actually returns, blocking new work and session rearming.
+Stop revokes session authority immediately; a dispatched provider write may
+still finish. Revoke removes the local grant first and releases Android's
+persisted URI permission after outstanding provider work settles. A hung
+provider can delay that cleanup, but the removed handle cannot authorize reads
+or writes. The final result is rechecked against local authority on the main
+thread before publication. See [document scope QA](DOCUMENT_SCOPE_QA.md).
 
 ## Build and install
 

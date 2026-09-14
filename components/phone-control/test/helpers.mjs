@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { Broker, createServer } from '../src/broker.mjs';
 import { digest } from '../src/security.mjs';
-import { METHODS, MUTATIONS } from '../src/validation.mjs';
+import { METHODS, MUTATIONS, RESOURCE_EFFECTS } from '../src/validation.mjs';
 import { generateResponseIdentity } from '../src/response-proof.mjs';
 
 export const APP = 'com.example.allowed';
@@ -25,12 +25,12 @@ export function harness(options = {}) {
     return Response.json({ id: body.id, result });
   } });
   const owner = broker.authenticate(`Bearer ${SECRET}`);
-  const session = broker.createSession(owner, { deviceId: 'phone', apps: [APP], operations: METHODS, disclosure: { screenshots: options.screenshots !== false }, ttlSeconds: 600 }).session;
+  const session = broker.createSession(owner, { deviceId: 'phone', apps: [APP], operations: METHODS.filter(method => !RESOURCE_EFFECTS.includes(method)), disclosure: { screenshots: options.screenshots !== false }, ttlSeconds: 600 }).session;
   let currentTask;
   // Existing primitive tests run with an explicit fixture task grant. Authority
   // tests disable this fixture convenience and create their own bounded leases.
   const grant = (overrides = {}) => {
-    const credential = broker.createCredential(owner, { label: 'Agent', devices: ['phone'], apps: [APP], operations: METHODS, disclosure: { screenshots: options.screenshots !== false }, ttlSeconds: 3600, ...overrides }).credential;
+    const credential = broker.createCredential(owner, { label: 'Agent', devices: ['phone'], apps: [APP], operations: METHODS.filter(method => !RESOURCE_EFFECTS.includes(method)), disclosure: { screenshots: options.screenshots !== false }, ttlSeconds: 3600, ...overrides }).credential;
     const actor = broker.authenticate(`Bearer ${credential.token}`); currentTask = undefined;
     if (options.autoTasks !== false && credential.operations.some((method) => method !== 'stop' && MUTATIONS.has(method)) && !broker.data.tasks.some((task) => task.status === 'active')) currentTask = broker.createTask(actor, { deviceId: 'phone', sessionId: session.id, ttlSeconds: 300, maxActions: 100 }).task;
     return { actor, credential, task: currentTask };

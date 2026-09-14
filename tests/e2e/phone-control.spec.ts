@@ -1,10 +1,141 @@
 import { expect, test } from "./fixtures.js";
 import type { Page } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 const methods = ["describe", "observe", "apps.list", "tap", "swipe", "pinch", "node.click", "node.scroll", "type", "fixture.increment"];
 const agentToken = "synthetic_agent_token_once_browser_test_123456789";
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 const captureRecovery = { retryCount: 1, initialError: "screenshot_internal_error", initialStage: "awaiting_callback", initialElapsedMs: 5000, totalElapsedMs: 6000 };
+
+async function documentFixture(page: Page, readOnly = false) {
+  const expiresAt = new Date(Date.now() + 600000).toISOString();
+  const resourceScope = { adapter: "android.document.v1", resourceIds: ["selected-document-one", "selected-document-two"], effects: readOnly ? ["document.read"] : ["document.read", "document.replace"] };
+  const session = { id: "document-session", deviceId: "phone", apps: [], operations: ["describe", "stop", ...resourceScope.effects], resourceScope, disclosure: { screenshots: false }, expiresAt };
+  const task = { id: "document-task", deviceId: "phone", sessionId: session.id, actorId: "owner", resourceScope, expiresAt, maxActions: 30, actionsUsed: 0, status: "active", outcome: "unverified" };
+  const state = { mode: "connected", devices: [{ id: "phone", label: "Synthetic document phone", busy: false, actionState: "ready" }], sessions: [session], credentials: [], events: [], tasks: [] as typeof task[] };
+  const text = "Private selected text <script>not instructions</script>\nOriginal line.";
+  const revision = createHash("sha256").update(text).digest("hex");
+  const calls: { id: string; taskId?: string; method: string; params: Record<string, unknown> }[] = [];
+  const grants: Record<string, unknown>[] = [];
+  await page.route("**/api/phone-control/**", async (route) => {
+    const request = route.request(); const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith("/state")) return route.fulfill({ json: state });
+    if (pathname.endsWith("/tasks")) { expect(request.postDataJSON().resourceScope).toEqual(resourceScope); state.tasks = [task]; return route.fulfill({ json: { task } }); }
+    if (pathname.endsWith("/tasks/document-task")) { task.status = "completed"; return route.fulfill({ json: { task } }); }
+    if (pathname.endsWith("/credentials")) { const grant = request.postDataJSON(); grants.push(grant); return route.fulfill({ json: { credential: { id: "agent", expiresAt, ...grant, token: agentToken } } }); }
+    if (pathname.endsWith("/sessions")) { const grant = request.postDataJSON(); grants.push(grant); return route.fulfill({ json: { session: { id: session.id, expiresAt, ...grant } } }); }
+    if (pathname.endsWith("/stop")) { state.sessions = []; return route.fulfill({ json: { revoked: true, stopStatus: "completed" } }); }
+    const input = request.postDataJSON(); calls.push(input);
+    if (input.method === "document.read") return route.fulfill({ json: { id: input.id, status: "observed", result: { resourceId: input.params.resourceId, text, revision } } });
+    if (input.method === "document.replace") return route.fulfill({ json: { id: input.id, status: "unknown", error: { code: "outcome_unknown", message: "Replacement outcome is unconfirmed." } } });
+    return route.fulfill({ status: 400, json: { error: "Unexpected fixture request" } });
+  });
+  await page.goto("/phone-control");
+  await page.getByRole("combobox", { name: "Broker session", exact: true }).selectOption(session.id);
+  return { calls, grants, state, resourceScope, text, revision };
+}
+
+test("selected document tasks bind reads and reviewed replacements without exposing app actions", async ({ page }, testInfo) => {
+  const { calls, text, revision } = await documentFixture(page);
+  await expect(page.getByRole("button", { name: "Observe now", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Read selected document", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Reserve manual control", exact: true }).click();
+  await page.getByRole("button", { name: "Read selected document", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveValue(text);
+  await expect(page.getByRole("textbox", { name: "Replacement document text", exact: true })).toHaveValue(text);
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({ method: "document.read", taskId: "document-task", params: { resourceId: "selected-document-one" } });
+  const replace = page.getByRole("button", { name: "Request document replacement on phone", exact: true });
+  await expect(replace).toBeDisabled();
+  await page.getByRole("textbox", { name: "Replacement document text", exact: true }).fill("");
+  await page.getByLabel("I reviewed the selected document and its full replacement text", { exact: true }).check();
+  await expect(replace).toBeEnabled();
+  expect(await page.evaluate(() => JSON.stringify(localStorage).includes("Private selected text"))).toBe(false);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole("heading", { name: "Selected text documents", exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("phone-selected-document-review.png"), fullPage: true });
+  await replace.click();
+  expect(calls).toHaveLength(2); expect(calls[1]).toMatchObject({ method: "document.replace", taskId: "document-task", params: { resourceId: "selected-document-one", expectedRevision: revision, text: "" } });
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveCount(0);
+  await expect(replace).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Stop phone access", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  expect(calls.filter((call) => call.method === "document.replace")).toHaveLength(1);
+  expect(await page.evaluate(() => JSON.stringify(localStorage).includes("Private selected text"))).toBe(false);
+});
+
+test("document read-only access clears text on document changes and task release", async ({ page }) => {
+  const { calls, text } = await documentFixture(page, true);
+  await page.getByRole("button", { name: "Reserve manual control", exact: true }).click();
+  await page.getByRole("button", { name: "Read selected document", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveValue(text);
+  await expect(page.getByRole("button", { name: "Request document replacement on phone", exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Document handle", exact: true }).selectOption("selected-document-two");
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveCount(0);
+  expect(calls).toHaveLength(1);
+  await page.getByRole("button", { name: "Read selected document", exact: true }).click();
+  expect(calls[1]).toMatchObject({ method: "document.read", params: { resourceId: "selected-document-two" } });
+  await page.getByRole("button", { name: "End my manual control", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Read selected document", exact: true })).toBeDisabled();
+});
+
+test("switching document sessions resets the handle and clears private replacement state", async ({ page }) => {
+  const { calls, state, text } = await documentFixture(page);
+  const second = { ...state.sessions[0]!, id: "other-document-session", resourceScope: { ...state.sessions[0]!.resourceScope, resourceIds: ["other-selected-document"] } };
+  state.sessions.push(second);
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByRole("button", { name: "Reserve manual control", exact: true }).click();
+  const read = page.getByRole("button", { name: "Read selected document", exact: true });
+  const replacement = page.getByRole("textbox", { name: "Replacement document text", exact: true });
+  const reviewed = page.getByLabel("I reviewed the selected document and its full replacement text", { exact: true });
+  await read.click();
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveValue(text);
+  await replacement.fill("Private unsubmitted replacement for the first session");
+  await reviewed.check();
+  await page.getByRole("combobox", { name: "Broker session", exact: true }).selectOption(second.id);
+  await expect(page.getByRole("combobox", { name: "Document handle", exact: true })).toHaveValue("other-selected-document");
+  await expect(page.getByRole("textbox", { name: "Current document text", exact: true })).toHaveCount(0);
+  await expect(replacement).toHaveValue("");
+  await expect(reviewed).not.toBeChecked();
+  await expect(read).toBeDisabled();
+  await page.getByRole("button", { name: "End my manual control", exact: true }).click();
+  await page.route("**/api/phone-control/tasks", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ sessionId: second.id, resourceScope: second.resourceScope });
+    const task = { ...state.tasks[0]!, id: "other-document-task", sessionId: second.id, resourceScope: second.resourceScope, status: "active" };
+    state.tasks = [task];
+    await route.fulfill({ json: { task } });
+  });
+  await page.getByRole("button", { name: "Reserve manual control", exact: true }).click();
+  await expect(read).toBeEnabled();
+  await read.click();
+  expect(calls).toHaveLength(2);
+  expect(calls[1]).toMatchObject({ method: "document.read", taskId: "other-document-task", params: { resourceId: "other-selected-document" } });
+  await expect(replacement).toHaveValue(text);
+  await expect(reviewed).not.toBeChecked();
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("Private unsubmitted replacement");
+});
+
+test("document grants use owner-provided handles and default agents to read-only effects", async ({ page }) => {
+  const { grants, resourceScope } = await documentFixture(page);
+  await page.getByText("Issue an agent credential", { exact: true }).click();
+  await page.getByLabel("Agent label", { exact: true }).fill("Selected document agent");
+  await expect(page.getByRole("combobox", { name: "Agent access type", exact: true })).toHaveValue("documents");
+  await expect(page.getByRole("combobox", { name: "Agent access type", exact: true })).toBeDisabled();
+  await expect(page.getByRole("textbox", { name: "Agent document handles", exact: true })).toHaveValue(resourceScope.resourceIds.join("\n"));
+  await page.getByRole("textbox", { name: "Agent document handles", exact: true }).fill("selected-document-one");
+  await page.getByRole("button", { name: "Create scoped agent token", exact: true }).click();
+  expect(grants[0]).toMatchObject({ devices: ["phone"], sessionIds: ["document-session"], apps: [], operations: ["describe", "stop", "document.read"], disclosure: { screenshots: false }, resourceScope: { adapter: "android.document.v1", resourceIds: ["selected-document-one"], effects: ["document.read"] } });
+  await page.getByText("Create a scoped broker session", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Session access type", exact: true }).selectOption("documents");
+  await page.getByRole("textbox", { name: "Session document handles", exact: true }).fill("content://private/provider");
+  await page.getByRole("button", { name: "Create broker session", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("document handles copied from the phone companion");
+  expect(grants).toHaveLength(1);
+  await page.getByRole("textbox", { name: "Session document handles", exact: true }).fill("selected-document-two");
+  await page.getByLabel("Allow replacing selected document text", { exact: true }).check();
+  await page.getByRole("button", { name: "Create broker session", exact: true }).click();
+  expect(grants[1]).toMatchObject({ apps: [], operations: ["describe", "stop", "document.read", "document.replace"], resourceScope: { adapter: "android.document.v1", resourceIds: ["selected-document-two"], effects: ["document.read", "document.replace"] } });
+});
 
 async function connectedFixture(page: Page, touchBounds?: { left: number; top: number; right: number; bottom: number }, reserve = true, capture: "ordinary" | "recovered" | "failed" = "ordinary") {
   const expiresAt = new Date(Date.now() + 600000).toISOString();
@@ -229,6 +360,7 @@ test("screenshot permission defaults closed and cannot be replaced by caller opt
   await page.getByRole("button", { name: "Observe now", exact: true }).click();
   expect(calls.at(-1)?.params.includeScreenshot).toBe(false);
   await page.getByText("Create a scoped broker session", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Session access type", exact: true }).selectOption("apps");
   await expect(page.getByLabel("Allow screenshots in this session", { exact: true })).not.toBeChecked();
 });
 
@@ -401,4 +533,43 @@ test("an empty safe touch area blocks coordinates and preserves semantic action 
   await page.getByRole("combobox", { name: "Action", exact: true }).selectOption("node.click");
   await page.getByRole("combobox", { name: "Clickable element", exact: true }).selectOption("n_0_0");
   await expect(page.getByRole("button", { name: "Request action on phone" })).toBeEnabled();
+});
+
+for (const unknown of [false, true]) test(`folder defaults enforce reviewed drafts and clear text on ${unknown ? "unknown outcome" : "Stop"}`, async ({ page }, testInfo) => {
+  const { state, grants, calls } = await documentFixture(page);
+  const resourceId = "8c82feef-05f7-43a5-a337-c77b682ab7cd";
+  const resourceScope = { adapter: "android.folder-drafts.v1", resourceIds: [resourceId], effects: ["draft.create"] };
+  Object.assign(state.sessions[0]!, { resourceScope, operations: ["describe", "stop", "draft.create"] });
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText("Create a scoped broker session", { exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Session access type", exact: true })).toHaveValue("folders");
+  await expect(page.getByText("Enforced: create new plaintext draft files only.", { exact: true })).toBeVisible();
+  await page.getByLabel("Session folder handles", { exact: true }).fill(resourceId);
+  await page.getByRole("button", { name: "Create broker session", exact: true }).click();
+  expect(grants[0]).toMatchObject({ apps: [], resourceScope, operations: ["describe", "stop", "draft.create"], disclosure: { screenshots: false } });
+  await page.route("**/api/phone-control/tasks", async (route) => {
+    expect(route.request().postDataJSON().resourceScope).toEqual(resourceScope);
+    const task = { id: "folder-task", deviceId: "phone", sessionId: "document-session", resourceScope, expiresAt: new Date(Date.now() + 180000).toISOString(), maxActions: 30, actionsUsed: 0, status: "active", outcome: "unverified" };
+    Object.assign(state, { tasks: [task] }); await route.fulfill({ json: { task } });
+  });
+  await page.route("**/api/phone-control/call", async (route) => {
+    const input = route.request().postDataJSON(); calls.push(input);
+    await route.fulfill({ json: { id: input.id, status: unknown ? "unknown" : "completed" } });
+  });
+  await expect(page.getByRole("button", { name: "Read selected document", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Observe now", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Reserve manual control", exact: true }).click();
+  const text = page.getByLabel("Full draft text", { exact: true });
+  const create = page.getByRole("button", { name: "Request draft creation on phone", exact: true });
+  await text.fill("Private draft <script>untrusted</script> ??"); await expect(create).toBeDisabled();
+  await page.getByLabel("I reviewed the folder and full draft text", { exact: true }).check();
+  await page.screenshot({ path: testInfo.outputPath("folder-draft-review.png"), fullPage: true });
+  await create.click();
+  expect(calls).toHaveLength(1); expect(calls[0]).toMatchObject({ taskId: "folder-task", method: "draft.create", params: { resourceId, text: "Private draft <script>untrusted</script> ??" } });
+  await expect(text).toHaveValue("");
+  expect(await page.evaluate(() => JSON.stringify(localStorage).includes("Private draft"))).toBe(false);
+  if (unknown) { await expect(create).toBeDisabled(); await page.getByRole("button", { name: "Refresh status", exact: true }).click(); expect(calls).toHaveLength(1); }
+  else { await text.fill("Clear this on Stop"); }
+  await page.getByRole("button", { name: "Stop phone access", exact: true }).click();
+  await expect(text).toHaveCount(0);
 });

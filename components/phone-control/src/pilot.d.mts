@@ -16,6 +16,8 @@ export interface Observation {
   touchBounds?: Bounds; screenshot?: { mimeType: 'image/png'; base64: string }; captureRecovery?: CaptureRecovery;
 }
 export interface ActionParameters {
+  'draft.create': { resourceId: string; text: string };
+  'document.replace': { resourceId: string; expectedRevision: string; text: string };
   'app.launch': { packageName: string }; tap: { x: number; y: number };
   longPress: { x: number; y: number; durationMs: number }; swipe: { points: { x: number; y: number }[]; durationMs: number };
   pinch: { centerX: number; centerY: number; scale: number; durationMs: number };
@@ -26,8 +28,13 @@ export type ActionMethod = keyof ActionParameters;
 export type MutationReceipt = { id: string; status: 'completed'; result: { status: 'dispatched' | 'completed' | 'stopped' } }
   | { id: string; status: 'rejected' | 'unknown'; error?: PhoneError };
 export interface TaskLease {
+  resourceScope?: ResourceScope;
   id: string; deviceId: string; sessionId: string; status: 'active' | 'completed' | 'expired' | 'revoked' | 'interrupted'; expiresAt: string; maxActions: number; actionsUsed: number;
 }
+/** Phone-owned handles; folder drafts are new text files, not mail drafts or account authority. */
+export type ResourceScope = { adapter: 'android.document.v1'; resourceIds: string[]; effects: ('document.read' | 'document.replace')[] }
+  | { adapter: 'android.folder-drafts.v1'; resourceIds: string[]; effects: ['draft.create'] };
+export interface DocumentRead { resourceId: string; revision: string; text: string }
 export interface PilotBudget { maxActions?: number; maxObservations?: number; timeoutMs?: number }
 export interface ObserveOptions { includeScreenshot?: boolean; timeoutMs?: number; signal?: AbortSignal }
 export interface WaitOptions { timeoutMs?: number; maxObservations?: number; intervalMs?: number; stableObservations?: number; maxTransientFailures?: number; signal?: AbortSignal }
@@ -44,9 +51,12 @@ export class PhonePilot {
   readonly uncertain: boolean; readonly observation: Observation | undefined; readonly task: Readonly<Partial<TaskLease> & { id: string }> | undefined;
   readonly usage: { actions: number; observations: number; elapsedMs: number; limits: Required<PilotBudget> };
   observe(options?: ObserveOptions): Promise<Observation>;
+  readDocument(resourceId: string, options?: Omit<ObserveOptions, 'includeScreenshot'>): Promise<Readonly<DocumentRead>>;
+  replaceDocument(resourceId: string, expectedRevision: string, text: string, options?: { signal?: AbortSignal; requestId?: string }): Promise<MutationReceipt>;
+  createDraft(resourceId: string, text: string, options?: { signal?: AbortSignal; requestId?: string }): Promise<MutationReceipt>;
   waitFor(selector: Selector, options?: WaitOptions): Promise<WaitResult>;
   act<M extends ActionMethod>(method: M, params: ActionParameters[M], options?: { signal?: AbortSignal; requestId?: string }): Promise<MutationReceipt>;
-  acquireTask(options?: { ttlSeconds?: number; maxActions?: number; label?: string }): Promise<TaskLease>;
+  acquireTask(options?: { ttlSeconds?: number; maxActions?: number; label?: string; resourceScope?: ResourceScope }): Promise<TaskLease>;
   taskStatus(): Promise<TaskLease>;
   releaseTask(): Promise<unknown>;
   actionStatus(requestId: string): Promise<Reconciliation>;

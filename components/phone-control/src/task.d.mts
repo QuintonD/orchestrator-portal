@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Required origin notice: see ATTRIBUTION.md.
-import type { PhonePilot, ObserveOptions, Observation, Selector, WaitOptions, WaitResult, ActionMethod, ActionParameters, MutationReceipt } from './pilot.mjs';
+import type { PhonePilot, ObserveOptions, Observation, Selector, WaitOptions, WaitResult, ActionMethod, ActionParameters, MutationReceipt, DocumentRead } from './pilot.mjs';
 export type TaskState = 'running' | 'action_requested' | 'dispatch_acknowledged' | 'rejected' | 'outcome_unknown' | 'handoff_required' | 'awaiting_verification' | 'failed';
 export type HandoffReason = 'owner_decision' | 'protected_surface' | 'verification_required' | 'cancelled' | 'budget_exhausted' | 'reconciliation_required';
 export interface TaskCheckpoint {
@@ -15,6 +15,7 @@ export class SourcePhoneTask {
   constructor(options: { pilot: PhonePilot; checkpointFile: string; id?: string; onEvent?: (event: { type: TaskState; taskId: string; sequence: number; evidence: 'source_reported' }) => void; budget?: SourceTaskBudget });
   readonly checkpoint: Readonly<TaskCheckpoint>; readonly signal: AbortSignal;
   observe(options?: Omit<ObserveOptions, 'signal'>): Promise<Observation>;
+  readDocument(resourceId: string, options?: Pick<ObserveOptions, 'timeoutMs'>): Promise<Readonly<DocumentRead>>;
   waitFor(selector: Selector, options?: Omit<WaitOptions, 'signal'>): Promise<WaitResult>;
   act<M extends ActionMethod>(method: M, params: ActionParameters[M]): Promise<MutationReceipt>;
   model<T>(reservation: { maxTokens: number; maxCostMicros?: number }, invoke: (options: { signal: AbortSignal; maxTokens: number; maxCostMicros: number }) => T | Promise<T>): Promise<T>;

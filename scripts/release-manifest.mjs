@@ -6,11 +6,11 @@ import { readFile, readdir, writeFile, mkdtemp, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import releasePackage from "../package.json" with { type: "json" };
 
 export const desktopTargets = ["win32-x64", "win32-arm64", "darwin-x64", "darwin-arm64", "linux-x64", "linux-arm64"];
-// This first companion distribution upgrades the retained pre-change signed
-// alpha 1 build. It was not separately published. Update deliberately per release.
-export const previousCompanionVersion = "0.1.0-alpha.1";
+// The published companion upgrade baseline advances with release metadata.
+export const previousCompanionVersion = releasePackage.orchestratorRelease.previousCompanionVersion;
 export const companionHarnessFiles = ["tests/phone-control/upgrade.mjs", "tests/phone-control/upgrade-evidence.mjs", "tests/phone-control/upgrade/UpgradeProbe.java"];
 export const gatewayHarnessFiles = ["tests/release-upgrade.mjs", "tests/release-upgrade-records.mjs", "tests/android/native.mjs"];
 export const brokerFiles = ["ATTRIBUTION.md", "LICENSE", "NOTICE", "README.md", "package.json", "bin/phone-control.mjs", "src/broker.mjs", "src/client.mjs", "src/client.d.mts", "src/mcp.mjs", "src/pilot.mjs", "src/pilot.d.mts", "src/security.mjs", "src/validation.mjs", "src/response-proof.mjs", "src/task.mjs", "src/task.d.mts", "deployment/Dockerfile", "deployment/host.mjs", "deployment/guest.mjs", "deployment/protocol.mjs"].sort();

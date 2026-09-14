@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { runInNewContext } from "node:vm";
+import releasePackage from "../package.json" with { type: "json" };
+import brokerPackage from "../components/phone-control/package.json" with { type: "json" };
 import { brokerFiles, companionHarnessFiles, gatewayHarnessFiles, desktopTargets, releaseAssets, validateInventory, validateWorkflow, unpackBrokerArchive, validateBrokerSource, parseBadging, validateAndroid, validateGatewayUpgrade, requiredGatewayChecks, validateCompanionUpgrade, requiredCompanionAssertions } from "./release-manifest.mjs";
 
 const commit = "a".repeat(40);
@@ -16,6 +18,18 @@ function proof() {
   return { kind: "signed-companion-in-place-upgrade", status: "passed", serial: "emulator-5556", startedAt: "2026-09-13T01:00:00Z", finishedAt: "2026-09-13T01:05:00Z", baseline: { ...structuredClone(baseline), path: "retained.apk" }, candidate: { ...structuredClone(candidate), path: "fresh.apk" }, harnessSources: structuredClone(tooling.harnessSources), platform: { sdk: "36" }, probeSha256: "f".repeat(64), fixtureSha256: "0".repeat(64), seedSnapshotSha256: "1".repeat(64), candidateSnapshotSha256: "1".repeat(64), assertions: requiredCompanionAssertions.map(name => ({ name, passed: true })), before: { versionCode: 1, versionName: baseline.versionName, userId: "10123", firstInstallTime: "2026-09-13 01:00:00", notificationGranted: true }, after: { versionCode: 2, versionName: candidate.versionName, userId: "10123", firstInstallTime: "2026-09-13 01:00:00", notificationGranted: true }, limits: ["Emulator evidence; retained pre-change baseline is not a published companion release."] };
 }
 const sourceFiles = new Map(await Promise.all(brokerFiles.map(async name => [name, await readFile(new URL(`../components/phone-control/${name}`, import.meta.url))])));
+test("current release inventory follows each distribution's source version", async () => {
+  const gradle = await readFile(new URL("../apps/phone-android/app/build.gradle", import.meta.url), "utf8");
+  const companionVersion = gradle.match(/versionName '([^']+)'/)[1];
+  const current = releaseAssets(releasePackage.version, companionVersion, brokerPackage.version);
+  assert.equal(current.length, 9);
+  assert.ok(current.includes(`orchestrator-${releasePackage.version}.apk`));
+  assert.ok(current.includes(`phone-control-${companionVersion}.apk`));
+  assert.ok(current.includes(`orchestrator-phone-control-${brokerPackage.version}.tgz`));
+  for (const target of desktopTargets) assert.ok(current.includes(`orchestrator-${releasePackage.version}-${target}.${target.startsWith("win32") ? "zip" : "tar.gz"}`));
+  const { previousCompanionVersion } = await import("./release-manifest.mjs");
+  assert.equal(previousCompanionVersion, releasePackage.orchestratorRelease.previousCompanionVersion);
+});
 function tar(entries = [...sourceFiles], { type = "0", rename = name => `package/${name}`, duplicate = false, trailing = false } = {}) {
   const parts = [];
   for (const [index, [name, bytes]] of entries.entries()) {

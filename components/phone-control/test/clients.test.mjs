@@ -14,10 +14,37 @@ import { startMcp, CALL_SCHEMA, PARAM_SCHEMAS, PROTOCOL_VERSION } from '../src/m
 import { METHODS } from '../src/validation.mjs';
 import { createClient } from '../src/client.mjs';
 import { generateResponseIdentity } from '../src/response-proof.mjs';
+import { writePrivate } from '../src/security.mjs';
 import { harness as baseHarness, runningServer, APP, SECRET, deferred } from './helpers.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/phone-control.mjs', import.meta.url));
 const identity = generateResponseIdentity();
+test('CLI resource text files reject malformed UTF-8 and oversized content before any request', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'phone-resource-cli-'));
+  const file = join(directory, 'synthetic.txt');
+  for (const bytes of [Buffer.from([0xff]), Buffer.alloc(8193, 65), Buffer.from('x'.repeat(2001))]) {
+    writePrivate(file, bytes);
+    for (const method of ['draft-create', 'document-replace']) {
+      const result = await command([method, '--device', 'phone', '--session', 'session', '--task', 'task', '--resource', 'folder_a', '--revision', '0'.repeat(64), '--text-file', file], SECRET);
+      assert.equal(result.code, 1); assert.equal(JSON.parse(result.stderr).error.code, 'invalid_document_text');
+      assert.equal(result.stdout, '');
+    }
+  }
+});
+test('CLI draft creation preserves BOM and Unicode bytes without screen observation', async t => {
+  const h = harness({ autoTasks: false, handler: () => ({ status: 'completed' }) });
+  const resourceScope = { adapter: 'android.folder-drafts.v1', resourceIds: ['folder_a'], effects: ['draft.create'] };
+  const session = h.broker.createSession(h.owner, { deviceId: 'phone', apps: [], operations: ['draft.create', 'stop'], resourceScope, ttlSeconds: 600 }).session;
+  const credential = h.broker.createCredential(h.owner, { label: 'CLI drafts', devices: ['phone'], sessionIds: [session.id], apps: [], operations: ['draft.create', 'stop'], resourceScope, ttlSeconds: 600 }).credential;
+  const actor = h.broker.authenticate(`Bearer ${credential.token}`);
+  const task = h.broker.createTask(actor, { deviceId: 'phone', sessionId: session.id, maxActions: 1, ttlSeconds: 60 }).task;
+  const { port } = await runningServer(t, h);
+  const file = join(mkdtempSync(join(tmpdir(), 'phone-draft-bom-')), 'synthetic.txt');
+  const text = '\ufeffSynthetic 😀\r\nDraft'; writePrivate(file, text);
+  const result = await command(['draft-create', '--port', String(port), '--device', 'phone', '--session', session.id, '--task', task.id, '--resource', 'folder_a', '--text-file', file], credential.token);
+  assert.equal(result.code, 0, result.stderr); assert.equal(JSON.parse(result.stdout).status, 'completed');
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].params.text, text); assert.equal(h.calls[0].params.observationId, undefined);
+});
 function harness(options) { const h = baseHarness(options); h.config.signingPrivateKey = identity.privateKey; h.config.signingPublicKey = identity.publicKey; return h; }
 function command(args, secret, input) {
   return new Promise((resolve, reject) => {
@@ -131,7 +158,7 @@ test('lost or malformed response bodies after sending are unknown, never safe to
 });
 
 test('CLI version identifies independent alpha version, origin and license without credentials', async () => {
-  const result = await command(['--version']); assert.equal(result.code, 0); assert.match(result.stdout, /0\.1\.0-alpha\.1/u); assert.match(result.stdout, /AGPL-3\.0-only/u); assert.match(result.stdout, /QuintonD\/orchestrator-portal/u); assert.match(result.stdout, /No warranty/u);
+  const result = await command(['--version']); assert.equal(result.code, 0); assert.equal(result.stdout.split("\n")[0], JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version); assert.match(result.stdout, /AGPL-3\.0-only/u); assert.match(result.stdout, /QuintonD\/orchestrator-portal/u); assert.match(result.stdout, /No warranty/u);
 });
 
 test('CLI refuses an existing token destination before issuing a credential', async (t) => {

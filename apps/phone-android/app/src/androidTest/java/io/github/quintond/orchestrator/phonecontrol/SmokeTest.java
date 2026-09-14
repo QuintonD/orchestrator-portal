@@ -28,6 +28,8 @@ public final class SmokeTest extends Instrumentation {
     private String documentRun;
     private int documentSeed;
     private String probeMode;
+    private String documentScopeResourceId;
+    private String folderScopeResourceId;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         hostProbe = arguments != null && "true".equals(arguments.getString("hostProbe"));
@@ -37,12 +39,21 @@ public final class SmokeTest extends Instrumentation {
         documentRun = arguments == null ? "" : arguments.getString("documentRun", "");
         documentSeed = arguments == null ? 0 : Integer.parseInt(arguments.getString("documentSeed", "0"));
         probeMode = arguments == null ? "full" : arguments.getString("probeMode", "full");
+        documentScopeResourceId = arguments == null ? "" : arguments.getString("documentScopeResourceId", "");
+        folderScopeResourceId = arguments == null ? "" : arguments.getString("folderScopeResourceId", "");
         start();
     }
     @Override public void onStart() {
         Bundle result = new Bundle();
         String stage = "configuration";
         try {
+            if (!folderScopeResourceId.isEmpty() && (!DocumentText.resourceId(folderScopeResourceId) || !documentScopeResourceId.isEmpty()
+                    || hostProbe || liveAgents || biometricProbe || documentProbe
+                    || !Set.of("folder-full", "folder-alias", "folder-alias-new").contains(probeMode)
+                    || !getTargetContext().getPackageName().endsWith(".debug"))) throw new IllegalArgumentException("Folder probe requires one owner-picked synthetic folder");
+            if (!documentScopeResourceId.isEmpty() && (!DocumentText.resourceId(documentScopeResourceId) || hostProbe || liveAgents || biometricProbe || documentProbe
+                    || !Set.of("full", "document-read-only").contains(probeMode)
+                    || !getTargetContext().getPackageName().endsWith(".debug"))) throw new IllegalArgumentException("Document scope probe requires one owner-selected debug fixture grant");
             if (documentProbe && (hostProbe || liveAgents || biometricProbe || !getTargetContext().getPackageName().endsWith(".debug")
                     || !documentRun.matches("[a-f0-9]{32}") || !Set.of(17, 29, 43).contains(documentSeed)))
                 throw new IllegalArgumentException("documentProbe requires a bounded debug-only document case");
@@ -75,7 +86,8 @@ public final class SmokeTest extends Instrumentation {
                     for (String name : service.policy.apps()) service.policy.app(name, false);
                     service.policy.app(documentProbe ? DocumentProbe.APP : fixture, true);
                     service.policy.screenshots(hostProbe || biometricProbe || documentProbe);
-                    for (String method : Policy.OPERATIONS) service.policy.operation(method, documentProbe ? Set.of("observe", "type", "key").contains(method)
+                    for (String method : Policy.OPERATIONS) service.policy.operation(method, !folderScopeResourceId.isEmpty() ? Set.of("draft.create", "document.read", "document.replace").contains(method) : !documentScopeResourceId.isEmpty() ? Set.of("document.read", "document.replace").contains(method)
+                            : documentProbe ? Set.of("observe", "type", "key").contains(method)
                             : biometricProbe || Set.of("observe", "apps.list", "fixture.increment", "tap", "swipe", "pinch", "type").contains(method));
                     service.startSession();
                     token = service.pairingToken();
@@ -84,6 +96,23 @@ public final class SmokeTest extends Instrumentation {
             stage = "describe";
             JSONObject described = call("describe", Json.object()).getJSONObject("result");
             require(described.getInt("protocolVersion") == 1 && !described.has("token"), "Describe is safe and versioned");
+            if (!folderScopeResourceId.isEmpty()) {
+                stage = "folder_scope_probe";
+                new FolderScopeProbe(this, service, folderScopeResourceId).run(probeMode);
+                service.stopSession("Folder scope probe complete");
+                result.putString("stream", "PASS: " + assertions + " folder scope assertions (" + probeMode + "; synthetic owner-selected folder).\n");
+                finish(android.app.Activity.RESULT_OK, result); return;
+            }
+            if (!documentScopeResourceId.isEmpty()) {
+                stage = "document_scope_probe";
+                boolean readOnly = probeMode.equals("document-read-only");
+                new DocumentScopeProbe(this, service, documentScopeResourceId).run(readOnly);
+                service.stopSession("Document scope probe complete");
+                result.putString("stream", "PASS: " + assertions + (readOnly
+                        ? " document scope read-only assertions (synthetic owner-selected document; no biometric action).\n"
+                        : " document scope assertions (emulator sensor; synthetic owner-selected document).\n"));
+                finish(android.app.Activity.RESULT_OK, result); return;
+            }
             if (documentProbe) {
                 stage = "document_probe";
                 new DocumentProbe(this, service, documentRun, documentSeed).run();

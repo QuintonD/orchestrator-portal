@@ -2,10 +2,13 @@
 
 **Orchestrator is still alpha.** [Alpha 7](https://github.com/QuintonD/orchestrator-portal/releases/tag/v0.1.0-alpha.7) adds optional Android phone control, authenticated task execution and an isolated source-code environment. The separate Phone Control companion remains experimental; emulator evidence does not establish physical-device acceptance. This distribution contains six desktop bundles, signed gateway and companion APKs, and the standalone broker package from the same tagged source. [All historical releases](https://github.com/QuintonD/orchestrator-portal/releases) remain available.
 
+Source preparation for **alpha 8** adds owner-selected folder drafts and exact-document permissions. Publication and fresh signed in-place upgrade qualification are pending; alpha 7 remains the published download. See [alpha 8 validation](alpha-8-validation.md).
+
 ## Which version to use
 
 | Version | Status |
 | --- | --- |
+| `0.1.0-alpha.8` | Prepared source; folder draft creation and exact-document permissions; release gates pending |
 | `0.1.0-alpha.7` | Optional Phone Control companion and scoped broker; task reservations, screenshot grants, signed responses and confined source programs |
 | `0.1.0-alpha.6` | Original artwork included in desktop packages; packaged image MIME and byte checks |
 | `0.1.0-alpha.5` | Living ecosystem avatar and optional sound; desktop packages omitted the original comparison PNG; upgrade baseline for alpha 6 |
@@ -39,13 +42,13 @@ The two old QA snapshots are retained with their original tags and assets for re
 ## Maintainer release contract
 
 - `package.json` defines the application version; the lockfile, gateway health response and Android `versionName` must match. Workspace npm packages have independent internal versions.
-- `package.json` also identifies `orchestratorRelease.previousVersion`, the published upgrade baseline shared by the upgrade test and release manifest. Advance it to the prior published alpha when preparing a release.
+- `package.json` also identifies `orchestratorRelease.previousVersion` and `previousCompanionVersion`, the published gateway and companion upgrade baselines shared by the release checks and manifest. Advance both to their versions in the prior published application release. For alpha 8, these are gateway alpha 7 / code 9 and companion alpha 2 / code 2; candidates are gateway alpha 8 / code 10 and companion alpha 3 / code 3.
 - Remain on `0.1.0-alpha.N` until the owner explicitly changes release stage. Debug variants add `-qa`; commit hashes identify snapshots, not maturity levels.
 - Every release is a new immutable tag on reviewed `main`, with an increasing Android version code and the original signed application identity.
 - Run `npm run release:check`, local functional/security/browser checks, native Android QA, desktop packaging/smoke, and `npm run test:upgrade` against the prior published desktop archive and signed APK. Record exact evidence and limitations in the PR and release.
 - After merge, build fresh signed gateway and Phone Control companion APKs from the clean released commit. Obtain all six desktop archives from the successful Desktop gateway workflow for that commit. The separate Phone Control workflow must also pass on `main`, including container isolation, broker package checks and native emulator QA. The standalone broker archive must match its package QA artifact from that workflow and every allowlisted source file in the clean checkout.
-- Run a new complete companion in-place upgrade against the exact fresh release APK. Retain the signed pre-change companion alpha 1 baseline at `test-results/release-assets/phone-control-0.1.0-alpha.1.apk`; this baseline was not separately published. `previousCompanionVersion` in the manifest script names this explicit baseline. Preserve its signing identity, application ID, settings and installation identity. Continuation-only verifier records and earlier APK digests cannot satisfy the release gate.
-- Stage exactly nine distributions: six desktop archives, `orchestrator-0.1.0-alpha.7.apk`, `phone-control-0.1.0-alpha.2.apk`, and `orchestrator-phone-control-0.1.0-alpha.1.tgz`. Attach `SHA256SUMS.txt`, `SBOM.cdx.json` and a release manifest mapping those artifacts to source and CI runs. Keep upgrade evidence outside the asset staging directory. Unknown staged files and distribution extensions are rejected. Never substitute an older APK or use a debug snapshot as the signed distribution.
+- Run a new complete companion in-place upgrade against the exact fresh release APK. Retain the published signed companion alpha 2 baseline from the alpha 7 release at `test-results/release-assets/phone-control-0.1.0-alpha.2.apk`. `previousCompanionVersion` in the root release metadata names this baseline; preserve the earlier unpublished alpha 1 proof as historical evidence. Preserve its signing identity, application ID, settings and installation identity. Continuation-only verifier records and earlier APK digests cannot satisfy the release gate.
+- Stage exactly nine distributions: six desktop archives, `orchestrator-0.1.0-alpha.8.apk`, `phone-control-0.1.0-alpha.3.apk`, and `orchestrator-phone-control-0.1.0-alpha.2.tgz`. Attach `SHA256SUMS.txt`, `SBOM.cdx.json` and a release manifest mapping those artifacts to source and CI runs. Keep upgrade evidence outside the asset staging directory. Unknown staged files and distribution extensions are rejected. Never substitute an older APK or use a debug snapshot as the signed distribution.
 - Keep the six CI-produced desktop `.sha256` sidecars in staging for the manifest gate. Publish an explicit list of the nine distributions and three metadata files; the staging sidecars are not additional release downloads. The gateway upgrade harness must use the exact CI archive and its sidecar at `dist/desktop/`, with the prior published desktop archive, APK and `SHA256SUMS.txt` retained at `test-results/release-assets/`.
 - Preserve historical tags/assets and annotate superseded release descriptions. Source merging, QA artifact creation and distribution publication are distinct steps; report completion only after downloadable assets exist.
 
@@ -62,4 +65,4 @@ Gateway proof must contain the original eleven checks, its typed record-preserva
 
 Run `npm run release:test` for the release gate's inventory, version, source-binding, archive-path and invalid-proof checks. These tests supplement the full post-merge artifact and upgrade gate; they do not establish physical-device acceptance or independent task-outcome verification.
 
-See [alpha 7 validation](alpha-7-validation.md) for this release's evidence and [alpha 6 validation](alpha-6-validation.md) for the previous release.
+See [alpha 8 validation](alpha-8-validation.md) for the prepared release, [alpha 7 validation](alpha-7-validation.md) for the published baseline, and [alpha 6 validation](alpha-6-validation.md) for earlier evidence.

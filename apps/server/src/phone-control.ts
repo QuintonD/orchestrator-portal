@@ -11,22 +11,34 @@ const hash = (text: string) => createHash("sha256").update(text, "utf8").digest(
 class BrokerRefusal extends Error { constructor(readonly code: string) { super("Phone request was rejected before dispatch"); } }
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/);
 const packageName = z.string().max(200).regex(/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/);
-const method = z.enum(["describe", "observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "stop", "fixture.increment", "node.click", "node.scroll"]);
+const method = z.enum(["describe", "observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "type", "key", "stop", "fixture.increment", "node.click", "node.scroll", "document.read", "document.replace", "draft.create"]);
+const documentScope = z.object({ adapter: z.literal("android.document.v1"), resourceIds: z.array(identifier).min(1).max(32).refine((value) => new Set(value).size === value.length), effects: z.array(z.enum(["document.read", "document.replace"])).min(1).max(2).refine((value) => new Set(value).size === value.length && (!value.includes("document.replace") || value.includes("document.read"))) }).strict();
+const folderId = z.string().uuid();
+const resourceScope = z.union([documentScope, z.object({ adapter: z.literal("android.folder-drafts.v1"), resourceIds: z.array(folderId).min(1).max(32).refine((ids) => new Set(ids).size === ids.length), effects: z.tuple([z.literal("draft.create")]) }).strict()]);
+const documentText = z.string().max(2000).refine((value) => !/[\u0000\uD800-\uDFFF]/u.test(value) && Buffer.byteLength(value, "utf8") <= 8192);
+const revision = z.string().regex(/^[a-f0-9]{64}$/);
+const documentRead = z.object({ resourceId: identifier, revision, text: documentText }).strict().refine((value) => hash(value.text) === value.revision);
 const disclosure = z.object({ screenshots: z.boolean() }).strict();
-const scope = { apps: z.array(packageName).min(1).max(32).refine((value) => new Set(value).size === value.length), operations: z.array(method).min(1).max(14).refine((value) => new Set(value).size === value.length), disclosure: disclosure.optional() };
+const scope = { apps: z.array(packageName).max(32).refine((value) => new Set(value).size === value.length), operations: z.array(method).min(1).max(32).refine((value) => new Set(value).size === value.length), disclosure: disclosure.optional(), resourceScope: resourceScope.optional() };
+function validScope(value: { apps: string[]; operations: string[]; disclosure?: { screenshots: boolean } | undefined; resourceScope?: z.infer<typeof resourceScope> | undefined }) {
+  return value.resourceScope ? value.apps.length === 0 && !value.disclosure?.screenshots && value.operations.every((operation) => operation === "describe" || operation === "stop" || value.resourceScope!.effects.some((effect) => effect === operation)) : value.apps.length > 0 && value.operations.every((operation) => !operation.startsWith("document.") && operation !== "draft.create");
+}
 const sessionIds = z.array(identifier).min(1).max(256).refine((value) => new Set(value).size === value.length).optional();
-const sessionInput = z.object({ deviceId: identifier, ...scope, ttlSeconds: z.number().int().min(60).max(3600) }).strict();
-const credentialInput = z.object({ label: z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f\u007f]+$/u), devices: z.array(identifier).min(1).max(16).refine((value) => new Set(value).size === value.length), sessionIds, ...scope, ttlSeconds: z.number().int().min(60).max(86400) }).strict();
+const sessionInput = z.object({ deviceId: identifier, ...scope, ttlSeconds: z.number().int().min(60).max(3600) }).strict().refine(validScope);
+const credentialInput = z.object({ label: z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f\u007f]+$/u), devices: z.array(identifier).min(1).max(16).refine((value) => new Set(value).size === value.length), sessionIds, ...scope, ttlSeconds: z.number().int().min(60).max(86400) }).strict().refine(validScope);
 const session = z.object({ id: identifier, deviceId: identifier, ...scope, expiresAt: z.string().max(40), revokedAt: z.string().max(40).optional() });
 const credential = z.object({ id: identifier, label: z.string().max(80), devices: z.array(identifier).max(20), sessionIds, ...scope, expiresAt: z.string().max(40), revokedAt: z.string().max(40).optional() });
-const task = z.object({ id: identifier, deviceId: identifier, sessionId: identifier, actorId: identifier.optional(), label: z.string().max(80).optional(), expiresAt: z.string().max(40), maxActions: z.number().int().min(1).max(1000), actionsUsed: z.number().int().min(0).max(1000), status: z.enum(["active", "completed", "expired", "revoked", "interrupted"]), outcome: z.literal("unverified") });
-const taskInput = z.object({ deviceId: identifier, sessionId: identifier, ttlSeconds: z.number().int().min(1).max(300), maxActions: z.number().int().min(1).max(100), label: z.string().min(1).max(80).optional() }).strict();
+const task = z.object({ id: identifier, deviceId: identifier, sessionId: identifier, actorId: identifier.optional(), label: z.string().max(80).optional(), resourceScope: resourceScope.optional(), expiresAt: z.string().max(40), maxActions: z.number().int().min(1).max(1000), actionsUsed: z.number().int().min(0).max(1000), status: z.enum(["active", "completed", "expired", "revoked", "interrupted"]), outcome: z.literal("unverified") });
+const taskInput = z.object({ deviceId: identifier, sessionId: identifier, ttlSeconds: z.number().int().min(1).max(300), maxActions: z.number().int().min(1).max(100), label: z.string().min(1).max(80).optional(), resourceScope: resourceScope.optional() }).strict();
 const state = z.object({ storageState: z.enum(["ready", "unavailable"]).optional(), devices: z.array(z.object({ id: identifier, label: z.string().max(100), busy: z.boolean(), connection: z.enum(["recently_observed", "unknown"]).optional(), lastSeenAt: z.string().max(40).optional(), actionState: z.enum(["ready", "unknown"]).optional() })).max(100), sessions: z.array(session).max(1000), credentials: z.array(credential).max(1000), tasks: z.array(task).max(1024).optional() });
 const auditEvents = z.object({ events: z.array(z.object({ at: z.string().max(40), actorId: z.string().max(100), deviceId: identifier.optional(), method: method.optional(), status: z.string().max(40), code: z.string().max(80).optional() })).max(1000) });
 const point = z.object({ x: z.number().int().min(0).max(16383), y: z.number().int().min(0).max(16383) }).strict();
 const observationId = identifier;
 const empty = z.object({}).strict();
 const callInputs = {
+  "draft.create": z.object({ resourceId: folderId, text: documentText }).strict(),
+  "document.read": z.object({ resourceId: identifier }).strict(),
+  "document.replace": z.object({ resourceId: identifier, expectedRevision: revision, text: documentText }).strict(),
   describe: empty, observe: z.object({ includeScreenshot: z.boolean().optional() }).strict(), "apps.list": empty, stop: empty,
   "app.launch": z.object({ packageName }).strict(),
   tap: point.extend({ observationId }).strict(),
@@ -39,7 +51,7 @@ const callInputs = {
   "node.scroll": z.object({ observationId, nodeId: identifier, direction: z.enum(["forward", "backward"]) }).strict(),
   key: z.object({ observationId, key: z.enum(["back", "home"]) }).strict(),
 };
-const callInput = z.object({ id: identifier, deviceId: identifier, sessionId: identifier, taskId: identifier.optional(), method, params: z.unknown() }).strict();
+const callInput = z.object({ id: identifier, deviceId: identifier, sessionId: identifier, taskId: identifier.optional(), method, params: z.unknown() }).strict().refine((value) => !(value.method.startsWith("document.") || value.method === "draft.create") || Boolean(value.taskId));
 const captureRecovery = z.object({ retryCount: z.literal(1), initialError: z.literal("screenshot_internal_error"), initialStage: z.literal("awaiting_callback"), initialElapsedMs: z.number().int().min(0).max(60000), totalElapsedMs: z.number().int().min(0).max(60000) }).strict().refine((value) => value.totalElapsedMs >= value.initialElapsedMs);
 const captureDetails = z.object({ captureRecovery: captureRecovery.optional() });
 const receipt = z.object({ id: identifier, status: z.enum(["observed", "completed", "rejected", "unknown"]), result: z.unknown().optional(), error: z.object({ code: z.string().regex(/^[A-Z0-9_]{1,80}$/i), message: z.string().max(1000), details: captureDetails.optional() }).optional() });
@@ -169,18 +181,23 @@ export function registerPhoneControl(app: FastifyInstance, db: DatabaseSync, aut
     try {
       const raw = await requestBroker("/v1/call", receipt, { ...body, params });
       if (raw.id !== body.id) throw new Error("Mismatched receipt");
-      const mutation = !["observe", "describe", "apps.list"].includes(body.method);
+      const mutation = !["observe", "describe", "apps.list", "document.read"].includes(body.method);
       // Authenticity identifies the sender; contradictory receipts still cannot
       // release the browser's pending-action latch or attest a dispatch.
       if (raw.status === "completed") {
         if (!mutation || raw.error !== undefined) throw new Error("Invalid completed receipt");
         const dispatch = z.object({ status: z.enum(["dispatched", "completed", "stopped"]) }).parse(raw.result);
         if (body.method === "stop" && dispatch.status !== "stopped") throw new Error("Unconfirmed stop receipt");
+        if ((body.method === "document.replace" || body.method === "draft.create")) z.object({ status: z.literal("completed") }).strict().parse(raw.result);
       } else if (raw.status === "observed") {
         if (mutation || raw.error !== undefined) throw new Error("Invalid observation receipt");
       } else if (raw.result !== undefined) throw new Error("Contradictory rejected or unknown receipt");
       let result: unknown;
-      if (raw.status === "observed" && body.method === "observe") {
+      if (raw.status === "observed" && body.method === "document.read") {
+        const document = documentRead.parse(raw.result);
+        if (document.resourceId !== (params as { resourceId: string }).resourceId) throw new Error("Mismatched document");
+        result = document;
+      } else if (raw.status === "observed" && body.method === "observe") {
         const observed = observation.parse(raw.result);
         // Screen pixels require separate browser opt-in even when the source includes them.
         if (!(params as { includeScreenshot?: boolean }).includeScreenshot) delete observed.screenshot;
@@ -188,7 +205,7 @@ export function registerPhoneControl(app: FastifyInstance, db: DatabaseSync, aut
       } else if (raw.status === "observed" && body.method === "apps.list") {
         result = z.object({ apps: z.array(z.object({ packageName, label: z.string().max(200) })).max(500) }).parse(raw.result);
       } else if (raw.status === "observed" && body.method === "describe") {
-        result = z.object({ protocolVersion: z.literal(1), platform: z.literal("android"), methods: z.array(method).max(14), session: z.object({ expiresAt: z.string().max(40).optional() }), capabilities: z.object({ screenshots: z.boolean(), gestures: z.boolean(), biometricConsent: z.boolean() }) }).parse(raw.result);
+        result = z.object({ protocolVersion: z.literal(1), platform: z.literal("android"), methods: z.array(method).max(32), session: z.object({ expiresAt: z.string().max(40).optional() }), capabilities: z.object({ screenshots: z.boolean(), gestures: z.boolean(), biometricConsent: z.boolean() }) }).parse(raw.result);
       }
       audit(db, request.principal!.userId, "phone.call", body.deviceId, { method: body.method, status: raw.status, receiptId: body.id });
       return { id: raw.id, status: raw.status, ...(result === undefined ? {} : { result }), ...(raw.error ? { error: { code: raw.error.code, message: "The phone or broker rejected this request. Check scope, freshness, and consent on the phone.", ...(raw.error.details?.captureRecovery ? { details: { captureRecovery: raw.error.details.captureRecovery } } : {}) } } : {}) };

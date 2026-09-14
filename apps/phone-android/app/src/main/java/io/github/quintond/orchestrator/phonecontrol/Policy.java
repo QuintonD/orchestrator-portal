@@ -18,8 +18,8 @@ final class Policy {
     static final long SCREENSHOT_INTERVAL_MS = 400;
     static final int MAX_SCREENSHOT_PIXELS = 6_000_000;
     static final int MAX_PNG_BYTES = 4_000_000;
-    static final Set<String> OPERATIONS = Set.of("observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "node.click", "node.scroll", "type", "key", "fixture.increment");
-    static final Set<String> MUTATIONS = Set.of("app.launch", "tap", "longPress", "swipe", "pinch", "node.click", "node.scroll", "type", "key", "fixture.increment");
+    static final Set<String> OPERATIONS = Set.of("observe", "apps.list", "app.launch", "tap", "longPress", "swipe", "pinch", "node.click", "node.scroll", "type", "key", "fixture.increment", "document.read", "document.replace", "draft.create");
+    static final Set<String> MUTATIONS = Set.of("app.launch", "tap", "longPress", "swipe", "pinch", "node.click", "node.scroll", "type", "key", "fixture.increment", "document.replace", "draft.create");
 
     private Policy() { }
 

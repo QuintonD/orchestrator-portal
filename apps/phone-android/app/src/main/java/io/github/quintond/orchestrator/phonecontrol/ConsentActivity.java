@@ -66,7 +66,11 @@ public final class ConsentActivity extends Activity {
         title.setText("Review one phone action"); title.setTextSize(24);
         content.addView(title);
         TextView detail = new TextView(this);
-        detail.setText("Automation is paused. Confirm only if you intend this exact action. It may have consequences inside the selected app.\n\nApp: "
+        detail.setText(pending.method.equals("draft.create")
+                ? "Automation is paused. Confirm only if you intend this new draft in the reviewed folder.\n\n" + pending.review
+                : pending.method.equals("document.replace")
+                ? "Automation is paused. Confirm only if you intend this exact document replacement.\n\n" + pending.review
+                : "Automation is paused. Confirm only if you intend this exact action. It may have consequences inside the selected app.\n\nApp: "
                 + pending.target + "\n\n" + pending.review + "\n\nAfter confirmation, the original app must still match the observed window.");
         android.widget.ScrollView review = new android.widget.ScrollView(this);
         review.addView(detail);

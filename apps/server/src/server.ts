@@ -30,7 +30,7 @@ import { registerGrok } from "./grok.js";
 import { registerPhoneControl } from "./phone-control.js";
 import { discoverLocalTools } from "./discovery.js";
 
-const version = "0.1.0-alpha.7";
+const version = "0.1.0-alpha.8";
 const csrfCookie = "orchestrator_csrf";
 
 function parseJson<T>(value: string): T {

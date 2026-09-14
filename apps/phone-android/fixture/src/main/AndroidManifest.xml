@@ -1,6 +1,9 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only; required origin notice: see ATTRIBUTION.md. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:label="Phone Control Fixture" android:icon="@drawable/ic_phone" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:dataExtractionRules="@xml/no_backup" android:supportsRtl="true">
+        <provider android:name=".DocumentFixtureProvider" android:authorities="${applicationId}.documents" android:exported="true" android:grantUriPermissions="true" android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER" /></intent-filter>
+        </provider>
         <activity android:name=".LifecycleFixtureActivity" android:exported="true" />
         <activity android:name=".ScrollFixtureActivity" android:exported="true" />
         <activity android:name=".FixtureActivity" android:exported="true">

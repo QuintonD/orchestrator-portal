@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: AGPL-3.0-only
 // Required origin notice: see ATTRIBUTION.md.
-import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
+import { readFileSync, existsSync, accessSync, constants, openSync, fstatSync, readSync, closeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,11 +10,11 @@ import { initialize, loadConfiguration, addDevice, updateDeviceToken, provisionB
 import { Broker, createServer } from '../src/broker.mjs';
 import { clientToken, createClient } from '../src/client.mjs';
 import { startMcp } from '../src/mcp.mjs';
-import { Fault, requireThat, publicError, validateCall, MAX_BODY_BYTES } from '../src/validation.mjs';
+import { Fault, requireThat, publicError, validateCall, documentText, MAX_BODY_BYTES } from '../src/validation.mjs';
 
 const NOTICE = 'Orchestrator Phone Control — created by the Orchestrator contributors.\nhttps://github.com/QuintonD/orchestrator-portal\nAGPL-3.0-only with attribution preservation (ATTRIBUTION.md). No warranty.';
-const HELP = `${NOTICE}\n\nNode 24+. Tokens are read from --token-file or PHONE_CONTROL_TOKEN, never command arguments.\n\nOwner setup:\n  init [--dir PRIVATE_DIRECTORY] [--port 4421]\n  device-add --config PATH --id phone --label Phone --native-port 8837 --native-token-file PATH\n  serve --config PATH\n\nOwner management (JSON input from stdin or --input-file):\n  credentials-create --token-file PATH --out-token NEW_PRIVATE_FILE\n    input: {"label":"agent-a","devices":["phone"],"apps":["com.example.app"],"operations":["observe","tap"],"ttlSeconds":3600}\n  credentials-list | credentials-revoke --id ID\n  sessions-create\n    input: {"deviceId":"phone","apps":["com.example.app"],"operations":["observe","tap"],"ttlSeconds":600}\n  sessions-revoke --id ID | device-stop --device phone | audit\n\nScoped agent commands (--token-file PATH [--port 4421]):\n  state | legal | call [--input-file PRIVATE_JSON] | mcp\n  describe | observe [--screenshot] | apps | launch --package PACKAGE\n  tap --observation ID --x N --y N\n  long-press --observation ID --x N --y N --duration 500\n  swipe --observation ID --points-file JSON --duration 500\n  pinch --observation ID --x N --y N --scale 1.5 --duration 500\n  type --observation ID --node ID --text-file PRIVATE_TEXT\n  key --observation ID --key back|home\n  fixture-increment --observation ID | stop\n  Above method commands require --device ID --session ID [--request-id STABLE_ID].\n  call input: {"id":"unique-id","deviceId":"phone","sessionId":"ID","method":"observe","params":{"includeScreenshot":false}}\n\n--output PRIVATE_FILE saves returned private screen data without printing it.\nAfter an unknown mutation, do not retry with a new ID. Stop, rearm on phone and observe to reconcile.\nGeneric mutations require local biometric consent; fixture-increment only works in the signed harmless fixture.\n--version | --license | --help\n`;
-const TASK_HELP = `\nBroker response authentication:\n  --broker-public-key-file OWNER_PROVISIONED_PEM or PHONE_CONTROL_BROKER_PUBLIC_KEY (raw PEM)\n  Required for every request except emergency Stop, whose response remains unconfirmed without a pin.\n  broker-identity --config PATH provisions keys for an older configuration while the broker is stopped.\n\nScoped task workflow:\n  tasks-create (JSON input: {"deviceId":"phone","sessionId":"ID","ttlSeconds":60,"maxActions":10})\n  tasks-get --id TASK_ID | tasks-release --id TASK_ID\n  Every mutation except Stop also requires --task TASK_ID (or taskId in call JSON).\n  receipt-status --id REQUEST_ID reads dispatch status only; it never retries or restores authority.\n  Observe again after acquiring a task. Completed dispatch or lease status is not verified task completion.\n  A fresh screenshot never clears an uncertain mutation; hand off to the owner.\n`;
+const HELP = `${NOTICE}\n\nNode 24+. Tokens are read from --token-file or PHONE_CONTROL_TOKEN, never command arguments.\n\nOwner setup:\n  init [--dir PRIVATE_DIRECTORY] [--port 4421]\n  device-add --config PATH --id phone --label Phone --native-port 8837 --native-token-file PATH\n  serve --config PATH\n\nOwner management (JSON input from stdin or --input-file):\n  credentials-create --token-file PATH --out-token NEW_PRIVATE_FILE\n    input: {"label":"agent-a","devices":["phone"],"sessionIds":["SESSION_ID"],"apps":[],"operations":["describe","draft.create","stop"],"resourceScope":{"adapter":"android.folder-drafts.v1","resourceIds":["FOLDER_HANDLE"],"effects":["draft.create"]},"ttlSeconds":600}\n  credentials-list | credentials-revoke --id ID\n  sessions-create\n    input: {"deviceId":"phone","apps":[],"operations":["describe","draft.create","stop"],"resourceScope":{"adapter":"android.folder-drafts.v1","resourceIds":["FOLDER_HANDLE"],"effects":["draft.create"]},"ttlSeconds":600}\n  sessions-revoke --id ID | device-stop --device phone | audit\n\nScoped agent commands (--token-file PATH [--port 4421]):\n  state | legal | call [--input-file PRIVATE_JSON] | mcp\n  describe | observe [--screenshot] | apps | launch --package PACKAGE\n  tap --observation ID --x N --y N\n  long-press --observation ID --x N --y N --duration 500\n  swipe --observation ID --points-file JSON --duration 500\n  pinch --observation ID --x N --y N --scale 1.5 --duration 500\n  type --observation ID --node ID --text-file PRIVATE_TEXT\n  key --observation ID --key back|home\n  fixture-increment --observation ID | stop\n  Above method commands require --device ID --session ID [--request-id STABLE_ID].\n  call input: {"id":"unique-id","deviceId":"phone","sessionId":"ID","method":"observe","params":{"includeScreenshot":false}}\n\n--output PRIVATE_FILE saves returned private screen data without printing it.\nAfter an unknown mutation, do not retry with a new ID. Stop, rearm on phone and observe to reconcile.\nGeneric mutations require local biometric consent; fixture-increment only works in the signed harmless fixture.\n--version | --license | --help\n`;
+const TASK_HELP = `\nBroker response authentication:\n  --broker-public-key-file OWNER_PROVISIONED_PEM or PHONE_CONTROL_BROKER_PUBLIC_KEY (raw PEM)\n  Required for every request except emergency Stop, whose response remains unconfirmed without a pin.\n  broker-identity --config PATH provisions keys for an older configuration while the broker is stopped.\n\nScoped task workflow:\n  tasks-create (JSON input: {"deviceId":"phone","sessionId":"ID","ttlSeconds":60,"maxActions":10})\n  tasks-get --id TASK_ID | tasks-release --id TASK_ID\n  Document reads and every mutation except Stop require --task TASK_ID (or taskId in call JSON).\n  receipt-status --id REQUEST_ID reads dispatch status only; it never retries or restores authority.\n  Screen actions need a fresh observation after task acquisition. Resource actions use their typed handles.\n  Completed dispatch or lease status is not verified task completion.\n  A fresh screenshot never clears an uncertain mutation; hand off to the owner.\n`;
 
 async function jsonInput(values) {
   let data;
@@ -23,6 +23,21 @@ async function jsonInput(values) {
   requireThat(data.length <= MAX_BODY_BYTES, 'request_too_large', 413); try { return JSON.parse(data.toString('utf8')); } catch { throw new Fault('invalid_json'); }
 }
 function privateText(path) { requireThat(path, 'file_required'); assertPrivate(path); return readFileSync(path, 'utf8'); }
+function privateDocumentText(path) {
+  requireThat(path, 'file_required'); assertPrivate(path);
+  const file = openSync(path, 'r');
+  try {
+    requireThat(fstatSync(file).isFile(), 'invalid_document_text');
+    // Read at most one byte beyond the limit, even if the file grows concurrently.
+    const bytes = Buffer.alloc(8193); let size = 0;
+    while (size < bytes.length) { const read = readSync(file, bytes, size, bytes.length - size, null); if (!read) break; size += read; }
+    requireThat(size <= 8192, 'invalid_document_text');
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size)); }
+    catch { throw new Fault('invalid_document_text'); }
+    return documentText(text); // Preserve a UTF-8 BOM as content, matching native decoding.
+  } finally { closeSync(file); }
+}
 async function guardedCall(client, input) {
   validateCall(input);
   try { return await client('/v1/call', 'POST', input); } catch (error) {
@@ -32,9 +47,9 @@ async function guardedCall(client, input) {
 }
 async function main() {
   requireThat(Number(process.versions.node.split('.')[0]) >= 24, 'node_24_required', 500);
-  const { values, positionals } = parseArgs({ allowPositionals: true, strict: true, options: Object.fromEntries(['dir', 'config', 'port', 'id', 'label', 'native-port', 'native-token-file', 'token-file', 'broker-public-key-file', 'out-token', 'input-file', 'output', 'device', 'session', 'task', 'request-id', 'observation', 'x', 'y', 'duration', 'scale', 'points-file', 'package', 'node', 'text-file', 'key', 'direction'].map((name) => [name, { type: 'string' }]).concat(['help', 'version', 'license', 'screenshot'].map((name) => [name, { type: 'boolean' }]))) });
-  if (values.help || !positionals.length && !values.version && !values.license) { process.stdout.write(`${HELP}${TASK_HELP}\n  node-click --observation ID --node ID (observed clickable element)\n  node-scroll --observation ID --node ID --direction forward|backward\n  device-token-update --config PATH --id phone --native-token-file PATH (broker stopped)\n`); return; }
-  if (values.version) { process.stdout.write(`0.1.0-alpha.1\n${NOTICE}\n`); return; }
+  const { values, positionals } = parseArgs({ allowPositionals: true, strict: true, options: Object.fromEntries(['dir', 'config', 'port', 'id', 'label', 'native-port', 'native-token-file', 'token-file', 'broker-public-key-file', 'out-token', 'input-file', 'output', 'device', 'session', 'task', 'request-id', 'observation', 'x', 'y', 'duration', 'scale', 'points-file', 'package', 'node', 'text-file', 'key', 'direction', 'resource', 'revision'].map((name) => [name, { type: 'string' }]).concat(['help', 'version', 'license', 'screenshot'].map((name) => [name, { type: 'boolean' }]))) });
+  if (values.help || !positionals.length && !values.version && !values.license) { process.stdout.write(`${HELP}${TASK_HELP}\n  document-read --resource HANDLE --task TASK_ID\n  document-replace --resource HANDLE --revision SHA256 --text-file PRIVATE_TEXT --task TASK_ID\n  draft-create --resource FOLDER_HANDLE --text-file PRIVATE_TEXT --task TASK_ID\n  Folder drafts require android.folder-drafts.v1 scope and phone confirmation; native chooses a new .draft.txt filename.\n  Document methods require owner-issued android.document.v1 scopes; no screen fallback or account promises.\n  node-click --observation ID --node ID (observed clickable element)\n  node-scroll --observation ID --node ID --direction forward|backward\n  device-token-update --config PATH --id phone --native-token-file PATH (broker stopped)\n`); return; }
+  if (values.version) { process.stdout.write(`0.1.0-alpha.2\n${NOTICE}\n`); return; }
   if (values.license) { process.stdout.write(`${NOTICE}\n\n${readFileSync(new URL('../LICENSE', import.meta.url), 'utf8')}\n${readFileSync(new URL('../ATTRIBUTION.md', import.meta.url), 'utf8')}\n`); return; }
   requireThat(positionals.length === 1, 'invalid_arguments'); const command = positionals[0]; const configPath = resolve(values.config ?? join(homedir(), '.orchestrator-phone-control', 'config.json'));
   let result;
@@ -81,10 +96,13 @@ async function main() {
     else if (command === 'device-stop') { requireThat(values.device, 'device_required'); result = await client(`/v1/devices/${values.device}/stop`, 'POST', {}); }
     else if (command === 'call') result = await guardedCall(client, await jsonInput(values));
     else {
-      const method = ({ apps: 'apps.list', launch: 'app.launch', 'long-press': 'longPress', 'fixture-increment': 'fixture.increment', 'node-click': 'node.click', 'node-scroll': 'node.scroll' })[command] ?? command;
+      const method = ({ apps: 'apps.list', launch: 'app.launch', 'long-press': 'longPress', 'fixture-increment': 'fixture.increment', 'node-click': 'node.click', 'node-scroll': 'node.scroll', 'draft-create': 'draft.create', 'document-read': 'document.read', 'document-replace': 'document.replace' })[command] ?? command;
       let params;
       switch (method) {
         case 'describe': case 'apps.list': case 'stop': params = {}; break;
+        case 'draft.create': params = { resourceId: values.resource, text: privateDocumentText(values['text-file']) }; break;
+        case 'document.read': params = { resourceId: values.resource }; break;
+        case 'document.replace': params = { resourceId: values.resource, expectedRevision: values.revision, text: privateDocumentText(values['text-file']) }; break;
         case 'observe': params = { includeScreenshot: values.screenshot === true }; break;
         case 'app.launch': params = { packageName: values.package }; break;
         case 'tap': params = { observationId: values.observation, x: Number(values.x), y: Number(values.y) }; break;

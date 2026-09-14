@@ -4,7 +4,7 @@ Orchestrator Phone Control — created by the Orchestrator contributors.
 https://github.com/QuintonD/orchestrator-portal
 
 An independent, local Android control broker, console client and MCP stdio adapter.
-This component is **0.1.0-alpha.1**. Its native companion is in
+This component is **0.1.0-alpha.2**. Its native companion is in
 `apps/phone-android`. The broker does not import the portal or own source planning.
 An optional isolated launcher executes source-owned code inside a container.
 Node.js 24 or newer is required. There are no npm dependencies.
@@ -15,6 +15,16 @@ term in [ATTRIBUTION.md](ATTRIBUTION.md). Read [LICENSE](LICENSE) and
 HTTP; this directory deliberately sits outside the portal's npm workspaces.
 
 ## What is authorized
+
+The working tree defaults new portal grants to **folder drafts** through
+`android.folder-drafts.v1`: new plaintext `.draft.txt` files in owner-selected
+folders, with confirmation and strong biometrics for every creation. Existing
+file reads, overwrite, deletion and send operations are unavailable in this mode.
+Advanced `android.document.v1` grants support exact-document reads and explicitly
+authorized replacements. Both modes use narrowing task scopes and cannot mix
+with generic screen control or enforce arbitrary app/account promises.
+See [resource permissions and provider limits](../../docs/phone-control-resource-permissions.md).
+These adapters are prepared for portal alpha 8 with broker alpha 2 and companion alpha 3. Publication and exact release-artifact qualification are tracked in [alpha 8 validation](../../docs/alpha-8-validation.md).
 
 The owner establishes an app and operation allowlist on the phone, starts its
 visible ten-minute local session, and separately creates a broker session and
